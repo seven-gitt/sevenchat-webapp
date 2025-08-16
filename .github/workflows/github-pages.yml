@@ -1,0 +1,60 @@
+name: Deploy SevenChat Web to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Configure Yarn
+        run: |
+          yarn config set network-timeout 300000
+          yarn config set registry https://registry.npmjs.org/
+
+      - name: Install dependencies
+        run: |
+          yarn cache clean
+          yarn install --network-timeout 300000
+
+      - name: Build SevenChat Web
+        run: yarn build
+
+      - name: Copy config.json
+        run: |
+          mkdir -p webapp
+          cp element.io/app/config.json webapp/config.json
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./webapp
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          path: ./webapp

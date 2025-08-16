@@ -1,0 +1,349 @@
+/*
+Copyright 2024 New Vector Ltd.
+Copyright 2015-2023 The Matrix.org Foundation C.I.C.
+
+SPDX-License-Identifier: AGPL-3.0-only OR GPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE files in the repository root for full details.
+*/
+
+import React, { type JSX, type Ref, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+    type ISearchResults,
+    type IThreadBundledRelationship,
+    type MatrixEvent,
+    THREAD_RELATION_TYPE,
+} from "matrix-js-sdk/src/matrix";
+import { logger } from "matrix-js-sdk/src/logger";
+
+import ScrollPanel from "./ScrollPanel";
+import Spinner from "../views/elements/Spinner";
+import { _t } from "../../languageHandler";
+import { haveRendererForEvent } from "../../events/EventTileFactory";
+import SearchResultTile from "../views/rooms/SearchResultTile";
+import { searchPagination, SearchScope } from "../../Searching";
+import type ResizeNotifier from "../../utils/ResizeNotifier";
+import MatrixClientContext from "../../contexts/MatrixClientContext";
+import { RoomPermalinkCreator } from "../../utils/permalinks/Permalinks";
+import { useScopedRoomContext } from "../../contexts/ScopedRoomContext.tsx";
+import MemberAvatar from "../views/avatars/MemberAvatar";
+
+const DEBUG = false;
+let debuglog = function (msg: string): void {};
+
+/* istanbul ignore next */
+if (DEBUG) {
+    // using bind means that we get to keep useful line numbers in the console
+    debuglog = logger.log.bind(console);
+}
+
+interface Props {
+    term: string;
+    scope: SearchScope;
+    inProgress: boolean;
+    promise: Promise<ISearchResults>;
+    abortController?: AbortController;
+    resizeNotifier: ResizeNotifier;
+    className: string;
+    onUpdate(inProgress: boolean, results: ISearchResults | null, error: Error | null): void;
+    ref?: Ref<ScrollPanel>;
+}
+
+// XXX: todo: merge overlapping results somehow?
+// XXX: why doesn't searching on name work?
+export const RoomSearchView = ({
+    term,
+    scope,
+    promise,
+    abortController,
+    resizeNotifier,
+    className,
+    onUpdate,
+    inProgress,
+    ref,
+}: Props): JSX.Element => {
+    const client = useContext(MatrixClientContext);
+    const roomContext = useScopedRoomContext("showHiddenEvents");
+    const [highlights, setHighlights] = useState<string[] | null>(null);
+    const [results, setResults] = useState<ISearchResults | null>(null);
+    // Xóa state selectedSender
+    // const [selectedSender, setSelectedSender] = useState<string>("all");
+    const aborted = useRef(false);
+    // A map from room ID to permalink creator
+    const permalinkCreators = useMemo(() => new Map<string, RoomPermalinkCreator>(), []);
+    const innerRef = useRef<ScrollPanel>(null);
+
+    useEffect(() => {
+        return () => {
+            permalinkCreators.forEach((pc) => pc.stop());
+            permalinkCreators.clear();
+        };
+    }, [permalinkCreators]);
+
+    const handleSearchResult = useCallback(
+        (searchPromise: Promise<ISearchResults>): Promise<boolean> => {
+            onUpdate(true, null, null);
+
+            return searchPromise.then(
+                async (results): Promise<boolean> => {
+                    debuglog("search complete");
+                    if (aborted.current) {
+                        logger.error("Discarding stale search results");
+                        return false;
+                    }
+
+                    // postgres on synapse returns us precise details of the strings
+                    // which actually got matched for highlighting.
+                    //
+                    // In either case, we want to highlight the literal search term
+                    // whether it was used by the search engine or not.
+
+                    let highlights = results.highlights;
+                    if (!highlights.includes(term)) {
+                        highlights = highlights.concat(term);
+                    }
+
+                    // For overlapping highlights,
+                    // favour longer (more specific) terms first
+                    highlights = highlights.sort(function (a, b) {
+                        return b.length - a.length;
+                    });
+
+                    for (const result of results.results) {
+                        for (const event of result.context.getTimeline()) {
+                            const bundledRelationship = event.getServerAggregatedRelation<IThreadBundledRelationship>(
+                                THREAD_RELATION_TYPE.name,
+                            );
+                            if (!bundledRelationship || event.getThread()) continue;
+                            const room = client.getRoom(event.getRoomId());
+                            const thread = room?.findThreadForEvent(event);
+                            if (thread) {
+                                event.setThread(thread);
+                            } else {
+                                room?.createThread(event.getId()!, event, [], true);
+                            }
+                        }
+                    }
+
+                    setHighlights(highlights);
+                    setResults({ ...results }); // copy to force a refresh
+                    onUpdate(false, results, null);
+                    return false;
+                },
+                (error) => {
+                    if (aborted.current) {
+                        logger.error("Discarding stale search results");
+                        return false;
+                    }
+                    logger.error("Search failed", error);
+                    onUpdate(false, null, error);
+                    return false;
+                },
+            );
+        },
+        [client, term, onUpdate],
+    );
+
+    // Xóa useMemo lấy danh sách người gửi
+    // const senders = useMemo(() => {
+    //     if (!results?.results) return [];
+    //     const map = new Map<string, {member: any, name: string}>();
+    //     for (const result of results.results) {
+    //         const ev = result.context.getEvent();
+    //         const sender = ev.getSender();
+    //         const room = client.getRoom(ev.getRoomId());
+    //         if (sender && !map.has(sender)) {
+    //             const member = room?.getMember?.(sender);
+    //             map.set(sender, {member, name: member?.name || sender});
+    //         }
+    //     }
+    //     return Array.from(map.entries());
+    // }, [results, client]);
+
+    // Xóa useMemo lọc kết quả theo người gửi
+    // const filteredResults = useMemo(() => {
+    //     if (selectedSender === "all" || !results?.results) return results?.results || [];
+    //     return results.results.filter(r => r.context.getEvent().getSender() === selectedSender);
+    // }, [results, selectedSender]);
+
+    // Mount & unmount effect
+    useEffect(() => {
+        aborted.current = false;
+        handleSearchResult(promise);
+        return () => {
+            aborted.current = true;
+            abortController?.abort();
+        };
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // show searching spinner
+    if (results === null) {
+        return (
+            <div
+                className="mx_RoomView_messagePanel mx_RoomView_messagePanelSearchSpinner"
+                data-testid="messagePanelSearchSpinner"
+            />
+        );
+    }
+
+    const onSearchResultsFillRequest = async (backwards: boolean): Promise<boolean> => {
+        if (!backwards) {
+            return false;
+        }
+
+        if (!results.next_batch) {
+            debuglog("no more search results");
+            return false;
+        }
+
+        debuglog("requesting more search results");
+        const searchPromise = searchPagination(client, results);
+        return handleSearchResult(searchPromise);
+    };
+
+    const ret: JSX.Element[] = [];
+
+    if (inProgress) {
+        ret.push(
+            <li key="search-spinner">
+                <Spinner />
+            </li>,
+        );
+    }
+
+    if (!results.next_batch) {
+        if (!results?.results?.length) {
+            ret.push(
+                <li key="search-top-marker">
+                    <h2 className="mx_RoomView_topMarker">{_t("common|no_results")}</h2>
+                </li>,
+            );
+        } else {
+            ret.push(
+                <li key="search-top-marker">
+                    <h2 className="mx_RoomView_topMarker">{_t("no_more_results")}</h2>
+                </li>,
+            );
+        }
+    }
+
+    const onRef = (e: ScrollPanel | null): void => {
+        if (typeof ref === "function") {
+            ref(e);
+        } else if (!!ref) {
+            ref.current = e;
+        }
+        innerRef.current = e;
+    };
+
+    let lastRoomId: string | undefined;
+    let mergedTimeline: MatrixEvent[] = [];
+    let ourEventsIndexes: number[] = [];
+
+    // Sử dụng results?.results thay cho filteredResults
+    const searchResults = results?.results || [];
+    for (let i = (searchResults.length || 0) - 1; i >= 0; i--) {
+        const result = searchResults[i];
+
+        const mxEv = result.context.getEvent();
+        const roomId = mxEv.getRoomId()!;
+        const room = client.getRoom(roomId);
+        if (!room) {
+            // if we do not have the room in js-sdk stores then hide it as we cannot easily show it
+            // As per the spec, an all rooms search can create this condition,
+            // it happens with Seshat but not Synapse.
+            // It will make the result count not match the displayed count.
+            logger.log("Hiding search result from an unknown room", roomId);
+            continue;
+        }
+
+        if (!haveRendererForEvent(mxEv, client, roomContext.showHiddenEvents)) {
+            // XXX: can this ever happen? It will make the result count
+            // not match the displayed count.
+            continue;
+        }
+
+        if (scope === SearchScope.All) {
+            if (roomId !== lastRoomId) {
+                ret.push(
+                    <li key={mxEv.getId() + "-room"}>
+                        <h2>
+                            {_t("common|room")}: {room.name}
+                        </h2>
+                    </li>,
+                );
+                lastRoomId = roomId;
+            }
+        }
+
+        const resultLink = "#/room/" + roomId + "/" + mxEv.getId();
+
+        // merging two successive search result if the query is present in both of them
+        const currentTimeline = result.context.getTimeline();
+        const nextTimeline = i > 0 ? results.results[i - 1].context.getTimeline() : [];
+
+        if (i > 0 && currentTimeline[currentTimeline.length - 1].getId() == nextTimeline[0].getId()) {
+            // if this is the first searchResult we merge then add all values of the current searchResult
+            if (mergedTimeline.length == 0) {
+                for (let j = mergedTimeline.length == 0 ? 0 : 1; j < result.context.getTimeline().length; j++) {
+                    mergedTimeline.push(currentTimeline[j]);
+                }
+                ourEventsIndexes.push(result.context.getOurEventIndex());
+            }
+
+            // merge the events of the next searchResult
+            for (let j = 1; j < nextTimeline.length; j++) {
+                mergedTimeline.push(nextTimeline[j]);
+            }
+
+            // add the index of the matching event of the next searchResult
+            ourEventsIndexes.push(
+                ourEventsIndexes[ourEventsIndexes.length - 1] + results.results[i - 1].context.getOurEventIndex() + 1,
+            );
+
+            continue;
+        }
+
+        if (mergedTimeline.length == 0) {
+            mergedTimeline = result.context.getTimeline();
+            ourEventsIndexes = [];
+            ourEventsIndexes.push(result.context.getOurEventIndex());
+        }
+
+        let permalinkCreator = permalinkCreators.get(roomId);
+        if (!permalinkCreator) {
+            permalinkCreator = new RoomPermalinkCreator(room);
+            permalinkCreator.start();
+            permalinkCreators.set(roomId, permalinkCreator);
+        }
+
+        ret.push(
+            <SearchResultTile
+                key={mxEv.getId()}
+                timeline={mergedTimeline}
+                ourEventsIndexes={ourEventsIndexes}
+                searchHighlights={highlights ?? []}
+                resultLink={resultLink}
+                permalinkCreator={permalinkCreator}
+            />,
+        );
+
+        ourEventsIndexes = [];
+        mergedTimeline = [];
+    }
+
+    return (
+        <ScrollPanel
+            ref={onRef}
+            className={"mx_RoomView_searchResultsPanel " + className}
+            onFillRequest={onSearchResultsFillRequest}
+            resizeNotifier={resizeNotifier}
+        >
+            <li className="mx_RoomView_scrollheader" />
+            {/* Xóa dropdown lọc người gửi */}
+            {/* <div style={{padding: 16, paddingBottom: 0}}>
+                ...
+            </div> */}
+            {ret}
+        </ScrollPanel>
+    );
+};
