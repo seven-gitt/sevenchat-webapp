@@ -2096,7 +2096,7 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
                     email={email}
                     brand={this.props.config.brand}
                     onLoggedIn={this.onRegisterFlowComplete}
-                    onLoginClick={this.onLoginClick}
+                    onLoginClick={() => this.showScreen("login")}
                     onServerConfigChange={this.onServerConfigChange}
                     defaultDeviceDisplayName={this.props.defaultDeviceDisplayName}
                     fragmentAfterLogin={fragmentAfterLogin}

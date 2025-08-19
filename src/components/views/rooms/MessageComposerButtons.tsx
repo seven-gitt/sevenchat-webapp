@@ -35,6 +35,7 @@ import { filterBoolean } from "../../../utils/arrays";
 import { useSettingValue } from "../../../hooks/useSettings";
 import AccessibleButton, { type ButtonEvent } from "../elements/AccessibleButton";
 import { useScopedRoomContext } from "../../../contexts/ScopedRoomContext.tsx";
+import ContextMenu, { aboveLeftOf, useContextMenu } from "../../structures/ContextMenu";
 
 interface IProps {
     addEmoji: (emoji: string) => boolean;
@@ -79,6 +80,7 @@ const MessageComposerButtons: React.FC<IProps> = (props: IProps) => {
             ) : (
                 emojiButton(props)
             ),
+            gifButton(props),
         ];
         moreButtons = [
             uploadButton(), // props passed via UploadButtonContext
@@ -98,6 +100,7 @@ const MessageComposerButtons: React.FC<IProps> = (props: IProps) => {
             ) : (
                 emojiButton(props)
             ),
+            gifButton(props),
             uploadButton(), // props passed via UploadButtonContext
         ];
         moreButtons = [
@@ -148,6 +151,53 @@ function emojiButton(props: IProps): ReactElement {
         <EmojiButton
             key="emoji_button"
             addEmoji={props.addEmoji}
+            menuPosition={props.menuPosition}
+            className="mx_MessageComposer_button"
+        />
+    );
+}
+
+function GifButton({ menuPosition, className }: { menuPosition?: MenuProps; className?: string }): JSX.Element {
+    const overflowMenuCloser = useContext(OverflowMenuContext);
+    const [menuDisplayed, button, openMenu, closeMenu] = useContextMenu();
+
+    let contextMenu: React.ReactElement | null = null;
+    if (menuDisplayed && button.current) {
+        const position = menuPosition ?? aboveLeftOf(button.current.getBoundingClientRect());
+        const onFinished = (): void => {
+            closeMenu();
+            overflowMenuCloser?.();
+        };
+        contextMenu = (
+            <ContextMenu {...position} onFinished={onFinished} managed={false}>
+                <div style={{ padding: 24, minWidth: 240, minHeight: 120, textAlign: "center" }}>
+                    <strong>GIF Popup</strong>
+                    <div style={{ marginTop: 8, color: '#888' }}>(Chức năng tìm/chọn GIF sẽ được thêm ở đây)</div>
+                </div>
+            </ContextMenu>
+        );
+    }
+    const computedClassName = classNames("mx_GifButton", className, {
+        mx_GifButton_highlight: menuDisplayed,
+    });
+    return (
+        <>
+            <CollapsibleButton
+                className={computedClassName}
+                iconClassName="mx_MessageComposer_gif"
+                onClick={openMenu}
+                title={"GIF"}
+                inputRef={button}
+            />
+            {contextMenu}
+        </>
+    );
+}
+
+function gifButton(props: IProps): ReactElement {
+    return (
+        <GifButton
+            key="gif_button"
             menuPosition={props.menuPosition}
             className="mx_MessageComposer_button"
         />

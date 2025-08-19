@@ -639,16 +639,14 @@ export default class Registration extends React.Component<IProps, IState> {
 
         const signIn = (
             <span className="mx_AuthBody_changeFlow">
-                {_t(
-                    "auth|sign_in_instead_prompt",
-                    {},
-                    {
-                        a: (sub) => (
-                            <AccessibleButton kind="link_inline" onClick={this.onLoginClick}>
-                                {sub}
-                            </AccessibleButton>
-                        ),
-                    },
+                {"Đăng nhập".split(/(Đăng nhập)/g).map((part, i) =>
+                    part === "Đăng nhập" ? (
+                        <AccessibleButton key={i} kind="link_inline" onClick={this.onLoginClick}>
+                            {part}
+                        </AccessibleButton>
+                    ) : (
+                        part
+                    ),
                 )}
             </span>
         );
