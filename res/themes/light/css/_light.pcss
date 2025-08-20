@@ -206,7 +206,14 @@ $imagebody-giflabel-color: $accent-fg-color;
 
 /* RoomList */
 /* ******************** */
-$roomlist-bg-color: rgba(245, 245, 245, 0.9);
+$roomlist-bg-color: #dce4ed;
+
+/* Ensure active/selected chat tiles appear white in light theme only */
+.cpd-theme-light .mx_RoomTile.mx_RoomTile_selected,
+.cpd-theme-light .mx_RoomTile.mx_RoomTile_selected:hover,
+.cpd-theme-light .mx_RoomTile.mx_RoomTile_selected:focus-within {
+    background-color: #ffffff !important;
+}
 $roomsublist-skeleton-ui-bg: linear-gradient(180deg, $background 0%, #ffffff00 100%);
 $roomtile-default-badge-bg-color: var(--cpd-color-icon-secondary);
 /* ******************** */
