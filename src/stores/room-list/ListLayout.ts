@@ -8,7 +8,7 @@ Please see LICENSE files in the repository root for full details.
 
 import { type TagID } from "./models";
 
-const TILE_HEIGHT_PX = 44;
+const TILE_HEIGHT_PX = 48;
 
 interface ISerializedListLayout {
     numTiles: number;

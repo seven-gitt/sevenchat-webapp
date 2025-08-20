@@ -176,6 +176,15 @@ Please see LICENSE files in the repository root for full details.
     }
 }
 
+/* Increase vertical spacing when tiles are rendered inside a RoomSublist.
+   Using a more specific selector to override the base margin without !important. */
+.mx_RoomSublist .mx_RoomSublist_resizeBox .mx_RoomSublist_tiles > .mx_RoomTile {
+    margin-bottom: 0;
+}
+.mx_RoomSublist .mx_RoomSublist_resizeBox .mx_RoomSublist_tiles > .mx_RoomTile:not(:last-child) {
+    margin-bottom: 8px;
+}
+
 /* We use these both in context menus and the room tiles */
 .mx_RoomTile_iconBell::before {
     mask-image: url("$(res)/img/element-icons/notifications.svg");

@@ -195,6 +195,8 @@ Please see LICENSE files in the repository root for full details.
             /* as the box model should be top aligned. Happens in both FF and Chromium */
             display: flex;
             flex-direction: column;
+            /* ensure layout height math matches per-tile spacing by compensating for the last tile */
+            padding-bottom: 8px;
             align-self: stretch;
             /* without this Firefox will prefer pushing the resizer & show more/less button into the overflow */
             min-height: 0;
