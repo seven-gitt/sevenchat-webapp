@@ -422,3 +422,21 @@ Please see LICENSE files in the repository root for full details.
     width: 32px; /* cut off the horizontal lines in the svg */
     margin-left: 10px; /* align with sublist + buttons */
 }
+
+/* Hide unread badge on sublist headers (Favourites/People/Rooms),
+   but keep per-room badges intact. Also reclaim the header text width. */
+/* Ensure higher specificity than existing header rules */
+.mx_RoomSublist .mx_RoomSublist_headerContainer .mx_RoomSublist_badgeContainer {
+    display: none;
+}
+/* Hide the minimized/sibling variant as well */
+.mx_RoomSublist.mx_RoomSublist_minimized > .mx_RoomSublist_badgeContainer {
+    display: none;
+}
+.mx_RoomSublist .mx_RoomSublist_headerContainer .mx_RoomSublist_headerText {
+    max-width: 100%;
+}
+/* Force-hide any badge component rendered in headers (does not affect per-room tiles) */
+.mx_RoomSublist .mx_RoomSublist_headerContainer .mx_NotificationBadge {
+    display: none !important;
+}
