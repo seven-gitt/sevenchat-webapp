@@ -660,7 +660,7 @@ export class MessageComposer extends React.Component<IProps, IState> {
                                 {controls}
                                 {canSendMessages && (
                                     <MessageComposerButtons
-                                        addEmoji={this.addEmoji}
+                                        addContent={this.addEmoji}
                                         haveRecording={this.state.haveRecording}
                                         isMenuOpen={this.state.isMenuOpen}
                                         isStickerPickerOpen={this.state.isStickerPickerOpen}

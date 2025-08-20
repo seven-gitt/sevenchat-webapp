@@ -38,6 +38,7 @@ import PublicIcon from "@vector-im/compound-design-tokens/assets/web/icons/publi
 import ErrorIcon from "@vector-im/compound-design-tokens/assets/web/icons/error";
 import ErrorSolidIcon from "@vector-im/compound-design-tokens/assets/web/icons/error-solid";
 import ChevronDownIcon from "@vector-im/compound-design-tokens/assets/web/icons/chevron-down";
+import DeleteIcon from "@vector-im/compound-design-tokens/assets/web/icons/delete";
 import { JoinRule, type Room } from "matrix-js-sdk/src/matrix";
 
 import BaseCard from "./BaseCard.tsx";
@@ -317,6 +318,15 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                         label={_t("action|report_room")}
                         onSelect={vm.onReportRoomClick}
                     /> */}
+                    {vm.canDeleteRoom && (
+                        <MenuItem
+                            className="mx_RoomSummaryCard_delete"
+                            Icon={DeleteIcon}
+                            kind="critical"
+                            label={_t("action|delete_room")}
+                            onSelect={vm.onDeleteRoomClick}
+                        />
+                    )}
                     <MenuItem
                         className="mx_RoomSummaryCard_leave"
                         Icon={LeaveIcon}

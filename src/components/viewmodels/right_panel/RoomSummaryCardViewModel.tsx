@@ -28,12 +28,17 @@ import { PollHistoryDialog } from "../../views/dialogs/PollHistoryDialog";
 import Modal from "../../../Modal";
 import ExportDialog from "../../views/dialogs/ExportDialog";
 import { ShareDialog } from "../../views/dialogs/ShareDialog";
+import QuestionDialog from "../../views/dialogs/QuestionDialog";
+import { _t } from "../../../languageHandler";
+import React from "react";
 import { type RoomPermalinkCreator } from "../../../utils/permalinks/Permalinks";
 import { ReportRoomDialog } from "../../views/dialogs/ReportRoomDialog";
 import { Key } from "../../../Keyboard";
 import { usePinnedEvents } from "../../../hooks/usePinnedEvents";
 import { tagRoom } from "../../../utils/room/tagRoom";
 import { inviteToRoom } from "../../../utils/room/inviteToRoom";
+import ErrorDialog from "../../views/dialogs/ErrorDialog";
+import { logger } from "matrix-js-sdk/src/logger";
 
 export interface RoomSummaryCardState {
     isDirectMessage: boolean;
@@ -91,6 +96,8 @@ export interface RoomSummaryCardState {
     onReportRoomClick: () => Promise<void>;
     onFavoriteToggleClick: () => void;
     onInviteToRoomClick: () => void;
+    onDeleteRoomClick: () => Promise<void>;
+    canDeleteRoom: boolean;
 }
 
 /**
@@ -251,6 +258,53 @@ export function useRoomSummaryCardViewModel(
         inviteToRoom(room);
     };
 
+    // Check if current user is admin (power level 100) and room is not a direct message
+    // Direct messages (1:1 chats) should not have delete functionality as they are not "groups"
+    const canDeleteRoom = (() => {
+        const me = room.getMember(cli.getUserId() || "");
+        return me?.powerLevel === 100 && !isDirectMessage;
+    })();
+
+    const onDeleteRoomClick = async (): Promise<void> => {
+        const { finished } = Modal.createDialog(QuestionDialog, {
+            title: _t("action|delete_room"),
+            description: (
+                <span>
+                    {_t("room|delete_room_warning", {
+                        roomName: room.name || _t("common|unnamed_room"),
+                    })}
+                </span>
+            ),
+            button: _t("action|delete"),
+            danger: true,
+        });
+
+        const [confirmed] = await finished;
+        if (!confirmed) return;
+
+        try {
+            // Kick all members from the room
+            const members = room.getJoinedMembers();
+            for (const member of members) {
+                if (member.userId !== cli.getUserId()) {
+                    await cli.kick(room.roomId, member.userId, "Room deleted by admin");
+                }
+            }
+            
+            // Leave the room (which will delete it if we're the last member)
+            await cli.leave(room.roomId);
+            
+            // Navigate to home page
+            defaultDispatcher.dispatch({ action: Action.ViewHomePage });
+        } catch (error) {
+            logger.error("Failed to delete room:", error);
+            Modal.createDialog(ErrorDialog, {
+                title: _t("common|error"),
+                description: _t("room|delete_room_error"),
+            });
+        }
+    };
+
     // Room Search element ref
     const { searchInputRef, onUpdateSearchInput } = useSearchInput(onSearchCancel);
 
@@ -280,5 +334,7 @@ export function useRoomSummaryCardViewModel(
         onUpdateSearchInput,
         onFavoriteToggleClick,
         onInviteToRoomClick,
+        onDeleteRoomClick,
+        canDeleteRoom,
     };
 }

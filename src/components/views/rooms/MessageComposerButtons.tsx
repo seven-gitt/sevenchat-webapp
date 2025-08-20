@@ -14,7 +14,7 @@ import {
     THREAD_RELATION_TYPE,
     M_POLL_START,
 } from "matrix-js-sdk/src/matrix";
-import React, { type JSX, createContext, type ReactElement, type ReactNode, useContext, useRef } from "react";
+import React, { type JSX, createContext, type ReactElement, type ReactNode, useContext, useRef, useState, useEffect } from "react";
 
 import { _t } from "../../../languageHandler";
 import { CollapsibleButton } from "./CollapsibleButton";
@@ -36,9 +36,11 @@ import { useSettingValue } from "../../../hooks/useSettings";
 import AccessibleButton, { type ButtonEvent } from "../elements/AccessibleButton";
 import { useScopedRoomContext } from "../../../contexts/ScopedRoomContext.tsx";
 import ContextMenu, { aboveLeftOf, useContextMenu } from "../../structures/ContextMenu";
+import RoomContext from "../../../contexts/RoomContext";
+import { useTheme } from "../../../hooks/useTheme";
 
 interface IProps {
-    addEmoji: (emoji: string) => boolean;
+    addContent: (content: string) => boolean;
     haveRecording: boolean;
     isMenuOpen: boolean;
     isStickerPickerOpen: boolean;
@@ -150,16 +152,93 @@ function emojiButton(props: IProps): ReactElement {
     return (
         <EmojiButton
             key="emoji_button"
-            addEmoji={props.addEmoji}
+            addEmoji={props.addContent}
             menuPosition={props.menuPosition}
             className="mx_MessageComposer_button"
         />
     );
 }
 
-function GifButton({ menuPosition, className }: { menuPosition?: MenuProps; className?: string }): JSX.Element {
+function GifButton({ menuPosition, className, relation }: { menuPosition?: MenuProps; className?: string; relation?: IEventRelation }): JSX.Element {
     const overflowMenuCloser = useContext(OverflowMenuContext);
+    const matrixClient = useContext(MatrixClientContext);
+    const { room } = useScopedRoomContext("room");
+    const { theme } = useTheme();
     const [menuDisplayed, button, openMenu, closeMenu] = useContextMenu();
+    const [search, setSearch] = useState("");
+    const [gifs, setGifs] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+    const [uploadError, setUploadError] = useState("");
+    const [recentGifs, setRecentGifs] = useState<string[]>([]);
+
+    // Khi menuDisplayed hoặc search thay đổi, nếu search rỗng thì load recentGifs và setGifs ngay lập tức
+    useEffect(() => {
+        if (!menuDisplayed) return;
+        if (search.trim() === "") {
+            const stored = localStorage.getItem("recentGifs");
+            let recents: string[] = [];
+            if (stored) {
+                try { recents = JSON.parse(stored); } catch {}
+            }
+            setRecentGifs(recents);
+            setGifs(recents.map(url => ({ id: url, media_formats: { gif: { url } } })));
+            setLoading(false);
+            setError("");
+            return;
+        }
+        // Nếu có keyword thì fetch GIFs
+        setLoading(true);
+        setError("");
+        setUploadError("");
+        const key = "AIzaSyAMs-zGFu1BFxDdc6p9f1K84snQadw9uGw";
+        const q = search.trim();
+        fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(q)}&key=${key}&limit=100&media_filter=gif`)
+            .then(res => res.json())
+            .then(data => {
+                setGifs(data.results || []);
+                setLoading(false);
+            })
+            .catch(() => {
+                setError("Không thể tải GIF. Vui lòng thử lại.");
+                setLoading(false);
+            });
+    }, [menuDisplayed, search]);
+
+    async function handleGifClick(gifUrl: string) {
+        setUploadError("");
+        if (!room) return;
+        try {
+            const res = await fetch(gifUrl);
+            const blob = await res.blob();
+            // Lấy tên file từ url hoặc random
+            const fileName = gifUrl.split("/").pop()?.split("?")[0] || `tenor.gif`;
+            const file = new File([blob], fileName, { type: blob.type || "image/gif" });
+            await ContentMessages.sharedInstance().sendContentToRoom(
+                file,
+                room.roomId,
+                relation,
+                matrixClient,
+                undefined // replyToEvent nếu cần, có thể truyền thêm
+            );
+            // Lưu vào recentGifs (localStorage)
+            let updated = [gifUrl, ...recentGifs.filter(url => url !== gifUrl)];
+            if (updated.length > 20) updated = updated.slice(0, 20);
+            setRecentGifs(updated);
+            localStorage.setItem("recentGifs", JSON.stringify(updated));
+            closeMenu();
+            overflowMenuCloser?.();
+        } catch (e) {
+            setUploadError("Không tải lên được GIF. Vui lòng thử lại.");
+        }
+    }
+
+    function handleRemoveRecentGif(gifUrl: string) {
+        const updated = recentGifs.filter(url => url !== gifUrl);
+        setRecentGifs(updated);
+        localStorage.setItem('recentGifs', JSON.stringify(updated));
+        setGifs(updated.map(url => ({ id: url, media_formats: { gif: { url } } })));
+    }
 
     let contextMenu: React.ReactElement | null = null;
     if (menuDisplayed && button.current) {
@@ -168,11 +247,97 @@ function GifButton({ menuPosition, className }: { menuPosition?: MenuProps; clas
             closeMenu();
             overflowMenuCloser?.();
         };
+        // Style cho theme
+        const isDark = theme === "dark";
+        const inputStyle = {
+            width: '90%',
+            padding: 8,
+            borderRadius: 4,
+            border: isDark ? '1px solid #444' : '1px solid #ccc',
+            fontSize: 14,
+            outline: 'none',
+            transition: 'border 0.2s',
+            boxShadow: isDark ? '0 1px 2px rgba(0,0,0,0.6)' : '0 1px 2px rgba(0,0,0,0.03)',
+            background: isDark ? '#23272f' : '#fafbfc',
+            color: isDark ? '#fff' : '#222',
+            marginBottom: 12,
+        };
+        const popupStyle: React.CSSProperties = {
+            display: 'flex',
+            flexDirection: 'column' as const,
+            alignItems: 'center',
+            padding: 16,
+            background: isDark ? '#181a20' : '#fff',
+            borderRadius: 12,
+        };
+        const gridStyle: React.CSSProperties = {
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 70px)',
+            gap: 8,
+            maxHeight: 260,
+            overflowY: 'auto' as const,
+            justifyContent: 'center',
+        };
         contextMenu = (
             <ContextMenu {...position} onFinished={onFinished} managed={false}>
-                <div style={{ padding: 24, minWidth: 240, minHeight: 120, textAlign: "center" }}>
-                    <strong>GIF Popup</strong>
-                    <div style={{ marginTop: 8, color: '#888' }}>(Chức năng tìm/chọn GIF sẽ được thêm ở đây)</div>
+                <div style={popupStyle}>
+                    <div style={{ width: 304 }}>
+                        <input
+                            type="text"
+                            placeholder="Tìm GIF..."
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            style={inputStyle}
+                            autoFocus
+                        />
+                        {search.trim() === "" && recentGifs.length > 0 && (
+                            <div style={{ fontWeight: 500, marginBottom: 8 }}>Đã dùng gần đây</div>
+                        )}
+                        {loading && <div>Đang tải...</div>}
+                        {error && <div style={{ color: 'red' }}>{error}</div>}
+                        {uploadError && <div style={{ color: 'red' }}>{uploadError}</div>}
+                        <div style={gridStyle}>
+                            {gifs.map((gif, idx) => {
+                                const gifUrl = gif.media_formats?.gif?.url || gif.media[0]?.gif?.url;
+                                // Nếu là recentGifs (search rỗng), hiển thị nút X
+                                const isRecent = search.trim() === "" && recentGifs.includes(gifUrl);
+                                return (
+                                    <div key={gif.id || idx} style={{ position: 'relative' }}>
+                                        <img
+                                            src={gifUrl}
+                                            alt={gif.content_description || 'gif'}
+                                            style={{ width: 70, height: 70, objectFit: 'cover', borderRadius: 6, cursor: 'pointer', background: isDark ? '#222' : '#eee' }}
+                                            onClick={() => handleGifClick(gifUrl)}
+                                            loading="lazy"
+                                        />
+                                        {isRecent && (
+                                            <button
+                                                onClick={e => { e.stopPropagation(); handleRemoveRecentGif(gifUrl); }}
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: 2,
+                                                    right: 2,
+                                                    background: 'rgba(0,0,0,0.5)',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: '50%',
+                                                    width: 18,
+                                                    height: 18,
+                                                    cursor: 'pointer',
+                                                    fontSize: 12,
+                                                    lineHeight: '18px',
+                                                    padding: 0,
+                                                    zIndex: 2,
+                                                }}
+                                                title="Xoá GIF này khỏi danh sách"
+                                            >×</button>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        {(!loading && gifs.length === 0 && !error) && <div>Không tìm thấy GIF phù hợp.</div>}
+                    </div>
                 </div>
             </ContextMenu>
         );
@@ -200,6 +365,7 @@ function gifButton(props: IProps): ReactElement {
             key="gif_button"
             menuPosition={props.menuPosition}
             className="mx_MessageComposer_button"
+            relation={props.relation}
         />
     );
 }

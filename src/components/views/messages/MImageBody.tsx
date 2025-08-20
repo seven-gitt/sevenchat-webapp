@@ -502,6 +502,7 @@ export class MImageBodyInner extends React.Component<IProps, IState> {
                     src={url}
                     ref={this.image}
                     alt={content.body}
+                    loading="lazy"
                     onError={this.onImageError}
                     onLoad={this.onImageLoad}
                     onMouseEnter={this.onImageEnter}
