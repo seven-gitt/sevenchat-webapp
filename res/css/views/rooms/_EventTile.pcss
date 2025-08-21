@@ -24,7 +24,7 @@ $left-gutter: 64px;
     flex-shrink: 0;
     max-width: 100%;
     clear: both; /* TODO: check if this is necessary */
-    padding-top: 18px;
+    padding-top: 4px; /* Reduced from 18px to minimize hover area */
     position: relative;
 
     &.mx_EventTile_info {
@@ -1011,7 +1011,24 @@ $left-gutter: 64px;
     }
 }
 
-.mx_EventTile:hover .mx_MessageActionBar,
+/* Disable hover on the entire EventTile by default */
+.mx_EventTile {
+    pointer-events: none;
+}
+
+/* Enable hover only on message content areas */
+.mx_EventTile_line,
+.mx_EventTile_content,
+.mx_EventTile_body,
+.mx_EventTile_avatar,
+.mx_MessageActionBar {
+    pointer-events: auto;
+}
+
+/* Show action bar only when hovering over message content */
+.mx_EventTile_line:hover .mx_MessageActionBar,
+.mx_EventTile_content:hover .mx_MessageActionBar,
+.mx_EventTile_body:hover .mx_MessageActionBar,
 .mx_EventTile.mx_EventTile_actionBarFocused .mx_MessageActionBar,
 [data-whatinput="keyboard"] .mx_EventTile:focus-within .mx_MessageActionBar,
 .mx_EventTile:focus-visible:focus-within .mx_MessageActionBar {
