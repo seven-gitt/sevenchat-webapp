@@ -4,11 +4,9 @@ SPDX-License-Identifier: AGPL-3.0-only OR GPL-3.0-only
 Please see LICENSE files in the repository root for full details.
 */
 
-import { type RoomMember } from "matrix-js-sdk/src/matrix";
+import { type RoomMember, EventTimeline } from "matrix-js-sdk/src/matrix";
 
 import { useMatrixClientContext } from "../../../../../contexts/MatrixClientContext";
-import Modal from "../../../../../Modal";
-import BulkRedactDialog from "../../../../views/dialogs/BulkRedactDialog";
 
 export interface RedactMessagesButtonState {
     onRedactAllMessagesClick: () => void;
@@ -26,10 +24,30 @@ export const useRedactMessagesButtonViewModel = (member: RoomMember): RedactMess
         const room = cli.getRoom(member.roomId);
         if (!room) return;
 
-        Modal.createDialog(BulkRedactDialog, {
-            matrixClient: cli,
-            room,
-            member,
+        // Directly delete messages without confirmation dialog
+        // This will trigger the bulk redact process immediately
+        let timeline: EventTimeline | null = room.getLiveTimeline();
+        const eventsToRedact: any[] = [];
+        
+        // Collect recent messages from the user
+        while (timeline) {
+            const events = timeline.getEvents();
+            for (const event of events) {
+                if (event.getSender() === member.userId && event.getType() === "m.room.message") {
+                    eventsToRedact.push(event);
+                }
+            }
+            const nextTimeline = timeline.getNeighbouringTimeline(EventTimeline.BACKWARDS);
+            timeline = nextTimeline; // This can be null
+        }
+
+        // Delete messages directly
+        eventsToRedact.reverse().forEach(async (event) => {
+            try {
+                await cli.redactEvent(room.roomId, event.getId()!);
+            } catch (err) {
+                console.error("Could not redact", event.getId(), err);
+            }
         });
     };
 

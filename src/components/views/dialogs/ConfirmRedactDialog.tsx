@@ -58,32 +58,25 @@ export function createRedactEventDialog({
     const roomId = mxEvent.getRoomId();
 
     if (!roomId) throw new Error(`cannot redact event ${mxEvent.getId()} without room ID`);
-    const { finished } = Modal.createDialog(ConfirmRedactDialog, { event: mxEvent }, "mx_Dialog_confirmredact");
+    
+    // Skip confirmation dialog and directly delete the message
+    const cli = MatrixClientPeg.safeGet();
+    const withRelTypes: Pick<IRedactOpts, "with_rel_types"> = {};
 
-    finished.then(async ([proceed, reason]) => {
-        if (!proceed) return;
-
-        const cli = MatrixClientPeg.safeGet();
-        const withRelTypes: Pick<IRedactOpts, "with_rel_types"> = {};
-
-        try {
-            onCloseDialog?.();
-            await cli.redactEvent(roomId, eventId, undefined, {
-                ...(reason ? { reason } : {}),
-                ...withRelTypes,
+    // Directly call redactEvent without confirmation
+    cli.redactEvent(roomId, eventId, undefined, {
+        ...withRelTypes,
+    }).catch((e: any) => {
+        const code = e.errcode || e.statusCode;
+        // only show the dialog if failing for something other than a network error
+        // (e.g. no errcode or statusCode) as in that case the redactions end up in the
+        // detached queue and we show the room status bar to allow retry
+        if (typeof code !== "undefined") {
+            // display error message stating you couldn't delete this.
+            Modal.createDialog(ErrorDialog, {
+                title: _t("common|error"),
+                description: _t("redact|error", { code }),
             });
-        } catch (e: any) {
-            const code = e.errcode || e.statusCode;
-            // only show the dialog if failing for something other than a network error
-            // (e.g. no errcode or statusCode) as in that case the redactions end up in the
-            // detached queue and we show the room status bar to allow retry
-            if (typeof code !== "undefined") {
-                // display error message stating you couldn't delete this.
-                Modal.createDialog(ErrorDialog, {
-                    title: _t("common|error"),
-                    description: _t("redact|error", { code }),
-                });
-            }
         }
     });
 }

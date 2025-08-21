@@ -66,16 +66,13 @@ export default class EditHistoryMessage extends React.PureComponent<IProps, ISta
         const event = this.props.mxEvent;
         const cli = this.context;
 
-        Modal.createDialog(
-            ConfirmAndWaitRedactDialog,
-            {
-                event,
-                redact: async () => {
-                    await cli.redactEvent(event.getRoomId()!, event.getId()!);
-                },
-            },
-            "mx_Dialog_confirmredact",
-        );
+        // Directly delete the message without confirmation dialog
+        try {
+            await cli.redactEvent(event.getRoomId()!, event.getId()!);
+        } catch (error) {
+            // Handle error silently or show a simple error message
+            console.error("Failed to delete message:", error);
+        }
     };
 
     private onViewSourceClick = (): void => {
