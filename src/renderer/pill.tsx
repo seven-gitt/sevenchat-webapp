@@ -18,7 +18,7 @@ import { parsePermalink } from "../utils/permalinks/Permalinks";
 import { type PermalinkParts } from "../utils/permalinks/PermalinkConstructor";
 import { hasParentMatching, type RendererMap, type ParentNode } from "./utils.tsx";
 
-const AT_ROOM_REGEX = PushProcessor.getPushRuleGlobRegex("@room", true, "gmi");
+const AT_ROOM_REGEX = PushProcessor.getPushRuleGlobRegex("@All", true, "gmi");
 
 /**
  * A node here is an A element with a href attribute tag.

@@ -264,7 +264,7 @@ export const DEFAULT_PUSH_RULES: IPushRules = Object.freeze({
             {
                 conditions: [
                     { kind: "sender_notification_permission", key: "room" },
-                    { kind: "event_match", key: "content.body", pattern: "@room" },
+                    { kind: "event_match", key: "content.body", pattern: "@All" },
                 ],
                 actions: ["notify", { set_tweak: "highlight" }],
                 rule_id: ".m.rule.roomnotif",

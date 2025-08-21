@@ -18,8 +18,8 @@ Please see LICENSE files in the repository root for full details.
     overflow: hidden;
     cursor: pointer;
 
-    color: var(--cpd-color-text-on-solid-primary) !important; /* To override .markdown-body */
-    background-color: $pill-bg-color !important; /* To override .markdown-body */
+    color: #1a7bff !important; /* Changed to blue color for mentions */
+    background-color: transparent !important; /* Remove background color */
 
     > * {
         pointer-events: none;
@@ -28,27 +28,26 @@ Please see LICENSE files in the repository root for full details.
     &.mx_UserPill_me,
     &.mx_AtRoomPill,
     &.mx_KeywordPill {
-        background-color: var(--cpd-color-bg-critical-primary) !important; /* To override .markdown-body */
+        background-color: transparent !important; /* Remove critical background color */
+        color: #1a7bff !important; /* Use blue color for all mention types */
     }
 
     &:hover {
-        background-color: $pill-hover-bg-color !important; /* To override .markdown-body */
+        background-color: transparent !important; /* Remove hover background */
     }
 
     &:active {
-        background-color: $pill-press-bg-color !important; /* To override .markdown-body */
+        background-color: transparent !important; /* Remove press background */
     }
 
     &.mx_UserPill_me:hover {
-        background-color: var(
-            --cpd-color-bg-critical-hovered
-        ) !important; /* To override .markdown-body | same on both themes */
+        background-color: transparent !important; /* Remove hover background for user pills */
     }
 
     /* We don't want to indicate clickability */
     &.mx_AtRoomPill:hover,
     &.mx_KeywordPill:hover {
-        background-color: var(--cpd-color-bg-critical-primary) !important; /* To override .markdown-body */
+        background-color: transparent !important; /* Remove hover background */
         cursor: unset;
     }
 
@@ -57,6 +56,18 @@ Please see LICENSE files in the repository root for full details.
         margin-inline-start: -0.3em; /* Otherwise the gap is too large */
         margin-inline-end: 0.2em;
         min-width: $font-16px; /* ensure the avatar is not compressed */
+    }
+
+    /* Hide avatar for @room and @user mentions */
+    &.mx_AtRoomPill::before,
+    &.mx_UserPill::before {
+        display: none !important; /* Hide avatar pseudo element */
+    }
+
+    /* Hide avatar components for @room and @user mentions */
+    &.mx_AtRoomPill .mx_BaseAvatar,
+    &.mx_UserPill .mx_BaseAvatar {
+        display: none !important; /* Hide avatar components */
     }
 
     .mx_Pill_text {

@@ -513,7 +513,7 @@
     },
     "composer": {
         "autocomplete": {
-            "@room_description": "Notificar a toda la sala",
+            "@All_description": "Notificar a toda la sala",
             "command_a11y": "Comando Autocompletar",
             "command_description": "Comandos",
             "emoji_a11y": "Autocompletar Emoji",

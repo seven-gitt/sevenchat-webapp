@@ -115,69 +115,17 @@ export function getMentionAttributes(
     const attributes: AllowedMentionAttributes = new Map();
 
     if (completion.type === "user") {
-        // logic as used in UserPillPart.setAvatar in parts.ts
-        const mentionedMember = room.getMember(completion.completionId || "");
-
-        if (!mentionedMember) return attributes;
-
-        const name = mentionedMember.name || mentionedMember.userId;
-        const defaultAvatarUrl = Avatar.defaultAvatarUrlForString(mentionedMember.userId);
-        const avatarUrl = Avatar.avatarUrlForMember(mentionedMember, 16, 16, "crop");
-        let initialLetter = defaultLetterContent;
-        if (avatarUrl === defaultAvatarUrl) {
-            initialLetter = Avatar.getInitialLetter(name) ?? defaultLetterContent;
-        }
-
+        // Don't set avatar for @user mentions
         attributes.set("data-mention-type", completion.type);
-        attributes.set(
-            "style",
-            getCSSProperties({
-                url: avatarUrl,
-                initialLetter,
-                id: mentionedMember.userId,
-            }),
-        );
+        attributes.set("style", "");
     } else if (completion.type === "room") {
-        // logic as used in RoomPillPart.setAvatar in parts.ts
-        const mentionedRoom = getRoomFromCompletion(completion, client);
-        const aliasFromCompletion = completion.completion;
-
-        let initialLetter = defaultLetterContent;
-        let avatarUrl = Avatar.avatarUrlForRoom(mentionedRoom ?? null, 16, 16, "crop");
-        if (!avatarUrl) {
-            initialLetter = Avatar.getInitialLetter(mentionedRoom?.name || aliasFromCompletion) ?? defaultLetterContent;
-            avatarUrl = Avatar.defaultAvatarUrlForString(mentionedRoom?.roomId ?? aliasFromCompletion);
-        }
-
+        // Don't set avatar for room mentions
         attributes.set("data-mention-type", completion.type);
-        attributes.set(
-            "style",
-            getCSSProperties({
-                url: avatarUrl,
-                initialLetter,
-                id: mentionedRoom?.roomId ?? aliasFromCompletion,
-            }),
-        );
+        attributes.set("style", "");
     } else if (completion.type === "at-room") {
-        // logic as used in RoomPillPart.setAvatar in parts.ts, but now we know the current room
-        // from the arguments passed
-        let initialLetter = defaultLetterContent;
-        let avatarUrl = Avatar.avatarUrlForRoom(room, 16, 16, "crop");
-
-        if (!avatarUrl) {
-            initialLetter = Avatar.getInitialLetter(room.name) ?? defaultLetterContent;
-            avatarUrl = Avatar.defaultAvatarUrlForString(room.roomId);
-        }
-
+        // Don't set avatar for @room mentions
         attributes.set("data-mention-type", completion.type);
-        attributes.set(
-            "style",
-            getCSSProperties({
-                url: avatarUrl,
-                initialLetter,
-                id: room.roomId,
-            }),
-        );
+        attributes.set("style", "");
     }
 
     return attributes;

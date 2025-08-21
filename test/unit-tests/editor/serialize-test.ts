@@ -29,9 +29,9 @@ describe("editor/serialize", function () {
             const html = htmlSerializeIfNeeded(model, {});
             expect(html).toBe('<a href="https://matrix.to/#/#room:hs.tld">#room:hs.tld</a>');
         });
-        it("@room pill turns message into html", function () {
+        it("@All pill turns message into html", function () {
             const pc = createPartCreator();
-            const model = new EditorModel([pc.atRoomPill("@room")], pc);
+            const model = new EditorModel([pc.atRoomPill("@All")], pc);
             const html = htmlSerializeIfNeeded(model, {});
             expect(html).toBeFalsy();
         });

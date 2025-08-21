@@ -124,11 +124,11 @@ describe("createMessageContent", () => {
     });
 
     describe("Plaintext composer input", () => {
-        it("Should replace at-room mentions with `@room` in body", async () => {
-            const messageComposerState = `<a href="#" contenteditable="false" data-mention-type="at-room" style="some styling">@room</a> `;
+        it("Should replace at-room mentions with `@All` in body", async () => {
+            const messageComposerState = `<a href="#" contenteditable="false" data-mention-type="at-room" style="some styling">@All</a> `;
 
             const content = await createMessageContent(messageComposerState, false, {});
-            expect(content).toMatchObject({ body: "@room " });
+            expect(content).toMatchObject({ body: "@All " });
         });
 
         it("Should replace user mentions with user name in body", async () => {

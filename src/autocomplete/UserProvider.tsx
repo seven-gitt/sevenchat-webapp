@@ -33,7 +33,7 @@ import MemberAvatar from "../components/views/avatars/MemberAvatar";
 import { type TimelineRenderingType } from "../contexts/RoomContext";
 import UserIdentifierCustomisations from "../customisations/UserIdentifier";
 
-const USER_REGEX = /\B@\S*/g;
+const USER_REGEX = /@\S*/g;
 
 // used when you hit 'tab' - we allow some separator chars at the beginning
 // to allow you to tab-complete /mat into /(matthew)
@@ -105,13 +105,46 @@ export default class UserProvider extends AutocompleteProvider {
         // lazy-load user list into matcher
         if (!this.users) this.makeUsers();
 
-        const { command, range } = this.getCurrentCommand(rawQuery, selection, force);
-
-        const fullMatch = command?.[0];
-        // Don't search if the query is a single "@"
-        if (fullMatch && fullMatch !== "@") {
+        // Check if query starts with "@"
+        if (rawQuery.startsWith("@")) {
+            const { command, range } = this.getCurrentCommand(rawQuery, selection, force);
+            
+            // Use fallback range if not defined
+            const fallbackRange = range || { start: selection.start, end: selection.end };
+            
             // Don't include the '@' in our search query - it's only used as a way to trigger completion
-            const query = fullMatch.startsWith("@") ? fullMatch.substring(1) : fullMatch;
+            const query = rawQuery.substring(1);
+            
+            // If query is empty (just "@"), return all users
+            if (query === "") {
+                // Ensure we have users loaded
+                if (!this.users || this.users.length === 0) {
+                    this.makeUsers();
+                }
+                
+                return this.users?.slice(0, limit).map((user) => {
+                    const description = UserIdentifierCustomisations.getDisplayUserIdentifier?.(user.userId, {
+                        roomId: this.room.roomId,
+                        withDisplayName: true,
+                    });
+                    const displayName = user.name || user.userId || "";
+                    return {
+                        completion: user.rawDisplayName,
+                        completionId: user.userId,
+                        type: "user",
+                        suffix: " ",
+                        href: makeUserPermalink(user.userId),
+                        component: (
+                            <PillCompletion title={displayName} description={description ?? undefined}>
+                                <MemberAvatar member={user} size="24px" />
+                            </PillCompletion>
+                        ),
+                        range: fallbackRange,
+                    };
+                }) || [];
+            }
+            
+            // Otherwise, search with the query
             return this.matcher.match(query, limit).map((user) => {
                 const description = UserIdentifierCustomisations.getDisplayUserIdentifier?.(user.userId, {
                     roomId: this.room.roomId,
@@ -124,14 +157,14 @@ export default class UserProvider extends AutocompleteProvider {
                     completion: user.rawDisplayName,
                     completionId: user.userId,
                     type: "user",
-                    suffix: selection.beginning && range!.start === 0 ? ": " : " ",
+                    suffix: " ",
                     href: makeUserPermalink(user.userId),
                     component: (
                         <PillCompletion title={displayName} description={description ?? undefined}>
                             <MemberAvatar member={user} size="24px" />
                         </PillCompletion>
                     ),
-                    range: range!,
+                    range: fallbackRange,
                 };
             });
         }

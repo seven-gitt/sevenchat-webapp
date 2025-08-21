@@ -205,9 +205,9 @@ describe("WysiwygComposer", () => {
             },
             {
                 type: "at-room",
-                completion: "@room",
+                completion: "@All",
                 range: { start: 1, end: 1 },
-                component: <div>@room</div>,
+                component: <div>@All</div>,
             },
             {
                 type: "community",
@@ -397,14 +397,14 @@ describe("WysiwygComposer", () => {
             expect(screen.getByText("/spoiler")).toBeInTheDocument();
         });
 
-        it("selecting an at-room completion inserts @room", async () => {
+        it("selecting an at-room completion inserts @All", async () => {
             await insertMentionInput();
 
             // select the room suggestion
-            await userEvent.click(screen.getByText("@room"));
+            await userEvent.click(screen.getByText("@All"));
 
-            // check that it has inserted the @room link
-            expect(screen.getByRole("link", { name: "@room" })).toBeInTheDocument();
+            // check that it has inserted the @All link
+            expect(screen.getByRole("link", { name: "@All" })).toBeInTheDocument();
         });
 
         it("allows a community completion to pass through", async () => {

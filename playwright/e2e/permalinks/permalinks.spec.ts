@@ -41,7 +41,7 @@ test.describe("permalinks", () => {
         await app.client.inviteUser(room1Id, bob.credentials.userId);
         await app.client.inviteUser(room2Id, charlotte.credentials.userId);
 
-        await app.client.sendMessage(room1Id, "At room mention: @room");
+        await app.client.sendMessage(room1Id, "At room mention: @All");
 
         await app.client.sendMessage(room1Id, `Permalink to Room 2: ${permalinkPrefix}${room2Id}`);
         await app.client.sendMessage(
@@ -77,7 +77,7 @@ test.describe("permalinks", () => {
         );
 
         const timeline = page.locator(".mx_RoomView_timeline");
-        getPill(timeline, "@room");
+        getPill(timeline, "@All");
 
         getPill(timeline, room2Name);
         getPill(timeline, unknownRoomAlias);

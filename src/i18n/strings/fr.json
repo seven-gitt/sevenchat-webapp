@@ -609,7 +609,7 @@
     },
     "composer": {
         "autocomplete": {
-            "@room_description": "Notifier tout le salon",
+            "@All_description": "Notifier tout le salon",
             "command_a11y": "Autocomplétion de commande",
             "command_description": "Commandes",
             "emoji_a11y": "Autocomplétion d’émoji",

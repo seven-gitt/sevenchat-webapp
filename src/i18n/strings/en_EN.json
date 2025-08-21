@@ -612,7 +612,7 @@
     },
     "composer": {
         "autocomplete": {
-            "@room_description": "Notify the whole room",
+            "@All_description": "Notify the whole room",
             "command_a11y": "Command Autocomplete",
             "command_description": "Commands",
             "emoji_a11y": "Emoji Autocomplete",

@@ -503,7 +503,7 @@
     },
     "composer": {
         "autocomplete": {
-            "@room_description": "Thông báo cho cả phòng",
+            "@All_description": "Thông báo cho cả nhóm",
             "command_a11y": "Tự động hoàn thành lệnh",
             "command_description": "Lệnh",
             "emoji_a11y": "Tự động hoàn thành biểu tượng cảm xúc",

@@ -446,6 +446,11 @@ class AtRoomPillPart extends RoomPillPart {
         return Type.AtRoomPill;
     }
 
+    protected setAvatar(node: HTMLElement): void {
+        // Don't set avatar for @room mentions
+        return;
+    }
+
     public serialize(): ISerializedPillPart {
         return {
             type: this.type,
@@ -472,17 +477,8 @@ class UserPillPart extends PillPart {
     }
 
     protected setAvatar(node: HTMLElement): void {
-        if (!this.member) {
-            return;
-        }
-        const name = this.member.name || this.member.userId;
-        const defaultAvatarUrl = Avatar.defaultAvatarUrlForString(this.member.userId);
-        const avatarUrl = Avatar.avatarUrlForMember(this.member, 16, 16, "crop");
-        let initialLetter = "";
-        if (avatarUrl === defaultAvatarUrl) {
-            initialLetter = Avatar.getInitialLetter(name) ?? "";
-        }
-        this.setAvatarVars(node, avatarUrl, initialLetter);
+        // Don't set avatar for @user mentions
+        return;
     }
 
     protected onClick = (): void => {
@@ -669,9 +665,8 @@ export class PartCreator {
         userId: string,
     ): [UserPillPart, PlainPart] {
         const pill = this.userPill(displayName, userId);
-        if (!SettingsStore.getValue("MessageComposerInput.insertTrailingColon")) {
-            insertTrailingCharacter = false;
-        }
+        // Always disable trailing colon for mentions
+        insertTrailingCharacter = false;
         const postfix = this.plain(insertTrailingCharacter ? ": " : " ");
         return [pill, postfix];
     }

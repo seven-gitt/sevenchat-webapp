@@ -21,7 +21,7 @@ import { _t } from "../../../languageHandler";
 export enum PillType {
     UserMention = "TYPE_USER_MENTION",
     RoomMention = "TYPE_ROOM_MENTION",
-    AtRoomMention = "TYPE_AT_ROOM_MENTION", // '@room' mention
+    AtRoomMention = "TYPE_AT_ROOM_MENTION", // '@All' mention
     EventInSameRoom = "TYPE_EVENT_IN_SAME_ROOM",
     EventInOtherRoom = "TYPE_EVENT_IN_OTHER_ROOM",
     Keyword = "TYPE_KEYWORD", // Used to highlight keywords that triggered a notification rule
@@ -138,10 +138,12 @@ export const Pill: React.FC<PillProps> = ({
         case PillType.AtRoomMention:
         case PillType.RoomMention:
         case "space":
-            avatar = <PillRoomAvatar shouldShowPillAvatar={shouldShowPillAvatar} room={targetRoom} />;
+            // Don't show avatar for @All mentions
+            avatar = null;
             break;
         case PillType.UserMention:
-            avatar = <PillMemberAvatar shouldShowPillAvatar={shouldShowPillAvatar} member={member} />;
+            // Don't show avatar for @user mentions
+            avatar = null;
             break;
         case PillType.Keyword:
             break;

@@ -141,7 +141,7 @@ export const usePermalink: (args: Args) => HookResult = ({
     let text = resourceId;
 
     if (type === PillType.AtRoomMention && permalinkRoom) {
-        text = "@room";
+        text = "@All";
     } else if (type === PillType.UserMention && member) {
         text = member.name || resourceId;
         onClick = (e: ButtonEvent): void => {

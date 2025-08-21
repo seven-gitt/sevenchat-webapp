@@ -34,7 +34,7 @@ describe("mention pills", () => {
         room_id: roomId,
         type: EventType.RoomMessage,
         content: {
-            body: "@room",
+            body: "@All",
         },
     });
 
@@ -56,7 +56,7 @@ describe("mention pills", () => {
                         {
                             kind: ConditionKind.EventMatch,
                             key: "content.body",
-                            pattern: "@room",
+                            pattern: "@All",
                         },
                     ],
                     actions: [
@@ -116,22 +116,22 @@ describe("mention pills", () => {
         expect(asFragment()).toMatchSnapshot();
     });
 
-    it("should pillify @room", () => {
-        const input = "<div>@room</div>";
+    it("should pillify @All", () => {
+        const input = "<div>@All</div>";
         const { container, asFragment } = renderPills(input);
         expect(asFragment()).toMatchSnapshot();
-        expect(container.querySelector(".mx_Pill.mx_AtRoomPill")?.textContent).toBe("!@room");
+        expect(container.querySelector(".mx_Pill.mx_AtRoomPill")?.textContent).toBe("!@All");
     });
 
-    it("should pillify @room in an intentional mentions world", () => {
+    it("should pillify @All in an intentional mentions world", () => {
         mocked(MatrixClientPeg.safeGet().supportsIntentionalMentions).mockReturnValue(true);
         const { container, asFragment } = renderPills(
-            "<div>@room</div>",
+            "<div>@All</div>",
             new MatrixEvent({
                 room_id: roomId,
                 type: EventType.RoomMessage,
                 content: {
-                    "body": "@room",
+                    "body": "@All",
                     "m.mentions": {
                         room: true,
                     },
@@ -139,7 +139,7 @@ describe("mention pills", () => {
             }),
         );
         expect(asFragment()).toMatchSnapshot();
-        expect(container.querySelector(".mx_Pill.mx_AtRoomPill")?.textContent).toBe("!@room");
+        expect(container.querySelector(".mx_Pill.mx_AtRoomPill")?.textContent).toBe("!@All");
     });
 });
 
@@ -160,7 +160,7 @@ describe("keyword pills", () => {
                         {
                             kind: ConditionKind.EventMatch,
                             key: "content.body",
-                            pattern: "@room",
+                            pattern: "@All",
                         },
                     ],
                     actions: [

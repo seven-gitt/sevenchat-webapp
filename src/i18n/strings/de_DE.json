@@ -609,7 +609,7 @@
     },
     "composer": {
         "autocomplete": {
-            "@room_description": "Alle im Raum benachrichtigen",
+            "@All_description": "Alle im Raum benachrichtigen",
             "command_a11y": "Autovervollständigung aktivieren",
             "command_description": "Befehle",
             "emoji_a11y": "Emoji-Auto-Vervollständigung",

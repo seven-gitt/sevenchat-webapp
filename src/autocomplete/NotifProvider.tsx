@@ -34,22 +34,19 @@ export default class NotifProvider extends AutocompleteProvider {
     ): Promise<ICompletion[]> {
         const client = MatrixClientPeg.safeGet();
 
-        if (!this.room.currentState.mayTriggerNotifOfType("room", client.getSafeUserId())) return [];
+        // Allow all room members to use @All, not just those with room notification permission
+        // if (!this.room.currentState.mayTriggerNotifOfType("room", client.getSafeUserId())) return [];
 
         const { command, range } = this.getCurrentCommand(query, selection, force);
-        if (
-            command?.[0] &&
-            command[0].length > 1 &&
-            ["@room", "@channel", "@everyone", "@here"].some((c) => c.startsWith(command![0]))
-        ) {
+        if (command?.[0] && command[0].startsWith("@")) {
             return [
                 {
-                    completion: "@room",
-                    completionId: "@room",
+                    completion: "@All",
+                    completionId: "@All",
                     type: "at-room",
                     suffix: " ",
                     component: (
-                        <PillCompletion title="@room" description={_t("composer|autocomplete|@room_description")}>
+                        <PillCompletion title="@All" description={_t("composer|autocomplete|@All_description")}>
                             <RoomAvatar size="24px" room={this.room} />
                         </PillCompletion>
                     ),
