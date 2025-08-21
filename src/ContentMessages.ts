@@ -26,6 +26,7 @@ import {
     type EncryptedFile,
     type MediaEventContent,
     type MediaEventInfo,
+    type RoomMessageEventContent,
 } from "matrix-js-sdk/src/types";
 import encrypt from "matrix-encrypt-attachment";
 import extractPngChunks from "png-chunks-extract";
@@ -49,11 +50,18 @@ import SettingsStore from "./settings/SettingsStore";
 import { decorateStartSendingTime, sendRoundTripMetric } from "./sendTimePerformanceMetrics";
 import { TimelineRenderingType } from "./contexts/RoomContext";
 import { addReplyToMessageContent } from "./utils/Reply";
+import { parsePermalink } from "./utils/permalinks/Permalinks";
 import ErrorDialog from "./components/views/dialogs/ErrorDialog";
 import UploadFailureDialog from "./components/views/dialogs/UploadFailureDialog";
 import UploadConfirmDialog from "./components/views/dialogs/UploadConfirmDialog";
+import ImageUploadDialog from "./components/views/dialogs/ImageUploadDialog";
 import { createThumbnail } from "./utils/image-media";
 import { attachMentions, attachRelation } from "./components/views/rooms/SendMessageComposer";
+
+// Extend File interface to include caption
+interface FileWithCaption extends File {
+    caption?: string;
+}
 import { doMaybeLocalRoomAction } from "./utils/local-room";
 import { SdkContextClass } from "./contexts/SDKContext";
 import { blobIsAnimated } from "./utils/Image.ts";
@@ -475,15 +483,37 @@ export default class ContentMessages {
             const loopPromiseBefore = promBefore;
 
             if (!uploadAll) {
-                const { finished } = Modal.createDialog(UploadConfirmDialog, {
+                // Use ImageUploadDialog for images, UploadConfirmDialog for other files
+                const isImage = file.type.startsWith("image/");
+                const DialogComponent = isImage ? ImageUploadDialog : UploadConfirmDialog;
+                
+                const { finished } = Modal.createDialog(DialogComponent as any, {
                     file,
                     currentIndex: i,
                     totalFiles: okFiles.length,
                 });
-                const [shouldContinue, shouldUploadAll] = await finished;
+                
+                const result = await finished;
+                const [shouldContinue, caption, shouldUploadAll, captionFormatted] = result as [
+                    boolean,
+                    string | undefined,
+                    boolean | undefined,
+                    string | undefined,
+                ];
+                
                 if (!shouldContinue) break;
                 if (shouldUploadAll) {
                     uploadAll = true;
+                }
+                
+                // Store caption for later use when sending the image
+                if (isImage) {
+                    if (typeof caption === "string" && caption) {
+                        (file as FileWithCaption).caption = caption;
+                    }
+                    if (typeof captionFormatted === "string" && captionFormatted) {
+                        (file as FileWithCaption as any).captionFormatted = captionFormatted;
+                    }
                 }
             }
 
@@ -635,8 +665,52 @@ export default class ContentMessages {
                 sendRoundTripMetric(matrixClient, roomId, response.event_id);
             }
 
+            // Remove the upload from the in-progress list BEFORE notifying listeners so UI updates immediately
+            removeElement(this.inprogress, (e) => e === upload);
+
             dis.dispatch<UploadFinishedPayload>({ action: Action.UploadFinished, upload });
             dis.dispatch({ action: "message_sent" });
+
+            // If this is an image with a caption, send the caption as a separate text message
+            if (file.type.startsWith("image/") && (file as FileWithCaption).caption) {
+                const captionContent: RoomMessageEventContent = {
+                    msgtype: MsgType.Text,
+                    body: (file as FileWithCaption).caption!,
+                };
+
+                // Add the same relation and reply info to the caption message
+                attachRelation(captionContent, relation);
+                if (replyToEvent) {
+                    addReplyToMessageContent(captionContent, replyToEvent);
+                }
+
+                // If we produced a formatted version (with <a data-mention-type>), attach it
+                const formatted = (file as any).captionFormatted as string | undefined;
+                if (formatted) {
+                    captionContent.format = "org.matrix.custom.html";
+                    captionContent.formatted_body = formatted;
+
+                    // Build m.mentions from formatted body anchors
+                    try {
+                        const doc = new DOMParser().parseFromString(formatted, "text/html");
+                        const anchors = Array.from(doc.querySelectorAll('a[data-mention-type="user"]'));
+                        const userIds = new Set<string>();
+                        anchors.forEach((a) => {
+                            const href = a.getAttribute("href");
+                            if (!href) return;
+                            const parts = parsePermalink(href);
+                            if (parts?.userId) userIds.add(parts.userId);
+                        });
+                        if (userIds.size > 0) {
+                            (captionContent as any)["m.mentions"] = { user_ids: Array.from(userIds) };
+                        }
+                    } catch {}
+                }
+
+                // Send the caption message
+                await matrixClient.sendMessage(roomId, threadId ?? null, captionContent);
+                dis.dispatch({ action: "message_sent" });
+            }
         } catch (error) {
             // 413: File was too big or upset the server in some way:
             // clear the media size limit so we fetch it again next time we try to upload
@@ -658,7 +732,8 @@ export default class ContentMessages {
                 dis.dispatch<UploadErrorPayload>({ action: Action.UploadFailed, upload, error });
             }
         } finally {
-            removeElement(this.inprogress, (e) => e.promise === upload.promise);
+            // no-op: upload is already removed above on success; if we errored or were cancelled, ensure it's gone
+            removeElement(this.inprogress, (e) => e === upload);
         }
     }
 

@@ -3055,6 +3055,13 @@
             "other": "Tải lên %(count)s tệp khác"
         }
     },
+    "image_upload": {
+        "title": "Gửi ảnh",
+        "caption_placeholder": "Chú thích",
+        "hint": "Nhấp chuột trái vào ảnh để chỉnh sửa.",
+        "rotate_image": "Xoay ảnh",
+        "remove_image": "Xóa ảnh"
+    },
     "user_info": {
         "admin_tools_section": "Công cụ quản trị",
         "ban_button_room": "Cấm khỏi phòng",

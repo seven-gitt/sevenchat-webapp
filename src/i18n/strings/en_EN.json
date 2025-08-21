@@ -3857,6 +3857,13 @@
             "other": "Upload %(count)s other files"
         }
     },
+    "image_upload": {
+        "title": "Send an image",
+        "caption_placeholder": "Caption",
+        "hint": "Left-click on the photo to edit.",
+        "rotate_image": "Rotate image",
+        "remove_image": "Remove image"
+    },
     "user_info": {
         "admin_tools_section": "Admin Tools",
         "ban_button_room": "Ban from room",
