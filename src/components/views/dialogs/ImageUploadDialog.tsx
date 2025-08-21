@@ -41,6 +41,7 @@ export default class ImageUploadDialog extends React.Component<IProps, IState> {
     private readonly objectUrl: string;
     private readonly mimeType: string;
     private captionInputRef = React.createRef<HTMLDivElement>();
+    private autocompleteWrapperRef = React.createRef<HTMLDivElement>();
 
     public static defaultProps: Partial<IProps> = {
         totalFiles: 1,
@@ -93,6 +94,13 @@ export default class ImageUploadDialog extends React.Component<IProps, IState> {
                 const room = MatrixClientPeg.safeGet().getRoom(currentRoomId) ?? undefined;
                 if (room) this.setState({ room });
             }
+        }
+    }
+
+    public componentDidUpdate(prevProps: IProps, prevState: IState): void {
+        // When the query becomes active or changes, ensure the list is scrolled to bottom
+        if (this.state.query && this.state.query !== prevState.query) {
+            this.scrollAutocompleteToBottom();
         }
     }
 
@@ -166,13 +174,36 @@ export default class ImageUploadDialog extends React.Component<IProps, IState> {
         const token = value.slice(start, caret);
         if (token.startsWith("@")) {
             const q = token;
-            this.setState({
-                query: q,
-                selection: { start: q.length, end: q.length, beginning: true },
-            });
+            this.setState(
+                {
+                    query: q,
+                    selection: { start: q.length, end: q.length, beginning: true },
+                },
+                () => this.scrollAutocompleteToBottom(),
+            );
         } else {
             if (this.state.query !== "") this.setState({ query: "", selection: { start: 0, end: 0 } });
         }
+    }
+
+    private scrollAutocompleteToBottom(): void {
+        // Find the inner scroll container created by Autocomplete and scroll to bottom
+        const wrapper = this.autocompleteWrapperRef.current;
+        if (!wrapper) return;
+        // Defer to allow Autocomplete to render items
+        window.setTimeout(() => {
+            const scroller = (wrapper.querySelector(
+                ".mx_Autocomplete_Completion_container_pill",
+            ) || wrapper.querySelector(".mx_Autocomplete")) as HTMLElement | null;
+            if (scroller) {
+                scroller.scrollTop = scroller.scrollHeight;
+            }
+            // Also ensure the dialog content scrolls to bottom so action buttons remain visible
+            const dialogContent = document.getElementById("mx_Dialog_content");
+            if (dialogContent) {
+                dialogContent.scrollTop = dialogContent.scrollHeight;
+            }
+        }, 0);
     }
 
     private onAutoCompleteConfirm = (completion: ICompletion): void => {
@@ -279,26 +310,6 @@ export default class ImageUploadDialog extends React.Component<IProps, IState> {
             preview = (
                 <div className="mx_ImageUploadDialog_imagePreview">
                     <img src={this.objectUrl} aria-labelledby={fileId} />
-                    <div className="mx_ImageUploadDialog_imageActions">
-                        <button 
-                            className="mx_ImageUploadDialog_actionButton"
-                            onClick={() => {
-                                // Rotate image functionality could be added here
-                            }}
-                            title={_t("image_upload|rotate_image")}
-                        >
-                            🔄
-                        </button>
-                        <button 
-                            className="mx_ImageUploadDialog_actionButton"
-                            onClick={() => {
-                                // Remove image functionality could be added here
-                            }}
-                            title={_t("image_upload|remove_image")}
-                        >
-                            🗑️
-                        </button>
-                    </div>
                 </div>
             );
         } else if (this.mimeType.startsWith("video/")) {
@@ -343,7 +354,7 @@ export default class ImageUploadDialog extends React.Component<IProps, IState> {
                             {_t("image_upload|hint")}
                         </p>
                         {this.state.room && this.state.query && (
-                            <div className="mx_ImageUploadDialog_autocompleteWrapper">
+                            <div className="mx_ImageUploadDialog_autocompleteWrapper" ref={this.autocompleteWrapperRef}>
                                 <Autocomplete
                                     query={this.state.query}
                                     onConfirm={this.onAutoCompleteConfirm}
