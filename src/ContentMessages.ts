@@ -54,6 +54,7 @@ import { parsePermalink } from "./utils/permalinks/Permalinks";
 import ErrorDialog from "./components/views/dialogs/ErrorDialog";
 import UploadFailureDialog from "./components/views/dialogs/UploadFailureDialog";
 import UploadConfirmDialog from "./components/views/dialogs/UploadConfirmDialog";
+import MultiImageUploadDialog from "./components/views/dialogs/MultiImageUploadDialog";
 import ImageUploadDialog from "./components/views/dialogs/ImageUploadDialog";
 import { createThumbnail } from "./utils/image-media";
 import { attachMentions, attachRelation } from "./components/views/rooms/SendMessageComposer";
@@ -478,7 +479,39 @@ export default class ContentMessages {
         // Promise to complete before sending next file into room, used for synchronisation of file-sending
         // to match the order the files were specified in
         let promBefore: Promise<any> = Promise.resolve();
-        for (let i = 0; i < okFiles.length; ++i) {
+        if (okFiles.length > 1 && okFiles.every((f) => f.type.startsWith("image/"))) {
+            // Show multi-image dialog once
+            const { finished } = Modal.createDialog(MultiImageUploadDialog, { files: okFiles });
+            const [proceed, selectedFiles, caption, captionFormatted] = (await finished) as [
+                boolean,
+                File[] | undefined,
+                string | undefined,
+                string | undefined,
+            ];
+            if (!proceed) return;
+            const filesToSend = selectedFiles && selectedFiles.length ? selectedFiles : okFiles;
+
+            // Send each image; attach caption only to the first one (like Telegram)
+            let first = true;
+            for (const f of filesToSend) {
+                if (first && caption) (f as FileWithCaption).caption = caption;
+                if (first && captionFormatted) (f as any).captionFormatted = captionFormatted;
+                first = false;
+                promBefore = doMaybeLocalRoomAction(
+                    roomId,
+                    (actualRoomId) =>
+                        this.sendContentToRoom(
+                            f,
+                            actualRoomId,
+                            relation,
+                            matrixClient,
+                            replyToEvent ?? undefined,
+                            promBefore,
+                        ),
+                    matrixClient,
+                );
+            }
+        } else for (let i = 0; i < okFiles.length; ++i) {
             const file = okFiles[i];
             const loopPromiseBefore = promBefore;
 

@@ -3859,6 +3859,7 @@
     },
     "image_upload": {
         "title": "Send an image",
+        "title_multiple": "Send multiple images",
         "caption_placeholder": "Caption",
         "hint": "Left-click on the photo to edit.",
         "rotate_image": "Rotate image",

@@ -3057,6 +3057,7 @@
     },
     "image_upload": {
         "title": "Gửi ảnh",
+        "title_multiple": "Gửi nhiều ảnh",
         "caption_placeholder": "Chú thích",
         "hint": "Nhấp chuột trái vào ảnh để chỉnh sửa.",
         "rotate_image": "Xoay ảnh",
