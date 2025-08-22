@@ -25,7 +25,9 @@ interface IProps {
     file: File;
     currentIndex: number;
     totalFiles: number;
-    onFinished: (uploadConfirmed: boolean, caption?: string, uploadAll?: boolean) => void;
+    onFinished: (uploadConfirmed: boolean, caption?: string, uploadAll?: boolean, captionFormatted?: string, addMoreFlag?: string) => void;
+    onAddMoreImages?: () => void; // Callback to add more images
+    onDropFiles?: (files: File[]) => void; // Callback when files are dropped
     roomId?: string; // to resolve room context for mentions
 }
 
@@ -110,17 +112,69 @@ export default class ImageUploadDialog extends React.Component<IProps, IState> {
 
     private onSendClick = (): void => {
         const formatted = this.buildFormattedCaption();
-        // Pass the formatted HTML as the 4th value; caller can optionally use it
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore dialog finished payload shape is flexible
         this.props.onFinished(true, this.state.caption, undefined, formatted);
     };
 
     private onUploadAllClick = (): void => {
         const formatted = this.buildFormattedCaption();
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore dialog finished payload shape is flexible
         this.props.onFinished(true, this.state.caption, true, formatted);
+    };
+
+    private onAddMoreImagesClick = (): void => {
+        if (this.props.onAddMoreImages) {
+            this.props.onAddMoreImages();
+        }
+        // Return special flag to indicate add more images was clicked
+        this.props.onFinished(true, this.state.caption, false, this.buildFormattedCaption(), "add_more");
+    };
+
+    private onDragOver = (event: React.DragEvent): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.classList.add("mx_ImageUploadDialog_dragOver");
+    };
+
+    private onDragLeave = (event: React.DragEvent): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.classList.remove("mx_ImageUploadDialog_dragOver");
+    };
+
+    private onDrop = (event: React.DragEvent): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.classList.remove("mx_ImageUploadDialog_dragOver");
+
+        const files = Array.from(event.dataTransfer.files);
+        const imageFiles = files.filter(file => file.type.startsWith("image/"));
+
+        if (imageFiles.length > 0 && this.props.onDropFiles) {
+            this.props.onDropFiles(imageFiles);
+            // Close current dialog to restart with new files
+            this.props.onFinished(false, undefined, undefined, undefined, "drop_files");
+        }
+    };
+
+    private onPaste = (event: React.ClipboardEvent): void => {
+        const items = Array.from(event.clipboardData.items);
+        const imageFiles: File[] = [];
+
+        items.forEach(item => {
+            if (item.type.startsWith("image/")) {
+                const file = item.getAsFile();
+                if (file) {
+                    imageFiles.push(file);
+                }
+            }
+        });
+
+        if (imageFiles.length > 0 && this.props.onDropFiles) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.props.onDropFiles(imageFiles);
+            // Close current dialog to restart with new files
+            this.props.onFinished(false, undefined, undefined, undefined, "paste_files");
+        }
     };
 
     private onEditableInput = (): void => {
@@ -338,7 +392,13 @@ export default class ImageUploadDialog extends React.Component<IProps, IState> {
                 title={title}
                 contentId="mx_Dialog_content"
             >
-                <div id="mx_Dialog_content">
+                <div 
+                    id="mx_Dialog_content"
+                    onDragOver={this.onDragOver}
+                    onDragLeave={this.onDragLeave}
+                    onDrop={this.onDrop}
+                    onPaste={this.onPaste}
+                >
                     <div className="mx_ImageUploadDialog_previewOuter">
                         <div className="mx_ImageUploadDialog_previewInner">
                             {preview && <div>{preview}</div>}
@@ -365,18 +425,19 @@ export default class ImageUploadDialog extends React.Component<IProps, IState> {
                         )}
 
                         <div className="mx_ImageUploadDialog_captionContainer">
-                            <div
-                                ref={this.captionInputRef}
-                                className="mx_ImageUploadDialog_captionInput"
-                                autoFocus
-                                contentEditable
-                                role="textbox"
-                                aria-multiline="true"
-                                data-placeholder={_t("image_upload|caption_placeholder")}
-                                onInput={this.onEditableInput}
-                                onKeyDown={this.onCaptionKeyDown}
-                                onSelect={this.onCaptionSelect}
-                            />
+                                                         <div
+                                 ref={this.captionInputRef}
+                                 className="mx_ImageUploadDialog_captionInput"
+                                 autoFocus
+                                 contentEditable
+                                 role="textbox"
+                                 aria-multiline="true"
+                                 data-placeholder={_t("image_upload|caption_placeholder")}
+                                 onInput={this.onEditableInput}
+                                 onKeyDown={this.onCaptionKeyDown}
+                                 onSelect={this.onCaptionSelect}
+                                 onPaste={this.onPaste}
+                             />
                         </div>
                     </div>
                 </div>
@@ -390,6 +451,15 @@ export default class ImageUploadDialog extends React.Component<IProps, IState> {
                     focus={false}
                 >
                     {uploadAllButton}
+                    {this.props.onAddMoreImages && (
+                        <button 
+                            className="mx_ImageUploadDialog_addMoreButton"
+                            onClick={this.onAddMoreImagesClick}
+                            title="Thêm ảnh"
+                        >
+                            Thêm ảnh
+                        </button>
+                    )}
                 </DialogButtons>
             </BaseDialog>
         );

@@ -1,0 +1,178 @@
+{
+    "default_server_config": {
+        "m.homeserver": {
+            "base_url": "https://sevenchat.space",
+            "server_name": "sevenchat.space"
+        },
+        "m.identity_server": {
+            "base_url": "https://vector.im"
+        }
+    },
+
+    "default_server_name": "sevenchat.space",
+    
+    "default_is_url": "https://vector.im",
+    
+    "user_directory": {
+        "servers": [
+            "sevenchat.space"
+        ]
+    },
+    
+    "userDirectory": {
+        "servers": [
+            "sevenchat.space"
+        ]
+    },
+    
+    "search": {
+        "default_server": "sevenchat.space"
+    },
+
+    "default_e2ee": false,
+    "default_direct_encryption": false,
+    "default_encryption": false,
+    
+    "disable_custom_urls": false,
+    "disable_guests": true,
+    "disable_login_language_selector": false,
+    "disable_3pid_login": true,
+    
+    "brand": "SevenChat",
+    "app_name": "SevenChat",
+    "welcome_page_url": "https://sevenchat.space",
+    
+    "integrations_ui_url": "https://scalar.vector.im/",
+    "integrations_rest_url": "https://scalar.vector.im/api",
+    "integrations_widgets_urls": [
+        "https://scalar.vector.im/_matrix/integrations/v1",
+        "https://scalar.vector.im/api"
+    ],
+    
+    "showLabsSettings": true,
+    "features": {
+        "feature_e2ee_default": false,
+        "feature_new_room_decoration_ui": true,
+        "feature_pinning": true,
+        "feature_custom_status": true,
+        "feature_custom_tags": true,
+        "feature_state_counters": true,
+        "feature_many_integration_managers": false,
+        "feature_mjolnir": true,
+        "feature_dm_verification": true,
+        "feature_bridge_state": true,
+        "feature_presence_in_room_list": true,
+        "feature_custom_themes": true,
+        "feature_thread": true,
+        "feature_spaces": true,
+        "feature_voice_messages": true
+    },
+    
+    "default_theme": "dark",
+    "default_country_code": "VN",
+    
+    
+    "setting_defaults": {
+        "breadcrumbs": true,
+        "MessageComposerInput.showStickersButton": false,
+        "language": "vi",
+        
+        
+        "theme": "dark",
+        "use_system_theme": false,
+        "custom_themes": [],   
+        
+        "layout": "bubble",
+        "MessageComposerInput.showFormattingBar": true,
+        "MessageComposerInput.autoReplaceEmoji": true,
+        "MessageComposerInput.suggestEmoji": true,
+        
+        
+        "showTypingNotifications": true,
+        "showRedactions": true,
+        "showJoinLeaves": false,
+        "showAvatarChanges": false,
+        "showDisplaynameChanges": false,
+        "showReadReceipts": true,
+        "showTwelveHourTimestamps": false,
+        "alwaysShowTimestamps": false,
+        
+        
+        "notificationSound": true,
+        "audioNotificationsEnabled": true,
+        "enableWidgetScreenshots": false,
+        
+        
+        "RoomList.orderByImportance": true,
+        "breadcrumbsRooms": true,
+        "TagPanel.enableTagPanel": true,
+        
+        
+        "analyticsOptIn": false,
+        "autocompleteDelay": 200,
+        "blacklistUnverifiedDevices": false,
+        
+        
+        "developerMode": false,
+        "showAdvancedSettings": false
+    },
+    
+    
+    "ui_defaults": {
+        "theme": "dark",
+        "timeline_layout": "bubble",
+        "show_timestamps": false,
+        "show_join_leaves": false,
+        "show_read_receipts": true,
+        "enable_notifications": true
+    },
+    
+    "room_directory": {
+        "servers": [
+            "sevenchat.space"
+        ]
+    },
+    
+    "roomDirectory": {
+        "servers": [
+            "sevenchat.space"
+        ]
+    },
+    
+    "enable_presence_by_hs_url": {
+        "https://sevenchat.space": true
+    },
+    
+    "jitsi": {
+        "preferred_domain": "meet.jit.si"
+    },
+    
+    "element_call": {
+        "url": "https://call.element.io",
+        "participant_limit": 8,
+        "brand": "SevenChat Call"
+    },
+    
+    "map_style_url": "https://api.maptiler.com/maps/streets/style.json?key=fU3vlMsMn4Jb6dnEIFsx",
+    
+    "terms_and_conditions_links": [
+        {
+            "text": "Terms and Conditions",
+            "url": "https://sevenchat.space/terms"
+        },
+        {
+            "text": "Privacy Policy", 
+            "url": "https://sevenchat.space/privacy"
+        }
+    ],
+    
+    "hosting_signup_link": "https://sevenchat.space/signup",
+    
+    "embedded_pages": {
+        "home_url": "https://sevenchat.space/home.html",
+        "login_for_welcome": false
+    },
+    
+    "piwik": false,
+    "analytics_owner": "SevenChat"
+}

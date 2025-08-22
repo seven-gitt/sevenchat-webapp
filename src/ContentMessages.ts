@@ -481,22 +481,49 @@ export default class ContentMessages {
         let promBefore: Promise<any> = Promise.resolve();
         if (okFiles.length > 1 && okFiles.every((f) => f.type.startsWith("image/"))) {
             // Show multi-image dialog once
-            const { finished } = Modal.createDialog(MultiImageUploadDialog, { files: okFiles });
-            const [proceed, selectedFiles, caption, captionFormatted] = (await finished) as [
+            const { finished } = Modal.createDialog(MultiImageUploadDialog, { 
+                files: okFiles,
+                onAddMoreImages: () => {
+                    // Create a file input element
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.multiple = true;
+                    input.accept = 'image/*';
+                    
+                    input.onchange = (event) => {
+                        const target = event.target as HTMLInputElement;
+                        if (target.files && target.files.length > 0) {
+                            const newFiles = Array.from(target.files);
+                            const allFiles = [...okFiles, ...newFiles];
+                            
+                            // The dialog will be closed by the onAddMoreImagesClick method
+                            // and we'll restart the upload process with all files
+                            this.sendContentListToRoom(allFiles, roomId, relation, matrixClient, context);
+                        }
+                    };
+                    
+                    input.click();
+                },
+                onDropFiles: (droppedFiles: File[]) => {
+                    const allFiles = [...okFiles, ...droppedFiles];
+                    // Restart the upload process with all files
+                    this.sendContentListToRoom(allFiles, roomId, relation, matrixClient, context);
+                }
+            });
+            const [proceed, selectedFiles, caption, captionFormatted, addMoreFlag] = (await finished) as [
                 boolean,
                 File[] | undefined,
                 string | undefined,
                 string | undefined,
+                string | undefined,
             ];
             if (!proceed) return;
+            // If add_more flag is set, the dialog was closed to add more images, so we return early
+            if (addMoreFlag === "add_more" || addMoreFlag === "drop_files" || addMoreFlag === "paste_files") return;
             const filesToSend = selectedFiles && selectedFiles.length ? selectedFiles : okFiles;
 
-            // Send each image; attach caption only to the first one (like Telegram)
-            let first = true;
+            // Send each image without caption first
             for (const f of filesToSend) {
-                if (first && caption) (f as FileWithCaption).caption = caption;
-                if (first && captionFormatted) (f as any).captionFormatted = captionFormatted;
-                first = false;
                 promBefore = doMaybeLocalRoomAction(
                     roomId,
                     (actualRoomId) =>
@@ -511,6 +538,53 @@ export default class ContentMessages {
                     matrixClient,
                 );
             }
+
+            // Wait for all images to be sent before sending caption
+            if (caption) {
+                // Wait for the last image to be sent
+                await promBefore;
+                
+                const captionContent: RoomMessageEventContent = {
+                    msgtype: MsgType.Text,
+                    body: caption,
+                };
+
+                // Add the same relation and reply info to the caption message
+                attachRelation(captionContent, relation);
+                if (replyToEvent) {
+                    addReplyToMessageContent(captionContent, replyToEvent);
+                }
+
+                // If we produced a formatted version (with <a data-mention-type>), attach it
+                if (captionFormatted) {
+                    captionContent.format = "org.matrix.custom.html";
+                    captionContent.formatted_body = captionFormatted;
+
+                    // Build m.mentions from formatted body anchors
+                    try {
+                        const doc = new DOMParser().parseFromString(captionFormatted, "text/html");
+                        const anchors = Array.from(doc.querySelectorAll('a[data-mention-type="user"]'));
+                        const userIds = new Set<string>();
+                        anchors.forEach((a: Element) => {
+                            const href = a.getAttribute("href");
+                            if (!href) return;
+                            const parts = parsePermalink(href);
+                            if (parts?.userId) userIds.add(parts.userId);
+                        });
+                        if (userIds.size > 0) {
+                            (captionContent as any)["m.mentions"] = { user_ids: Array.from(userIds) };
+                        }
+                    } catch {}
+                }
+
+                // Send the caption message after all images are completed
+                await doMaybeLocalRoomAction(
+                    roomId,
+                    (actualRoomId) => matrixClient.sendMessage(actualRoomId, null, captionContent),
+                    matrixClient,
+                );
+                dis.dispatch({ action: "message_sent" });
+            }
         } else for (let i = 0; i < okFiles.length; ++i) {
             const file = okFiles[i];
             const loopPromiseBefore = promBefore;
@@ -520,23 +594,62 @@ export default class ContentMessages {
                 const isImage = file.type.startsWith("image/");
                 const DialogComponent = isImage ? ImageUploadDialog : UploadConfirmDialog;
                 
+                // Create a function to handle adding more images
+                const handleAddMoreImages = () => {
+                    // Create a file input element
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.multiple = true;
+                    input.accept = 'image/*';
+                    
+                    input.onchange = (event) => {
+                        const target = event.target as HTMLInputElement;
+                        if (target.files && target.files.length > 0) {
+                            const newFiles = Array.from(target.files);
+                            const allFiles = [...okFiles, ...newFiles];
+                            
+                            // Close current dialog and restart with all files
+                            this.sendContentListToRoom(allFiles, roomId, relation, matrixClient, context);
+                            return;
+                        }
+                    };
+                    
+                    input.click();
+                };
+
+                // Create a function to handle dropped files
+                const handleDropFiles = (droppedFiles: File[]) => {
+                    const allFiles = [...okFiles, ...droppedFiles];
+                    // Restart the upload process with all files
+                    this.sendContentListToRoom(allFiles, roomId, relation, matrixClient, context);
+                };
+                
                 const { finished } = Modal.createDialog(DialogComponent as any, {
                     file,
                     currentIndex: i,
                     totalFiles: okFiles.length,
+                    onAddMoreImages: isImage ? handleAddMoreImages : undefined,
+                    onDropFiles: isImage ? handleDropFiles : undefined,
+                    roomId,
                 });
                 
                 const result = await finished;
-                const [shouldContinue, caption, shouldUploadAll, captionFormatted] = result as [
+                const [shouldContinue, caption, shouldUploadAll, captionFormatted, addMoreFlag] = result as [
                     boolean,
                     string | undefined,
                     boolean | undefined,
+                    string | undefined,
                     string | undefined,
                 ];
                 
                 if (!shouldContinue) break;
                 if (shouldUploadAll) {
                     uploadAll = true;
+                }
+                
+                // If user clicked add more images, dropped files, or pasted files, restart the process
+                if (addMoreFlag === "add_more" || addMoreFlag === "drop_files" || addMoreFlag === "paste_files") {
+                    return; // Exit current loop, the recursive call will handle everything
                 }
                 
                 // Store caption for later use when sending the image

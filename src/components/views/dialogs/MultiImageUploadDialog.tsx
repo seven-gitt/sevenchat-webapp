@@ -18,7 +18,9 @@ import { SdkContextClass } from "../../../contexts/SDKContext";
 
 interface IProps {
     files: File[];
-    onFinished: (proceed: boolean, files?: File[], caption?: string, captionFormatted?: string) => void;
+    onFinished: (proceed: boolean, files?: File[], caption?: string, captionFormatted?: string, addMoreFlag?: string) => void;
+    onAddMoreImages?: () => void; // Callback to add more images
+    onDropFiles?: (files: File[]) => void; // Callback when files are dropped
 }
 
 interface IState {
@@ -218,6 +220,63 @@ export default class MultiImageUploadDialog extends React.Component<IProps, ISta
         this.props.onFinished(false);
     };
 
+    private onAddMoreImagesClick = (): void => {
+        if (this.props.onAddMoreImages) {
+            this.props.onAddMoreImages();
+        }
+        // Close current dialog to restart with new files
+        this.props.onFinished(false, undefined, undefined, undefined, "add_more");
+    };
+
+    private onDragOver = (event: React.DragEvent): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.classList.add("mx_MultiImageUploadDialog_dragOver");
+    };
+
+    private onDragLeave = (event: React.DragEvent): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.classList.remove("mx_MultiImageUploadDialog_dragOver");
+    };
+
+    private onDrop = (event: React.DragEvent): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.classList.remove("mx_MultiImageUploadDialog_dragOver");
+
+        const files = Array.from(event.dataTransfer.files);
+        const imageFiles = files.filter(file => file.type.startsWith("image/"));
+
+        if (imageFiles.length > 0 && this.props.onDropFiles) {
+            this.props.onDropFiles(imageFiles);
+            // Close current dialog to restart with new files
+            this.props.onFinished(false, undefined, undefined, undefined, "drop_files");
+        }
+    };
+
+    private onPaste = (event: React.ClipboardEvent): void => {
+        const items = Array.from(event.clipboardData.items);
+        const imageFiles: File[] = [];
+
+        items.forEach(item => {
+            if (item.type.startsWith("image/")) {
+                const file = item.getAsFile();
+                if (file) {
+                    imageFiles.push(file);
+                }
+            }
+        });
+
+        if (imageFiles.length > 0 && this.props.onDropFiles) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.props.onDropFiles(imageFiles);
+            // Close current dialog to restart with new files
+            this.props.onFinished(false, undefined, undefined, undefined, "paste_files");
+        }
+    };
+
     private onRemoveImage = (index: number): void => {
         const newSelectedFiles = [...this.state.selectedFiles];
         newSelectedFiles.splice(index, 1);
@@ -241,7 +300,13 @@ export default class MultiImageUploadDialog extends React.Component<IProps, ISta
                 onFinished={this.onCancelClick}
                 title={`${_t("image_upload|title_multiple")} (${selectedFiles.length})`}
             >
-                <div className="mx_Dialog_content">
+                <div 
+                    className="mx_Dialog_content"
+                    onDragOver={this.onDragOver}
+                    onDragLeave={this.onDragLeave}
+                    onDrop={this.onDrop}
+                    onPaste={this.onPaste}
+                >
                     {/* Image previews in grid layout */}
                     <div className="mx_ImageUploadDialog_previewOuter">
                         {selectedFiles.length > 0 ? (
@@ -298,18 +363,19 @@ export default class MultiImageUploadDialog extends React.Component<IProps, ISta
                         )}
 
                         <div className="mx_ImageUploadDialog_captionContainer">
-                            <div
-                                ref={this.captionRef}
-                                className="mx_ImageUploadDialog_captionInput"
-                                autoFocus
-                                contentEditable
-                                role="textbox"
-                                aria-multiline="true"
-                                data-placeholder={_t("image_upload|caption_placeholder")}
-                                onInput={this.onEditableInput}
-                                onKeyDown={this.onCaptionKeyDown}
-                                onSelect={this.onCaptionSelect}
-                            />
+                                                         <div
+                                 ref={this.captionRef}
+                                 className="mx_ImageUploadDialog_captionInput"
+                                 autoFocus
+                                 contentEditable
+                                 role="textbox"
+                                 aria-multiline="true"
+                                 data-placeholder={_t("image_upload|caption_placeholder")}
+                                 onInput={this.onEditableInput}
+                                 onKeyDown={this.onCaptionKeyDown}
+                                 onSelect={this.onCaptionSelect}
+                                 onPaste={this.onPaste}
+                             />
                         </div>
                     </div>
                 </div>
@@ -322,7 +388,17 @@ export default class MultiImageUploadDialog extends React.Component<IProps, ISta
                     onCancel={this.onCancelClick}
                     focus={false}
                     disabled={selectedFiles.length === 0}
-                />
+                >
+                    {this.props.onAddMoreImages && (
+                        <button 
+                            className="mx_ImageUploadDialog_addMoreButton"
+                            onClick={this.onAddMoreImagesClick}
+                            title="Thêm ảnh"
+                        >
+                            Thêm ảnh
+                        </button>
+                    )}
+                </DialogButtons>
             </BaseDialog>
         );
     }
