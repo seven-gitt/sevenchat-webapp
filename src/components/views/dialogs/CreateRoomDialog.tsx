@@ -338,33 +338,34 @@ export default class CreateRoomDialog extends React.Component<IProps, IState> {
             );
         }
 
+        // Ẩn phần mã hóa đầu cuối
         let e2eeSection: JSX.Element | undefined;
-        if (this.state.joinRule !== JoinRule.Public) {
-            let microcopy: string;
-            if (privateShouldBeEncrypted(MatrixClientPeg.safeGet())) {
-                if (this.state.canChangeEncryption) {
-                    microcopy = isVideoRoom
-                        ? _t("create_room|encrypted_video_room_warning")
-                        : _t("create_room|encrypted_warning");
-                } else {
-                    microcopy = _t("create_room|encryption_forced");
-                }
-            } else {
-                microcopy = _t("settings|security|e2ee_default_disabled_warning");
-            }
-            e2eeSection = (
-                <React.Fragment>
-                    <LabelledToggleSwitch
-                        label={_t("create_room|encryption_label")}
-                        onChange={this.onEncryptedChange}
-                        value={this.state.isEncrypted}
-                        className="mx_CreateRoomDialog_e2eSwitch" // for end-to-end tests
-                        disabled={!this.state.canChangeEncryption}
-                    />
-                    <p>{microcopy}</p>
-                </React.Fragment>
-            );
-        }
+        // if (this.state.joinRule !== JoinRule.Public) {
+        //     let microcopy: string;
+        //     if (privateShouldBeEncrypted(MatrixClientPeg.safeGet())) {
+        //         if (this.state.canChangeEncryption) {
+        //             microcopy = isVideoRoom
+        //                 ? _t("create_room|encrypted_video_room_warning")
+        //                 : _t("create_room|encrypted_warning");
+        //         } else {
+        //             microcopy = _t("create_room|encryption_forced");
+        //         }
+        //     } else {
+        //         microcopy = _t("settings|security|e2ee_default_disabled_warning");
+        //     }
+        //     e2eeSection = (
+        //         <React.Fragment>
+        //             <LabelledToggleSwitch
+        //                 label={_t("create_room|encryption_label")}
+        //                 onChange={this.onEncryptedChange}
+        //                 value={this.state.isEncrypted}
+        //                 className="mx_CreateRoomDialog_e2eSwitch" // for end-to-end tests
+        //                 disabled={!this.state.canChangeEncryption}
+        //             />
+        //             <p>{microcopy}</p>
+        //         </React.Fragment>
+        //     );
+        // }
 
         let federateLabel = _t("create_room|unfederated_label_default_off");
         if (SdkConfig.get().default_federate === false) {

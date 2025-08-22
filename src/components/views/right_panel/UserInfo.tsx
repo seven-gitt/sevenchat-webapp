@@ -153,6 +153,8 @@ export const UserOptionsSection: React.FC<{
     // Only allow the user to ignore the user if its not ourselves
     // same goes for jumping to read receipt
     if (!isMe) {
+        // Ẩn phần "Nhảy để đọc biên nhận"
+        /*
         const onReadReceiptButton = function (room: Room): void {
             dis.dispatch<ViewRoomPayload>({
                 action: Action.ViewRoom,
@@ -180,6 +182,7 @@ export const UserOptionsSection: React.FC<{
                 Icon={CheckIcon}
             />
         );
+        */
 
         if (member instanceof RoomMember && member.roomId && !isSpace) {
             const onInsertPillButton = function (): void {
@@ -574,6 +577,8 @@ function useHasCrossSigningKeys(cli: MatrixClient, member: User, canVerify: bool
     }, [cli, member, canVerify]);
 }
 
+// Ẩn phần "Xác thực người dùng"
+/*
 const VerificationSection: React.FC<{
     member: User | RoomMember;
     devices: IDevice[];
@@ -640,6 +645,7 @@ const VerificationSection: React.FC<{
         </Flex>
     );
 };
+*/
 
 const BasicUserInfo: React.FC<{
     room: Room;
@@ -863,7 +869,7 @@ export const UserInfoHeader: React.FC<{
                         </CopyableText>
                     </Text>
                 </Flex>
-                {!hideVerificationSection && <VerificationSection member={member} devices={devices} />}
+                {/* Ẩn phần "Xác thực người dùng" */}
             </Container>
         </React.Fragment>
     );

@@ -183,12 +183,13 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                     </Badge>
                 )}
 
-                {!vm.isRoomEncrypted && (
+                {/* Ẩn badge "Không được mã hóa" */}
+                {/* {!vm.isRoomEncrypted && (
                     <Badge kind="grey">
                         <LockOffIcon width="1em" />
                         {_t("common|unencrypted")}
                     </Badge>
-                )}
+                )} */}
 
                 {vm.e2eStatus === E2EStatus.Warning && (
                     <Badge kind="red">

@@ -63,7 +63,7 @@
         "got_it": "Đã nhận được",
         "hide_advanced": "Ẩn nâng cao",
         "hold": "Giữ máy",
-        "ignore": "Tảng lờ",
+        "ignore": "Bỏ qua người dùng",
         "import": "Nhập",
         "invite": "Mời",
         "invite_to_space": "Mời vào space",
@@ -89,7 +89,7 @@
         "play": "Chạy",
         "proceed": "Tiếp tục",
         "quote": "Trích",
-        "react": "Phản ứng",
+        "react": "Bày tỏ cảm xúc",
         "refresh": "Làm tươi",
         "register": "Đăng ký",
         "reload": "Tải lại",
@@ -459,7 +459,7 @@
         "public_space": "Space công cộng",
         "qr_code": "Mã QR",
         "random": "Ngẫu nhiên",
-        "reactions": "Phản ứng",
+        "reactions": "Bày tỏ cảm xúc",
         "report_a_bug": "Báo lỗi",
         "room": "Phòng",
         "room_name": "Tên phòng",
@@ -923,8 +923,8 @@
             "you": "Bạn bắt đầu một cuộc gọi"
         },
         "m.reaction": {
-            "user": "%(sender)s phản ứng %(reaction)s với %(message)s",
-            "you": "Bạn phản ứng %(reaction)s với %(message)s"
+            "user": "%(sender)s bày tỏ cảm xúc %(reaction)s với %(message)s",
+            "you": "Bạn bày tỏ cảm xúc %(reaction)s với %(message)s"
         }
     },
     "export_chat": {
@@ -2621,7 +2621,7 @@
             "external_url": "URL nguồn",
             "open_in_osm": "Mở trong OpenStreetMap",
             "report": "Bản báo cáo",
-            "resent_unsent_reactions": "Gửi lại (các) phản ứng %(unsentCount)s",
+            "resent_unsent_reactions": "Gửi lại (các) cảm xúc %(unsentCount)s",
             "show_url_preview": "Hiển thị bản xem trước",
             "view_related_event": "Xem sự kiện liên quan",
             "view_source": "Xem nguồn"
@@ -2855,7 +2855,7 @@
         "pending_moderation": "Tin nhắn chờ duyệt",
         "pending_moderation_reason": "Tin nhắn chờ duyệt: %(reason)s",
         "reactions": {
-            "add_reaction_prompt": "Thêm phản ứng",
+            "add_reaction_prompt": "Thêm cảm xúc",
             "label": "%(reactors)s đã phản hồi với %(content)s"
         },
         "read_receipt_title": {
@@ -3086,7 +3086,7 @@
         "error_mute_user": "Không thể tắt tiếng người dùng",
         "error_revoke_3pid_invite_description": "Không thể thu hồi lời mời. Máy chủ có thể đang gặp sự cố tạm thời hoặc bạn không có đủ quyền để thu hồi lời mời.",
         "error_revoke_3pid_invite_title": "Không thể thu hồi lời mời",
-        "ignore_confirm_description": "Toàn bộ tin nhắn và lời mời từ người dùng này sẽ bị ẩn. Bạn có muốn tảng lờ người dùng?",
+        "ignore_confirm_description": "Toàn bộ tin nhắn và lời mời từ người dùng này sẽ bị ẩn. Bạn có muốn bỏ qua người dùng?",
         "ignore_confirm_title": "Tảng lờ %(user)s",
         "invited_by": "Được %(sender)s mời",
         "jump_to_rr_button": "Nhảy để đọc biên nhận",
@@ -3113,7 +3113,10 @@
         "room_encrypted_detail": "Tin nhắn của bạn được bảo mật và chỉ bạn và người nhận mới có chìa khóa duy nhất để mở khóa.",
         "room_unencrypted": "Tin nhắn trong phòng này không được mã hóa đầu cuối.",
         "room_unencrypted_detail": "Trong các phòng được mã hóa, tin nhắn của bạn được bảo mật và chỉ bạn và người nhận mới có chìa khóa duy nhất để mở khóa.",
+        "send_message": "Gửi tin nhắn",
         "share_button": "Chia sẻ liên kết với người dùng",
+        "ignore_button": "Bỏ qua người dùng",
+        "unignore_button": "Bỏ tảng lờ",
         "unban_button_room": "Bỏ cấm trong phòng",
         "unban_button_space": "Bỏ cấm trong space",
         "unban_room_confirm_title": "Hủy cấm từ %(roomName)s",
@@ -3277,6 +3280,7 @@
             "send_files_this_room": "Gửi các tệp chung khi bạn ở trong phòng này",
             "send_images_active_room": "Gửi hình ảnh khi bạn đang ở trong phòng hoạt động của mình",
             "send_images_this_room": "Gửi hình ảnh khi bạn ở trong phòng này",
+            "send_message": "Gửi tin nhắn",
             "send_messages_active_room": "Gửi tin nhắn khi bạn đang ở trong phòng hoạt động của mình",
             "send_messages_this_room": "Gửi tin nhắn khi bạn ở trong phòng này",
             "send_msgtype_active_room": "Gửi tin nhắn <b>%(msgtype)s</b> khi bạn đang ở trong phòng hoạt động của mình",
