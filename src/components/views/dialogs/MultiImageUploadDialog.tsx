@@ -10,7 +10,7 @@ import { _t } from "../../../languageHandler";
 import BaseDialog from "./BaseDialog";
 import DialogButtons from "../elements/DialogButtons";
 import Autocomplete from "../rooms/Autocomplete";
-import type { ISelectionRange } from "../../../autocomplete/Autocompleter";
+import type { ISelectionRange, ICompletion } from "../../../autocomplete/Autocompleter";
 import { MatrixClientPeg } from "../../../MatrixClientPeg";
 import type { Room } from "matrix-js-sdk/src/matrix";
 import { SdkContextClass } from "../../../contexts/SDKContext";
@@ -68,61 +68,139 @@ export default class MultiImageUploadDialog extends React.Component<IProps, ISta
             ev.preventDefault();
             this.onSendClick();
         }
+        // Update autocomplete after key handling
+        window.setTimeout(() => this.updateAutocompleteState(), 0);
     };
 
     private onEditableInput = (ev: React.FormEvent<HTMLDivElement>): void => {
         const target = ev.target as HTMLDivElement;
         const caption = target.innerText || "";
-        this.setState({ caption });
+        this.setState({ caption }, () => this.updateAutocompleteState());
     };
 
     private onCaptionSelect = (): void => {
-        const el = this.captionRef.current;
-        if (!el) return;
-
-        const selection = window.getSelection();
-        if (!selection || selection.rangeCount === 0) return;
-
-        const range = selection.getRangeAt(0);
-        const preCaretRange = range.cloneRange();
-        preCaretRange.selectNodeContents(el);
-        preCaretRange.setEnd(range.endContainer, range.endOffset);
-        const end = preCaretRange.toString().length;
-
-        preCaretRange.setStart(el, 0);
-        preCaretRange.setEnd(range.startContainer, range.startOffset);
-        const start = preCaretRange.toString().length;
-
-        this.setState({ selection: { start, end } });
+        this.updateAutocompleteState();
     };
 
-    private onAutoCompleteConfirm = (completion: any): void => {
-        const el = this.captionRef.current;
-        if (!el) return;
+    private updateAutocompleteState(): void {
+        const root = this.captionRef.current;
+        if (!root) return;
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return;
+        const rangeToCaret = document.createRange();
+        rangeToCaret.setStart(root, 0);
+        const caretRange = sel.getRangeAt(0);
+        try {
+            rangeToCaret.setEnd(caretRange.endContainer, caretRange.endOffset);
+        } catch {}
+        const caret = rangeToCaret.toString().length;
+        const value = root.innerText;
+        // Find the token start - after last whitespace/newline before caret
+        let start = caret;
+        for (let i = caret - 1; i >= 0; i--) {
+            const ch = value[i];
+            if (ch === " " || ch === "\n" || ch === "\t") {
+                start = i + 1;
+                break;
+            }
+            start = i;
+        }
+        const token = value.slice(start, caret);
+        if (token.startsWith("@")) {
+            const q = token;
+            this.setState(
+                {
+                    query: q,
+                    selection: { start, end: caret },
+                },
+                () => {
+                    // Ensure autocomplete list scrolls to bottom
+                    window.setTimeout(() => {
+                        const autocompleteWrapper = document.querySelector(".mx_ImageUploadDialog_autocompleteWrapper");
+                        if (autocompleteWrapper) {
+                            autocompleteWrapper.scrollTop = autocompleteWrapper.scrollHeight;
+                        }
+                    }, 0);
+                },
+            );
+        } else {
+            this.setState({ query: "", selection: { start: 0, end: 0 } });
+        }
+    }
 
-        const selection = window.getSelection();
-        if (!selection || selection.rangeCount === 0) return;
+    private onAutoCompleteConfirm = (completion: ICompletion): void => {
+        const root = this.captionRef.current;
+        if (!root) return;
+        const qLen = this.state.query.length;
 
-        const range = selection.getRangeAt(0);
-        const mentionNode = document.createElement("a");
-        mentionNode.setAttribute("data-mention-type", "user");
-        mentionNode.setAttribute("href", completion.href);
-        mentionNode.textContent = completion.completion;
+        // Helper to get a Range for character offsets within the root element's text content
+        const getRangeForOffsets = (start: number, end: number): Range | null => {
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+            let node: Node | null = walker.nextNode();
+            let acc = 0;
+            let startNode: Node | null = null;
+            let startOffset = 0;
+            let endNode: Node | null = null;
+            let endOffset = 0;
+            while (node) {
+                const len = node.nodeValue?.length ?? 0;
+                if (!startNode && start <= acc + len) {
+                    startNode = node;
+                    startOffset = Math.max(0, start - acc);
+                }
+                if (!endNode && end <= acc + len) {
+                    endNode = node;
+                    endOffset = Math.max(0, end - acc);
+                    break;
+                }
+                acc += len;
+                node = walker.nextNode();
+            }
+            if (startNode && endNode) {
+                const r = document.createRange();
+                r.setStart(startNode, startOffset);
+                r.setEnd(endNode, endOffset);
+                return r;
+            }
+            return null;
+        };
 
+        // Determine caret character index
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return;
+        const tmp = document.createRange();
+        tmp.setStart(root, 0);
+        const caretRange = sel.getRangeAt(0);
+        try {
+            tmp.setEnd(caretRange.endContainer, caretRange.endOffset);
+        } catch {}
+        const caretIndex = tmp.toString().length;
+        const startIndex = Math.max(0, caretIndex - qLen);
+        const range = getRangeForOffsets(startIndex, caretIndex);
+        if (!range) return;
+
+        // Replace text with anchor element
         range.deleteContents();
-        range.insertNode(mentionNode);
+        const anchor = document.createElement("a");
+        // Show display name but keep permalink so timeline renders a pill
+        anchor.textContent = completion.completion;
+        if (completion.href) anchor.setAttribute("href", completion.href);
+        anchor.setAttribute("data-mention-type", "user");
+        range.insertNode(anchor);
+        // Insert a visible space plus a zero-width space to ensure caret is outside the link
+        const suffix = document.createTextNode((completion.suffix || " ") + "\u200B");
+        anchor.after(suffix);
 
-        // Add space after mention
-        const spaceNode = document.createTextNode("\u00A0\u200B");
-        range.setStartAfter(mentionNode);
-        range.insertNode(spaceNode);
-        range.setStartAfter(spaceNode);
+        // Move caret after inserted suffix
+        const afterRange = document.createRange();
+        const len = suffix.nodeValue ? suffix.nodeValue.length : 1;
+        afterRange.setStart(suffix, len);
+        afterRange.setEnd(suffix, len);
+        sel.removeAllRanges();
+        sel.addRange(afterRange);
 
-        selection.removeAllRanges();
-        selection.addRange(range);
-
-        this.setState({ query: "" });
-        this.onEditableInput({ target: el } as any);
+        // Update state and clear query
+        this.setState({ query: "", selection: { start: 0, end: 0 }, caption: root.innerText });
     };
 
     private buildFormattedCaption = (): string => {
@@ -205,32 +283,41 @@ export default class MultiImageUploadDialog extends React.Component<IProps, ISta
                     </div>
 
                     <div className="mx_ImageUploadDialog_captionSection">
-                        <div
-                            ref={this.captionRef}
-                            className="mx_ImageUploadDialog_captionInput"
-                            contentEditable
-                            onInput={this.onEditableInput}
-                            onSelect={this.onCaptionSelect}
-                            onKeyDown={this.onCaptionKeyDown}
-                            data-placeholder={_t("image_upload|caption_placeholder")}
-                        />
-                    </div>
+                        <p className="mx_ImageUploadDialog_hint">
+                            {_t("image_upload|hint")}
+                        </p>
+                        {room && query && (
+                            <div className="mx_ImageUploadDialog_autocompleteWrapper">
+                                <Autocomplete
+                                    query={query}
+                                    onConfirm={this.onAutoCompleteConfirm}
+                                    selection={selection}
+                                    room={room}
+                                />
+                            </div>
+                        )}
 
-                    {room && (
-                        <div className="mx_ImageUploadDialog_autocompleteWrapper">
-                            <Autocomplete
-                                query={query}
-                                selection={selection}
-                                onConfirm={this.onAutoCompleteConfirm}
-                                room={room}
+                        <div className="mx_ImageUploadDialog_captionContainer">
+                            <div
+                                ref={this.captionRef}
+                                className="mx_ImageUploadDialog_captionInput"
+                                autoFocus
+                                contentEditable
+                                role="textbox"
+                                aria-multiline="true"
+                                data-placeholder={_t("image_upload|caption_placeholder")}
+                                onInput={this.onEditableInput}
+                                onKeyDown={this.onCaptionKeyDown}
+                                onSelect={this.onCaptionSelect}
                             />
                         </div>
-                    )}
+                    </div>
                 </div>
 
                 <DialogButtons
-                    primaryButton="Send"
-                    cancelButton="Cancel"
+                    primaryButton="Gửi"
+                    hasCancel={true}
+                    cancelButton="Thoát"
                     onPrimaryButtonClick={this.onSendClick}
                     onCancel={this.onCancelClick}
                     focus={false}

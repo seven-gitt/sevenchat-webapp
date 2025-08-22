@@ -20,7 +20,7 @@
 
     .mx_ImageUploadDialog_imagePreview {
         position: relative;
-        background: var(--background-color);
+        background: $background;
         border-radius: 12px;
         overflow: hidden;
         aspect-ratio: 1;
@@ -31,7 +31,7 @@
         &:hover {
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
             transform: translateY(-4px);
-            border-color: var(--accent-color);
+            border-color: $accent;
         }
 
             .mx_ImageUploadDialog_imageContainer {
@@ -140,10 +140,10 @@
         justify-content: center;
         padding: 40px 20px;
         text-align: center;
-        color: var(--tertiary-content);
-        border: 2px dashed var(--border-color);
+        color: $tertiary-content;
+        border: 2px dashed $quinary-content;
         border-radius: 12px;
-        background: var(--background-color);
+        background: $background;
         margin: 16px;
 
         .mx_ImageUploadDialog_emptyIcon {
@@ -154,7 +154,7 @@
         .mx_ImageUploadDialog_emptyText {
             font-size: 14px;
             margin: 0;
-            color: var(--secondary-content);
+            color: $secondary-content;
         }
     }
 
@@ -163,75 +163,163 @@
         padding: 0 8px;
     }
 
-    .mx_ImageUploadDialog_captionInput {
-        width: 100%;
-        min-height: 80px;
-        padding: 16px;
-        border: 2px solid var(--border-color);
+    .mx_ImageUploadDialog_hint {
+        color: $secondary-content;
+        font-size: 12px;
+        margin: 0 0 8px 0;
+        text-align: center;
+    }
+
+    .mx_ImageUploadDialog_captionContainer {
+        position: relative;
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .mx_ImageUploadDialog_captionInput,
+    .mx_ImageUploadDialog_captionInput[contenteditable="true"] {
+        flex: 1;
+        min-height: 96px;
+        padding: 12px 14px;
+        border: 1px solid $quinary-content;
         border-radius: 12px;
-        background: var(--background-color);
-        color: var(--primary-content);
+        background: $background;
+        color: $primary-content;
+        font-family: inherit;
         font-size: 14px;
         line-height: 1.4;
         resize: vertical;
         outline: none;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        transition: all 0.2s ease;
+        transition: border-color 0.2s;
 
         &:focus {
-            border-color: var(--accent-color);
-            box-shadow: 0 0 0 2px rgba(var(--accent-color-rgb), 0.1);
+            border-color: $accent;
+            box-shadow: 0 0 0 3px rgba(26, 123, 255, 0.15);
         }
 
-        &:empty:before {
-            content: attr(data-placeholder);
-            color: var(--tertiary-content);
+        &::placeholder {
+            color: $tertiary-content;
         }
 
         a[data-mention-type] {
             color: #1a7bff !important;
-            background-color: transparent !important;
+            background-color: rgba(26, 123, 255, 0.08) !important;
             text-decoration: none;
+            padding: 2px 6px;
+            border-radius: 10px;
+        }
+
+        /* contenteditable caret spacing */
+        &:empty:before {
+            content: attr(data-placeholder);
+            color: $tertiary-content;
         }
     }
 
     .mx_ImageUploadDialog_autocompleteWrapper {
+        position: relative;
         margin-top: 8px;
+        margin-bottom: 16px;
 
         > .mx_Autocomplete {
             position: static !important;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            max-height: 40vh;
-            overflow-y: auto;
-            margin: 0 16px 8px;
-            overscroll-behavior: contain;
+            border: 1px solid $quinary-content;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+            max-height: 320px;
+            overflow: hidden;
+            background: $background;
+            backdrop-filter: blur(8px);
 
             .mx_Autocomplete_ProviderSection {
+                padding: 6px 0;
+                
                 .mx_Autocomplete_ProviderSection_name {
-                    display: none;
+                    display: block;
+                    padding: 6px 16px 3px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: $secondary-content;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+                    background: rgba(0, 0, 0, 0.02);
                 }
             }
 
             .mx_Autocomplete_Completion_container_pill {
                 margin: 0;
-                max-height: 30vh;
+                max-height: 280px;
                 overflow-y: auto;
+                padding: 4px 0;
+
+                &::-webkit-scrollbar {
+                    width: 6px;
+                }
+
+                &::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+
+                &::-webkit-scrollbar-thumb {
+                    background: rgba(0, 0, 0, 0.2);
+                    border-radius: 3px;
+                    
+                    &:hover {
+                        background: rgba(0, 0, 0, 0.3);
+                    }
+                }
             }
 
             .mx_Autocomplete_Completion {
-                border-radius: 4px;
-                padding: 0 8px;
-                font-size: 13px;
-                min-height: 28px;
+                border-radius: 8px;
+                padding: 10px 16px;
+                margin: 1px 8px;
+                font-size: 14px;
+                min-height: 40px;
                 display: flex;
                 align-items: center;
+                gap: 12px;
+                transition: all 0.2s ease;
+                border: 1px solid transparent;
 
-                &:hover,
+                .mx_BaseAvatar {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 50%;
+                    border: 2px solid rgba(255, 255, 255, 0.8);
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                }
+
+                .mx_Autocomplete_Completion_title {
+                    font-weight: 500;
+                    color: $primary-content;
+                }
+
+                .mx_Autocomplete_Completion_subtitle {
+                    font-size: 12px;
+                    color: $secondary-content;
+                    margin-top: 2px;
+                }
+
+                &:hover {
+                    background: linear-gradient(135deg, rgba(26, 123, 255, 0.08), rgba(26, 123, 255, 0.12));
+                    border-color: rgba(26, 123, 255, 0.2);
+                    transform: translateY(-1px);
+                    box-shadow: 0 4px 12px rgba(26, 123, 255, 0.15);
+                }
+
                 &.mx_Autocomplete_Completion_selected {
-                    background: var(--accent-color);
-                    color: white;
+                    background: linear-gradient(135deg, rgba(26, 123, 255, 0.12), rgba(26, 123, 255, 0.16));
+                    border-color: rgba(26, 123, 255, 0.3);
+                    transform: translateY(-1px);
+                    box-shadow: 0 4px 16px rgba(26, 123, 255, 0.2);
+
+                    .mx_Autocomplete_Completion_title {
+                        color: #1a7bff;
+                        font-weight: 600;
+                    }
                 }
             }
         }
