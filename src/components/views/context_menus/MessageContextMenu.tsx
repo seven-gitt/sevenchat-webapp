@@ -53,6 +53,7 @@ import { type ShowThreadPayload } from "../../../dispatcher/payloads/ShowThreadP
 import { CardContext } from "../right_panel/context";
 import PinningUtils from "../../../utils/PinningUtils";
 import PosthogTrackers from "../../../PosthogTrackers.ts";
+import { textForEvent } from "../../../TextForEvent";
 
 interface IReplyInThreadButton {
     mxEvent: MatrixEvent;
@@ -300,6 +301,15 @@ export default class MessageContextMenu extends React.Component<IProps, IState> 
 
     private onCopyClick = (): void => {
         copyPlaintext(getSelectedText());
+        this.closeMenu();
+    };
+
+    private onCopyMessageClick = (): void => {
+        const content = this.props.mxEvent.getContent();
+        const messageText = content.body;
+        if (typeof messageText === 'string' && messageText.trim()) {
+            copyPlaintext(messageText);
+        }
         this.closeMenu();
     };
 
@@ -605,6 +615,17 @@ export default class MessageContextMenu extends React.Component<IProps, IState> 
             );
         }
 
+        let copyMessageButton: JSX.Element | undefined;
+        if (rightClick && contentActionable) {
+            copyMessageButton = (
+                <IconizedContextMenuOption
+                    iconClassName="mx_MessageContextMenu_iconCopy"
+                    label={_t("action|copy")}
+                    onClick={this.onCopyMessageClick}
+                />
+            );
+        }
+
         let quoteButton: JSX.Element | undefined;
         if (rightClick && selectedText && selectedText.trim().length > 0 && this.isSelectionWithinSingleTextBody()) {
             quoteButton = (
@@ -686,10 +707,11 @@ export default class MessageContextMenu extends React.Component<IProps, IState> 
         }
 
         let nativeItemsList: JSX.Element | undefined;
-        if (copyButton || quoteButton || copyLinkButton) {
+        if (copyButton || quoteButton || copyLinkButton || copyMessageButton) {
             nativeItemsList = (
                 <IconizedContextMenuOptionList>
                     {copyButton}
+                    {copyMessageButton}
                     {quoteButton}
                     {copyLinkButton}
                 </IconizedContextMenuOptionList>
