@@ -3237,7 +3237,7 @@
         "messages_label": "Negeseuon",
         "other_rooms_in_space": "Ystafelloedd eraill yn %(spaceName)s",
         "public_rooms_label": "Ystafelloedd cyhoeddus",
-        "public_spaces_label": "Gofodau cyhoeddus",
+        "search_messages_label": "Chwilio negeseuon",
         "recent_searches_section_title": "Chwilio diweddar",
         "recently_viewed_section_title": "Gwelwyd yn ddiweddar",
         "remove_filter": "Tynnu'r hidlydd chwilio ar gyfer %(filter)s",

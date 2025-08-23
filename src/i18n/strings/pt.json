@@ -3159,7 +3159,7 @@
         "keyboard_scroll_hint": "Utiliza <arrows/> para te deslocares",
         "other_rooms_in_space": "Outras salas em %(spaceName)s",
         "public_rooms_label": "Salas públicas",
-        "public_spaces_label": "Espaços públicos",
+        "search_messages_label": "Pesquisar mensagens",
         "recent_searches_section_title": "Pesquisas recentes",
         "recently_viewed_section_title": "Visto recentemente",
         "remove_filter": "Remove o filtro de pesquisa para %(filter)s",

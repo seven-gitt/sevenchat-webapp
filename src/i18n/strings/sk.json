@@ -3303,7 +3303,7 @@
         "messages_label": "Správy",
         "other_rooms_in_space": "Ostatné miestnosti v %(spaceName)s",
         "public_rooms_label": "Verejné miestnosti",
-        "public_spaces_label": "Verejné priestory",
+        "search_messages_label": "Hľadať správy",
         "recent_searches_section_title": "Nedávne vyhľadávania",
         "recently_viewed_section_title": "Nedávno zobrazené",
         "remove_filter": "Odstrániť filter vyhľadávania pre %(filter)s",

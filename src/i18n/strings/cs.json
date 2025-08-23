@@ -3268,7 +3268,7 @@
         "messages_label": "Zprávy",
         "other_rooms_in_space": "Další místnosti v %(spaceName)s",
         "public_rooms_label": "Veřejné místnosti",
-        "public_spaces_label": "Veřejné prostory",
+        "search_messages_label": "Hledat zprávy",
         "recent_searches_section_title": "Nedávná vyhledávání",
         "recently_viewed_section_title": "Nedávno zobrazené",
         "remove_filter": "Odstranit filtr vyhledávání pro %(filter)s",

@@ -3267,7 +3267,7 @@
         "messages_label": "Повідомлення",
         "other_rooms_in_space": "Інші кімнати в %(spaceName)s",
         "public_rooms_label": "Загальнодоступні кімнати",
-        "public_spaces_label": "Загальнодоступні простори",
+        "search_messages_label": "Пошук повідомлень",
         "recent_searches_section_title": "Недавні пошуки",
         "recently_viewed_section_title": "Недавно переглянуті",
         "remove_filter": "Вилучити фільтр пошуку для %(filter)s",

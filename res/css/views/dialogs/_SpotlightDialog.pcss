@@ -101,7 +101,7 @@ Please see LICENSE files in the repository root for full details.
             }
 
             &.mx_SpotlightDialog_filterPublicSpaces::before {
-                mask-image: url("$(res)/img/element-icons/spaces.svg");
+                mask-image: url("$(res)/img/element-icons/room/search-inset.svg");
             }
 
             .mx_SpotlightDialog_filter--close {
@@ -170,6 +170,7 @@ Please see LICENSE files in the repository root for full details.
                 line-height: $font-15px;
                 color: $secondary-content;
                 margin: 0;
+                display: none; /* Hide section headers */
             }
 
             > h4 {
@@ -177,7 +178,7 @@ Please see LICENSE files in the repository root for full details.
             }
 
             .mx_SpotlightDialog_sectionHeader {
-                display: flex;
+                display: none; /* Hide section headers with dropdowns */
                 justify-content: space-between;
                 align-items: center;
                 margin-bottom: $spacing-8;
@@ -445,7 +446,7 @@ Please see LICENSE files in the repository root for full details.
             }
 
             .mx_SpotlightDialog_explorePublicSpaces::before {
-                mask-image: url("$(res)/img/element-icons/spaces.svg");
+                mask-image: url("$(res)/img/element-icons/room/search-inset.svg");
             }
 
             .mx_SpotlightDialog_startGroupChat::before {

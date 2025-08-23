@@ -3232,7 +3232,7 @@
         "messages_label": "Wiadomości",
         "other_rooms_in_space": "Inne pokoje w %(spaceName)s",
         "public_rooms_label": "Pokoje publiczne",
-        "public_spaces_label": "Przestrzenie publiczne",
+        "search_messages_label": "Szukaj wiadomości",
         "recent_searches_section_title": "Ostatnie wyszukania",
         "recently_viewed_section_title": "Ostatnio wyświetlane",
         "remove_filter": "Usuń filtr wyszukiwania dla %(filter)s",

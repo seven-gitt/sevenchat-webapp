@@ -2812,7 +2812,7 @@
         "keyboard_scroll_hint": "Usa <arrows/> per scorrere",
         "other_rooms_in_space": "Altre stanze in %(spaceName)s",
         "public_rooms_label": "Stanze pubbliche",
-        "public_spaces_label": "Spazi pubblici",
+        "search_messages_label": "Cerca messaggi",
         "recent_searches_section_title": "Ricerche recenti",
         "recently_viewed_section_title": "Visti di recente",
         "remove_filter": "Rimuovi filtro di ricerca per %(filter)s",

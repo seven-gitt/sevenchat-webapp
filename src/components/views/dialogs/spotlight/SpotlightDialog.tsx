@@ -88,6 +88,7 @@ import { useFeatureEnabled } from "../../../../hooks/useSettings";
 import { filterBoolean } from "../../../../utils/arrays";
 import { transformSearchTerm } from "../../../../utils/SearchInput";
 import { Filter } from "./Filter";
+import "./SpotlightDialog.css";
 
 const MAX_RECENT_SEARCHES = 10;
 const SECTION_LIMIT = 50; // only show 50 results per section for performance reasons
@@ -127,7 +128,7 @@ function filterToLabel(filter: Filter): string {
         case Filter.PublicRooms:
             return _t("spotlight_dialog|public_rooms_label");
         case Filter.PublicSpaces:
-            return _t("spotlight_dialog|public_spaces_label");
+            return _t("spotlight_dialog|search_messages_label");
     }
 }
 
@@ -153,6 +154,15 @@ interface IMemberResult extends IBaseResult {
     alreadyFiltered: boolean;
 }
 
+interface IMessageResult extends IBaseResult {
+    message: any; // Matrix event
+    room: Room;
+    content: string;
+    sender: string;
+    timestamp: number;
+    relevanceScore?: number;
+}
+
 interface IResult extends IBaseResult {
     avatar: JSX.Element;
     name: string;
@@ -160,11 +170,12 @@ interface IResult extends IBaseResult {
     onClick?(): void;
 }
 
-type Result = IRoomResult | IPublicRoomResult | IMemberResult | IResult;
+type Result = IRoomResult | IPublicRoomResult | IMemberResult | IMessageResult | IResult;
 
-const isRoomResult = (result: any): result is IRoomResult => !!result?.room;
+const isRoomResult = (result: any): result is IRoomResult => !!result?.room && !result?.message;
 const isPublicRoomResult = (result: any): result is IPublicRoomResult => !!result?.publicRoom;
 const isMemberResult = (result: any): result is IMemberResult => !!result?.member;
+const isMessageResult = (result: any): result is IMessageResult => !!result?.message;
 
 const toPublicRoomResult = (publicRoom: IPublicRoomsChunkRoom): IPublicRoomResult => ({
     publicRoom,
@@ -217,6 +228,171 @@ const toMemberResult = (member: Member | RoomMember, alreadyFiltered: boolean): 
     filter: [Filter.People],
     query: [member.userId.toLowerCase(), member.name.toLowerCase()].filter(Boolean),
 });
+
+const searchMessagesInRooms = (cli: MatrixClient, query: string): IMessageResult[] => {
+    const results: IMessageResult[] = [];
+    const lcQuery = query.toLowerCase();
+    
+    // Skip search if query is too short
+    if (lcQuery.length < 2) {
+        console.log(`Query "${query}" is too short, skipping search`);
+        return results;
+    }
+    
+    // Get all rooms the user is in
+    const rooms = cli.getVisibleRooms().filter(room => 
+        room.getMyMembership() === KnownMembership.Join
+    );
+    
+    console.log(`Searching for "${query}" in ${rooms.length} rooms`);
+    
+    let totalEventsProcessed = 0;
+    let totalMessagesFound = 0;
+    
+    // Process rooms with better performance
+    rooms.forEach(room => {
+        try {
+            // Get recent messages from the room timeline
+            const timeline = room.getLiveTimeline();
+            const events = timeline?.getEvents() || [];
+            
+            // Only process if we have events
+            if (events.length === 0) {
+                console.log(`Room ${room.name} has no events`);
+                return;
+            }
+            
+            console.log(`Room ${room.name} has ${events.length} events`);
+            totalEventsProcessed += events.length;
+            
+            let roomMessagesFound = 0;
+            
+            // Process events in reverse order (newest first) for better performance
+            for (let i = events.length - 1; i >= 0; i--) {
+                const event = events[i];
+                
+                try {
+                    if (event.getType() === "m.room.message") {
+                        const content = event.getContent();
+                        // Only process text messages, skip files, images, etc.
+                        if (content && content.body && typeof content.body === 'string' && 
+                            content.msgtype === 'm.text' && 
+                            !content.url && 
+                            !content.info) {
+                            const messageText = content.body.toLowerCase();
+                            
+                            // Check if message contains the query (case insensitive)
+                            // Also check if any word in the query matches any word in the message
+                            const queryWords = lcQuery.split(/\s+/).filter(word => word.length > 0);
+                            const messageWords = messageText.split(/\s+/).filter(word => word.length > 0);
+                            
+                            const hasExactMatch = messageText.includes(lcQuery);
+                            const hasWordMatch = queryWords.some(queryWord => 
+                                messageWords.some(messageWord => messageWord.includes(queryWord))
+                            );
+                            
+                            // Calculate relevance score
+                            let relevanceScore = 0;
+                            if (hasExactMatch) relevanceScore += 100;
+                            if (hasWordMatch) relevanceScore += queryWords.length * 10;
+                            
+                            // Additional relevance factors
+                            const queryLength = lcQuery.length;
+                            const messageLength = messageText.length;
+                            
+                            // Prefer shorter messages for longer queries (more specific)
+                            if (queryLength > 5 && messageLength < 100) {
+                                relevanceScore += 20;
+                            }
+                            
+                            // Penalize very long messages unless they have exact match
+                            if (messageLength > 200 && !hasExactMatch) {
+                                relevanceScore -= 10;
+                            }
+                            
+                            // Heavy penalty for messages that only match single characters
+                            const matchedWords = queryWords.filter(queryWord => 
+                                messageWords.some(messageWord => messageWord.includes(queryWord))
+                            );
+                            if (matchedWords.length === 1 && matchedWords[0].length <= 2) {
+                                relevanceScore -= 50; // Heavy penalty for single character matches
+                            }
+                            
+                            // Penalize messages with URLs unless they have exact match
+                            if (content.body.includes('http') && !hasExactMatch) {
+                                relevanceScore -= 30;
+                            }
+                            
+                            // Only include messages with good relevance (minimum threshold)
+                            if (relevanceScore >= 20) {
+                                console.log(`Found match in room ${room.name}: "${content.body}" contains "${query}"`);
+                                // Get sender display name
+                                const sender = event.getSender();
+                                if (sender) {
+                                    const member = room.getMember(sender);
+                                    const senderName = member?.rawDisplayName || sender;
+                                    
+                                    // Get message preview (first 100 characters)
+                                    const preview = content.body.length > 100 
+                                        ? content.body.substring(0, 100) + '...' 
+                                        : content.body;
+                                    
+                                    console.log(`Found message: "${preview}" from ${senderName} in ${room.name} (relevance: ${relevanceScore})`);
+                                    
+                                    results.push({
+                                        message: event,
+                                        room: room,
+                                        content: preview,
+                                        sender: senderName,
+                                        timestamp: event.getTs(),
+                                        section: Section.PublicRoomsAndSpaces,
+                                        filter: [Filter.PublicSpaces],
+                                        query: [content.body.toLowerCase(), room.name.toLowerCase()],
+                                        relevanceScore: relevanceScore,
+                                    });
+                                    
+                                    roomMessagesFound++;
+                                    totalMessagesFound++;
+                                    
+                                    // Limit results per room to avoid overwhelming
+                                    if (results.length >= 100) {
+                                        console.log(`Reached limit of 100 results, stopping search`);
+                                        return results
+                                            .sort((a, b) => b.timestamp - a.timestamp)
+                                            .slice(0, 50);
+                                    }
+                                }
+                            } else {
+                                // Debug: Log some messages that don't match to understand why
+                                if (roomMessagesFound === 0 && i < 5) {
+                                    console.log(`Message in ${room.name} doesn't match: "${content.body}" (searching for "${query}")`);
+                                }
+                            }
+                        }
+                    }
+                } catch (eventError) {
+                    console.error(`Error processing event in room ${room.name}:`, eventError);
+                }
+            }
+            
+            if (roomMessagesFound > 0) {
+                console.log(`Found ${roomMessagesFound} messages in room ${room.name}`);
+            }
+            
+        } catch (roomError) {
+            console.error(`Error processing room ${room.name}:`, roomError);
+        }
+    });
+    
+    console.log(`Total events processed: ${totalEventsProcessed}`);
+    console.log(`Total message results: ${results.length}`);
+    console.log(`Total messages found: ${totalMessagesFound}`);
+    
+    // Sort by timestamp (newest first) and limit results
+    return results
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 50);
+};
 
 const recentAlgorithm = new RecentAlgorithm();
 
@@ -299,11 +475,15 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
     const [query, _setQuery] = useState(initialText);
     const [recentSearches, clearRecentSearches] = useRecentSearches();
     const [filter, setFilterInternal] = useState<Filter | null>(initialFilter);
+    const [messageSearchResults, setMessageSearchResults] = useState<IMessageResult[]>([]);
+    const [messageSearchLoading, setMessageSearchLoading] = useState(false);
+    
     const setFilter = useCallback((filter: Filter | null) => {
         setFilterInternal(filter);
         inputRef.current?.focus();
         scrollContainerRef.current?.scrollTo?.({ top: 0 });
     }, []);
+    
     const memberComparator = useMemo(() => {
         const activityScores = buildActivityScores(cli);
         const memberScores = buildMemberScores(cli);
@@ -314,6 +494,27 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
     const ownInviteLink = makeUserPermalink(cli.getUserId()!);
     const [inviteLinkCopied, setInviteLinkCopied] = useState<boolean>(false);
     const trimmedQuery = useMemo(() => query.trim(), [query]);
+
+    // Handle message search when filter is PublicSpaces and query changes
+    useEffect(() => {
+        if (filter === Filter.PublicSpaces && trimmedQuery) {
+            setMessageSearchLoading(true);
+            // Use debounced search to avoid too many searches
+            const timeoutId = setTimeout(() => {
+                const results = searchMessagesInRooms(cli, trimmedQuery);
+                setMessageSearchResults(results);
+                setMessageSearchLoading(false);
+            }, 300); // Increased debounce time for better performance
+            
+            return () => {
+                clearTimeout(timeoutId);
+                setMessageSearchLoading(false);
+            };
+        } else {
+            setMessageSearchResults([]);
+            setMessageSearchLoading(false);
+        }
+    }, [filter, trimmedQuery, cli]);
 
     const [supportsSpaceFiltering, setSupportsSpaceFiltering] = useState(true); // assume it does until we find out it doesn't
     useEffect(() => {
@@ -348,7 +549,7 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
         [trimmedQuery, filter],
     );
     useDebouncedCallback(
-        filter === Filter.PublicRooms || filter === Filter.PublicSpaces,
+        filter === Filter.PublicRooms,
         searchPublicRooms,
         searchParams,
     );
@@ -392,7 +593,7 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
             addUserResults([new DirectoryMember(profile)], true);
         }
 
-        return [
+        const baseResults: Result[] = [
             ...SpaceStore.instance.enabledMetaSpaces.map((spaceKey) => ({
                 section: Section.Spaces,
                 filter: [] as Filter[],
@@ -411,8 +612,14 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
             })),
             ...roomResults,
             ...userResults,
-            ...publicRooms.map(toPublicRoomResult),
-        ].filter((result) => filter === null || result.filter.includes(filter));
+        ];
+        
+        // Only include public rooms if not searching for messages
+        if (filter !== Filter.PublicSpaces) {
+            baseResults.push(...publicRooms.map(toPublicRoomResult));
+        }
+        
+        return baseResults.filter((result) => filter === null || result.filter.includes(filter));
     }, [cli, userDirectorySearchResults, profile, publicRooms, filter, msc3946ProcessDynamicPredecessor]);
 
     const results = useMemo<Record<Section, Result[]>>(() => {
@@ -426,41 +633,60 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
 
         // Group results in their respective sections
         if (trimmedQuery) {
-            const lcQuery = trimmedQuery.toLowerCase();
-            const normalizedQuery = normalize(trimmedQuery);
+            console.log(`Filter: ${filter}, Query: "${trimmedQuery}"`);
+            console.log(`Filter.PublicSpaces value: ${Filter.PublicSpaces}`);
+            console.log(`Filter comparison: ${filter === Filter.PublicSpaces}`);
+            console.log(`Message search results count: ${messageSearchResults.length}`);
+            
+            // If filter is PublicSpaces, use message search results
+            if (filter === Filter.PublicSpaces) {
+                console.log("Using message search results");
+                console.log(`Found ${messageSearchResults.length} message results`);
+                results[Section.PublicRoomsAndSpaces].push(...messageSearchResults);
+                console.log(`Added ${messageSearchResults.length} message results to section`);
+            } else {
+                // For other filters, use the normal search logic
+                const lcQuery = trimmedQuery.toLowerCase();
+                const normalizedQuery = normalize(trimmedQuery);
 
-            possibleResults.forEach((entry) => {
-                if (isRoomResult(entry)) {
-                    // If the room is a DM with a user that is part of the user directory search results,
-                    // we can assume the user is a relevant result, so include the DM with them too.
-                    const userId = DMRoomMap.shared().getUserIdForRoomId(entry.room.roomId);
-                    if (!userDirectorySearchResults.some((user) => user.userId === userId)) {
-                        if (
-                            !entry.room.normalizedName?.includes(normalizedQuery) &&
-                            !entry.room.getCanonicalAlias()?.toLowerCase().includes(lcQuery) &&
-                            !entry.query?.some((q) => q.includes(lcQuery))
-                        ) {
-                            return; // bail, does not match query
+                possibleResults.forEach((entry) => {
+                    if (isRoomResult(entry)) {
+                        // If the room is a DM with a user that is part of the user directory search results,
+                        // we can assume the user is a relevant result, so include the DM with them too.
+                        const userId = DMRoomMap.shared().getUserIdForRoomId(entry.room.roomId);
+                        if (!userDirectorySearchResults.some((user) => user.userId === userId)) {
+                            if (
+                                !entry.room.normalizedName?.includes(normalizedQuery) &&
+                                !entry.room.getCanonicalAlias()?.toLowerCase().includes(lcQuery) &&
+                                !entry.query?.some((q) => q.includes(lcQuery))
+                            ) {
+                                return; // bail, does not match query
+                            }
                         }
+                    } else if (isMemberResult(entry)) {
+                        if (!entry.alreadyFiltered && !entry.query?.some((q) => q.includes(lcQuery))) return; // bail, does not match query
+                    } else if (isPublicRoomResult(entry)) {
+                        if (!entry.query?.some((q) => q.includes(lcQuery))) return; // bail, does not match query
+                    } else if (isMessageResult(entry)) {
+                        if (!entry.query?.some((q) => q.includes(lcQuery))) return; // bail, does not match query
+                    } else {
+                        if (!entry.name.toLowerCase().includes(lcQuery) && !entry.query?.some((q) => q.includes(lcQuery)))
+                            return; // bail, does not match query
                     }
-                } else if (isMemberResult(entry)) {
-                    if (!entry.alreadyFiltered && !entry.query?.some((q) => q.includes(lcQuery))) return; // bail, does not match query
-                } else if (isPublicRoomResult(entry)) {
-                    if (!entry.query?.some((q) => q.includes(lcQuery))) return; // bail, does not match query
-                } else {
-                    if (!entry.name.toLowerCase().includes(lcQuery) && !entry.query?.some((q) => q.includes(lcQuery)))
-                        return; // bail, does not match query
-                }
 
-                results[entry.section].push(entry);
-            });
-        } else if (filter === Filter.PublicRooms || filter === Filter.PublicSpaces) {
+                    results[entry.section].push(entry);
+                });
+            }
+        } else if (filter === Filter.PublicRooms) {
             // return all results for public rooms if no query is given
             possibleResults.forEach((entry) => {
                 if (isPublicRoomResult(entry)) {
                     results[entry.section].push(entry);
                 }
             });
+        } else if (filter === Filter.PublicSpaces) {
+            // When PublicSpaces filter is active but no query, don't show any results
+            // This prevents showing user/room results when we want to search messages
         } else if (filter === Filter.People) {
             // return all results for people if no query is given
             possibleResults.forEach((entry) => {
@@ -487,13 +713,22 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
                     if (!isMemberResult(a)) return -1;
 
                     return memberComparator(a.member, b.member);
+                } else if (isMessageResult(a) || isMessageResult(b)) {
+                    // Message results should be sorted by relevance score first, then by timestamp
+                    if (!isMessageResult(b)) return -1;
+                    if (!isMessageResult(a)) return -1;
+
+                    // Sort by relevance score (higher first), then by timestamp (newer first)
+                    const scoreDiff = (b.relevanceScore || 0) - (a.relevanceScore || 0);
+                    if (scoreDiff !== 0) return scoreDiff;
+                    return b.timestamp - a.timestamp;
                 }
                 return 0;
             });
         }
 
         return results;
-    }, [trimmedQuery, filter, cli, possibleResults, userDirectorySearchResults, memberComparator]);
+    }, [trimmedQuery, filter, cli, possibleResults, userDirectorySearchResults, memberComparator, messageSearchResults]);
 
     const numResults = sum(Object.values(results).map((it) => it.length));
     useWebSearchMetrics(numResults, query.length, true);
@@ -631,6 +866,14 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
     let content: JSX.Element;
     if (trimmedQuery || filter !== null) {
         const resultMapper = (result: Result): JSX.Element => {
+            console.log(`Mapping result:`, {
+                isRoomResult: isRoomResult(result),
+                isPublicRoomResult: isPublicRoomResult(result),
+                isMemberResult: isMemberResult(result),
+                isMessageResult: isMessageResult(result),
+                result: result
+            });
+            
             if (isRoomResult(result)) {
                 const notification = RoomNotificationStateStore.instance.getRoomState(result.room);
                 const unreadLabel = roomAriaUnreadLabel(result.room, notification);
@@ -759,6 +1002,115 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
                     </Option>
                 );
             }
+            if (isMessageResult(result)) {
+                // Highlight the search query in the message content
+                const highlightQuery = (text: string, query: string): JSX.Element => {
+                    if (!query) return <>{text}</>;
+                    
+                    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(`(${escapedQuery})`, 'gi');
+                    const parts = text.split(regex);
+                    
+                    return (
+                        <>
+                            {parts.map((part, index) => {
+                                const isMatch = regex.test(part);
+                                return isMatch ? (
+                                    <mark key={index} style={{ 
+                                        backgroundColor: '#007bff', 
+                                        color: 'white',
+                                        padding: '2px 4px',
+                                        borderRadius: '3px',
+                                        fontWeight: '600',
+                                        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)'
+                                    }}>
+                                        {part}
+                                    </mark>
+                                ) : (
+                                    <span key={index}>{part}</span>
+                                );
+                            })}
+                        </>
+                    );
+                };
+
+                return (
+                    <Option
+                        id={`mx_SpotlightDialog_button_result_message_${result.message.getId()}`}
+                        key={`${Section[result.section]}-message-${result.message.getId()}`}
+                        className="mx_SpotlightDialog_messageResult"
+                        onClick={() => {
+                            // Navigate to the room and highlight the specific message
+                            defaultDispatcher.dispatch<ViewRoomPayload>({
+                                action: Action.ViewRoom,
+                                room_id: result.room.roomId,
+                                event_id: result.message.getId(),
+                                highlighted: true, // Enable highlighting
+                                scroll_into_view: true, // Ensure the message is visible
+                                metricsTrigger: "WebUnifiedSearch",
+                                metricsViaKeyboard: false,
+                            });
+                            
+                            // Add a small delay to ensure the room is loaded before scrolling
+                            setTimeout(() => {
+                                // Try to scroll to the highlighted message
+                                const eventElement = document.querySelector(`[data-event-id="${result.message.getId()}"]`);
+                                if (eventElement) {
+                                    eventElement.scrollIntoView({
+                                        behavior: 'smooth',
+                                        block: 'center'
+                                    });
+                                    
+                                    // Add a simple flash effect
+                                    eventElement.classList.add('mx_EventTile_highlight');
+                                    
+                                    // Remove the highlight class after animation completes
+                                    setTimeout(() => {
+                                        eventElement.classList.remove('mx_EventTile_highlight');
+                                    }, 1000);
+                                }
+                            }, 500);
+                            
+                            onFinished();
+                        }}
+                        aria-label={`Message from ${result.sender} in ${result.room.name}: ${result.content}. Click to view and highlight this message.`}
+                    >
+                        <DecoratedRoomAvatar room={result.room} size={AVATAR_SIZE} tooltipProps={{ tabIndex: -1 }} />
+                        <div style={{ 
+                            display: 'flex', 
+                            flexDirection: 'column', 
+                            flex: 1, 
+                            minWidth: 0,
+                            gap: '4px'
+                        }}>
+                            {/* Room name and timestamp */}
+                            <div style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '8px',
+                                fontSize: '13px'
+                            }}>
+                                <span className="room-name">
+                                    {result.room.name}
+                                </span>
+                                <span className="timestamp">
+                                    {new Date(result.timestamp).toLocaleDateString()} {new Date(result.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </span>
+                            </div>
+                            
+                            {/* Sender name */}
+                            <div className="sender-name">
+                                {result.sender}
+                            </div>
+                            
+                            {/* Message content with highlighted query */}
+                            <div className="message-preview">
+                                {highlightQuery(result.content, trimmedQuery)}
+                            </div>
+                        </div>
+                    </Option>
+                );
+            }
 
             // IResult case
             return (
@@ -775,7 +1127,7 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
         };
 
         let peopleSection: JSX.Element | undefined;
-        if (results[Section.People].length) {
+        if (results[Section.People].length && filter !== Filter.PublicSpaces) {
             peopleSection = (
                 <div
                     className="mx_SpotlightDialog_section mx_SpotlightDialog_results"
@@ -803,7 +1155,7 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
         }
 
         let roomsSection: JSX.Element | undefined;
-        if (results[Section.Rooms].length) {
+        if (results[Section.Rooms].length && filter !== Filter.PublicSpaces) {
             roomsSection = (
                 <div
                     className="mx_SpotlightDialog_section mx_SpotlightDialog_results"
@@ -817,7 +1169,7 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
         }
 
         let spacesSection: JSX.Element | undefined;
-        if (results[Section.Spaces].length) {
+        if (results[Section.Spaces].length && filter !== Filter.PublicSpaces) {
             spacesSection = (
                 <div
                     className="mx_SpotlightDialog_section mx_SpotlightDialog_results"
@@ -841,8 +1193,65 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
                             : _t("spotlight_dialog|failed_querying_public_spaces")}
                     </div>
                 );
+            } else if (filter === Filter.PublicSpaces && trimmedQuery && !messageSearchLoading && results[Section.PublicRoomsAndSpaces].length === 0) {
+                content = (
+                    <div className="mx_SpotlightDialog_otherSearches_messageSearchText">
+                        {_t("spotlight_dialog|no_messages_found", { query: trimmedQuery })}
+                    </div>
+                );
+            } else if (filter === Filter.PublicSpaces && messageSearchLoading) {
+                content = (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '16px' }}>
+                        <Spinner w={16} h={16} />
+                        <span style={{ color: 'var(--cpd-color-text-secondary)' }}>
+                            {_t("action|search")}...
+                        </span>
+                    </div>
+                );
             } else {
-                content = results[Section.PublicRoomsAndSpaces].slice(0, SECTION_LIMIT).map(resultMapper);
+                console.log(`Displaying ${results[Section.PublicRoomsAndSpaces].length} results in publicRoomsSection`);
+                console.log(`Results:`, results[Section.PublicRoomsAndSpaces]);
+                
+                // Debug: Check what type each result is
+                results[Section.PublicRoomsAndSpaces].forEach((result, index) => {
+                    console.log(`Result ${index}:`, {
+                        isRoomResult: isRoomResult(result),
+                        isPublicRoomResult: isPublicRoomResult(result),
+                        isMemberResult: isMemberResult(result),
+                        isMessageResult: isMessageResult(result),
+                        result: result
+                    });
+                });
+                
+                // Filter and sort results by relevance
+                const sortedResults = results[Section.PublicRoomsAndSpaces]
+                    .filter(result => {
+                        if (isMessageResult(result)) {
+                            const score = result.relevanceScore || 0;
+                            // Only show results with good relevance
+                            return score >= 20;
+                        }
+                        return true;
+                    })
+                    // Remove exact duplicate messages
+                    .filter((result, index, array) => {
+                        if (isMessageResult(result)) {
+                            // Check if this message is exactly the same as previous ones
+                            for (let i = 0; i < index; i++) {
+                                const prevResult = array[i];
+                                if (isMessageResult(prevResult)) {
+                                    if (result.content === prevResult.content && result.sender === prevResult.sender) {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                        return true;
+                    })
+                    .slice(0, 10); // Limit to top 10 most relevant results
+                
+                console.log(`Displaying ${sortedResults.length} filtered results out of ${results[Section.PublicRoomsAndSpaces].length} total`);
+                content = sortedResults.map(resultMapper);
             }
 
             publicRoomsSection = (
@@ -852,10 +1261,20 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
                     aria-labelledby="mx_SpotlightDialog_section_publicRooms"
                 >
                     <div className="mx_SpotlightDialog_sectionHeader">
-                        <h4 id="mx_SpotlightDialog_section_publicRooms">{_t("common|suggestions")}</h4>
-                        <div className="mx_SpotlightDialog_options">
-                            <NetworkDropdown protocols={protocols} config={config ?? null} setConfig={setConfig} />
-                        </div>
+                        <h4 id="mx_SpotlightDialog_section_publicRooms">
+                            {filter === Filter.PublicSpaces 
+                                ? (trimmedQuery 
+                                    ? `${_t("spotlight_dialog|search_messages_label")} (${results[Section.PublicRoomsAndSpaces].length})`
+                                    : _t("spotlight_dialog|search_messages_label")
+                                  )
+                                : _t("common|suggestions")
+                            }
+                        </h4>
+                        {filter === Filter.PublicRooms && (
+                            <div className="mx_SpotlightDialog_options">
+                                <NetworkDropdown protocols={protocols} config={config ?? null} setConfig={setConfig} />
+                            </div>
+                        )}
                     </div>
                     <div>{content}</div>
                 </div>
@@ -1279,7 +1698,7 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
                         aria-label={_t("action|search")}
                         aria-describedby="mx_SpotlightDialog_keyboardPrompt"
                     />
-                    {(publicRoomsLoading || peopleLoading || profileLoading) && <Spinner w={24} h={24} />}
+                    {(publicRoomsLoading || peopleLoading || profileLoading || messageSearchLoading) && <Spinner w={24} h={24} />}
                 </div>
 
                 <div

@@ -3254,7 +3254,7 @@
         "messages_label": "Pesan",
         "other_rooms_in_space": "Ruangan lainnya di %(spaceName)s",
         "public_rooms_label": "Ruangan publik",
-        "public_spaces_label": "Space publik",
+        "search_messages_label": "Cari pesan",
         "recent_searches_section_title": "Pencarian terkini",
         "recently_viewed_section_title": "Baru saja dilihat",
         "remove_filter": "Hapus saringan pencarian untuk %(filter)s",

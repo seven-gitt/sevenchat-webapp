@@ -3226,7 +3226,7 @@
         "messages_label": "Nachrichten",
         "other_rooms_in_space": "Andere Räume in %(spaceName)s",
         "public_rooms_label": "Öffentliche Räume",
-        "public_spaces_label": "Öffentliche Spaces",
+        "search_messages_label": "Nachrichten suchen",
         "recent_searches_section_title": "Kürzliche Gesucht",
         "recently_viewed_section_title": "Kürzlich besucht",
         "remove_filter": "Entferne Suchfilter für %(filter)s",

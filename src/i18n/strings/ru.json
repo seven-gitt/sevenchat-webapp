@@ -3258,7 +3258,7 @@
         "keyboard_scroll_hint": "Используйте <arrows/> для прокрутки",
         "other_rooms_in_space": "Прочие комнаты в %(spaceName)s",
         "public_rooms_label": "Публичные комнаты",
-        "public_spaces_label": "Публичное пространство",
+        "search_messages_label": "Поиск сообщений",
         "recent_searches_section_title": "Недавние поиски",
         "recently_viewed_section_title": "Недавно просмотренные",
         "remove_filter": "Удалить фильтр поиска для %(filter)s",

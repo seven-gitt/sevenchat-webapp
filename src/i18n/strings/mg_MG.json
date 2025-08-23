@@ -2795,7 +2795,7 @@
         "keyboard_scroll_hint": "Ampiasao<arrows/> ny horonan-taratasy",
         "other_rooms_in_space": "Efitrano hafa ao%(spaceName)s",
         "public_rooms_label": "Efitranom-bahoaka",
-        "public_spaces_label": "Toeram-bahoaka",
+        "search_messages_label": "Hikajy hafatra",
         "recent_searches_section_title": "Fikarohana vao haingana",
         "recently_viewed_section_title": "Nojerena vao haingana",
         "remove_filter": "Esory ny sivana fikarohana momba ny%(filter)s",

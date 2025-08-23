@@ -2499,7 +2499,7 @@
         "keyboard_scroll_hint": "用<arrows/>来滚动",
         "other_rooms_in_space": "%(spaceName)s 中的其他房间",
         "public_rooms_label": "公共房间",
-        "public_spaces_label": "公共空间",
+        "search_messages_label": "搜索消息",
         "recent_searches_section_title": "最近的搜索",
         "recently_viewed_section_title": "最近查看",
         "remove_filter": "移除%(filter)s搜索过滤条件",

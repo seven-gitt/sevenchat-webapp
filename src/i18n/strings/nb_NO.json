@@ -3261,7 +3261,7 @@
         "messages_label": "Meldinger",
         "other_rooms_in_space": "Andre rom i %(spaceName)s",
         "public_rooms_label": "Offentlige rom",
-        "public_spaces_label": "Offentlige områder",
+        "search_messages_label": "Søk meldinger",
         "recent_searches_section_title": "Nylige søk",
         "recently_viewed_section_title": "Nylig vist",
         "remove_filter": "Fjern søkefilter for %(filter)s",

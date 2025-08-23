@@ -2548,6 +2548,8 @@
         "keyboard_scroll_hint": "Dùng <arrows/> để cuộn",
         "other_rooms_in_space": "Các phòng khác trong %(spaceName)s",
         "public_rooms_label": "Các phòng công cộng",
+        "search_messages_label": "Tìm kiếm tin nhắn",
+        "no_messages_found": "Không tìm thấy tin nhắn nào cho \"%(query)s\"",
         "recent_searches_section_title": "Các tìm kiếm gần đây",
         "recently_viewed_section_title": "Được xem gần đây",
         "result_may_be_hidden_privacy_warning": "Một số kết quả có thể bị ẩn để đảm bảo quyền riêng tư",

@@ -3261,7 +3261,7 @@
         "messages_label": "Mensagens",
         "other_rooms_in_space": "Outras salas em %(spaceName)s",
         "public_rooms_label": "Salas públicas",
-        "public_spaces_label": "Espaços públicos",
+        "search_messages_label": "Pesquisar mensagens",
         "recent_searches_section_title": "Pesquisas recentes",
         "recently_viewed_section_title": "Visualizado recentemente",
         "remove_filter": "Remover filtro de pesquisa para %(filter)s",

@@ -3262,7 +3262,7 @@
         "messages_label": "Sõnumid",
         "other_rooms_in_space": "Muud jututoad %(spaceName)s kogukonnad",
         "public_rooms_label": "Avalikud jututoad",
-        "public_spaces_label": "Avalikud kogukonnad",
+        "search_messages_label": "Otsi sõnumeid",
         "recent_searches_section_title": "Hiljutised otsingud",
         "recently_viewed_section_title": "Hiljuti vaadatud",
         "remove_filter": "Eemalda otsingufilter „%(filter)s“",

@@ -2744,7 +2744,7 @@
         "keyboard_scroll_hint": "Lietojiet <arrows/> ritināšanai",
         "other_rooms_in_space": "Citas istabas %(spaceName)s",
         "public_rooms_label": "Publiskas istabas",
-        "public_spaces_label": "Publiskās telpas",
+        "search_messages_label": "Meklēt ziņojumus",
         "recent_searches_section_title": "Nesenie meklējumi",
         "recently_viewed_section_title": "Nesen skatītie",
         "remove_filter": "Noņemt meklēšanas filtru %(filter)s",

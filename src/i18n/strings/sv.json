@@ -3231,7 +3231,7 @@
         "messages_label": "Meddelanden",
         "other_rooms_in_space": "Andra rum i %(spaceName)s",
         "public_rooms_label": "Offentliga rum",
-        "public_spaces_label": "Offentliga utrymmen",
+        "search_messages_label": "Sök meddelanden",
         "recent_searches_section_title": "Nyliga sökningar",
         "recently_viewed_section_title": "Nyligen sedda",
         "remove_filter": "Ta bort sökfilter för %(filter)s",

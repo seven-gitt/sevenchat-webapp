@@ -3129,7 +3129,7 @@
         "keyboard_scroll_hint": "Kaydırmak için <arrows/> kullanın",
         "other_rooms_in_space": "%(spaceName)s alanındaki diğer odalar",
         "public_rooms_label": "Herkese açık odalar",
-        "public_spaces_label": "Herkese açık alanlar",
+        "search_messages_label": "Mesaj ara",
         "recent_searches_section_title": "Son Aramalar",
         "recently_viewed_section_title": "Son görüntülenenler",
         "remove_filter": "%(filter)s için arama filtresini kaldır",

@@ -2794,7 +2794,7 @@
         "messages_label": "Viestit",
         "other_rooms_in_space": "Muut huoneet avaruudessa %(spaceName)s",
         "public_rooms_label": "Julkiset huoneet",
-        "public_spaces_label": "Julkiset avaruudet",
+        "search_messages_label": "Etsi viestejä",
         "recent_searches_section_title": "Viimeaikaiset haut",
         "recently_viewed_section_title": "Äskettäin katsottu",
         "result_may_be_hidden_privacy_warning": "Jotkin tulokset saatetaan piilottaa tietosuojan takia",

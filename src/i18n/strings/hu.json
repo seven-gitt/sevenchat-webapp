@@ -3237,7 +3237,7 @@
         "messages_label": "Üzenetek",
         "other_rooms_in_space": "Más szobák itt: %(spaceName)s",
         "public_rooms_label": "Nyilvános szobák",
-        "public_spaces_label": "Nyilvános terek",
+        "search_messages_label": "Üzenet keresése",
         "recent_searches_section_title": "Keresési előzmények",
         "recently_viewed_section_title": "Nemrég megtekintett",
         "remove_filter": "Keresési szűrő eltávolítása innen: %(filter)s",
