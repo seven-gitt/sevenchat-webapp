@@ -14,7 +14,16 @@ import {
     THREAD_RELATION_TYPE,
     M_POLL_START,
 } from "matrix-js-sdk/src/matrix";
-import React, { type JSX, createContext, type ReactElement, type ReactNode, useContext, useRef, useState, useEffect } from "react";
+import React, {
+    type JSX,
+    createContext,
+    type ReactElement,
+    type ReactNode,
+    useContext,
+    useRef,
+    useState,
+    useEffect,
+} from "react";
 
 import { _t } from "../../../languageHandler";
 import { CollapsibleButton } from "./CollapsibleButton";
@@ -34,10 +43,11 @@ import { EmojiButton } from "./EmojiButton";
 import { filterBoolean } from "../../../utils/arrays";
 import { useSettingValue } from "../../../hooks/useSettings";
 import AccessibleButton, { type ButtonEvent } from "../elements/AccessibleButton";
-import { useScopedRoomContext } from "../../../contexts/ScopedRoomContext.tsx";
-import ContextMenu, { aboveLeftOf, useContextMenu } from "../../structures/ContextMenu";
+import { useScopedRoomContext } from "../../../contexts/ScopedRoomContext";
+import ContextMenu, { aboveLeftOf, useContextMenu, ChevronFace } from "../../structures/ContextMenu";
 import RoomContext from "../../../contexts/RoomContext";
 import { useTheme } from "../../../hooks/useTheme";
+import stickerRepository, { type Sticker } from "../../../utils/StickerRepository";
 
 interface IProps {
     addContent: (content: string) => boolean;
@@ -83,10 +93,10 @@ const MessageComposerButtons: React.FC<IProps> = (props: IProps) => {
                 emojiButton(props)
             ),
             gifButton(props),
+            stickerButton(props),
         ];
         moreButtons = [
             uploadButton(), // props passed via UploadButtonContext
-            showStickersButton(props),
             voiceRecordingButton(props, narrow),
             props.showPollsButton ? pollButton(room, props.relation) : null,
             showLocationButton(props, room, matrixClient),
@@ -103,10 +113,10 @@ const MessageComposerButtons: React.FC<IProps> = (props: IProps) => {
                 emojiButton(props)
             ),
             gifButton(props),
+            stickerButton(props),
             uploadButton(), // props passed via UploadButtonContext
         ];
         moreButtons = [
-            showStickersButton(props),
             voiceRecordingButton(props, narrow),
             props.showPollsButton ? pollButton(room, props.relation) : null,
             showLocationButton(props, room, matrixClient),
@@ -159,7 +169,15 @@ function emojiButton(props: IProps): ReactElement {
     );
 }
 
-function GifButton({ menuPosition, className, relation }: { menuPosition?: MenuProps; className?: string; relation?: IEventRelation }): JSX.Element {
+function GifButton({
+    menuPosition,
+    className,
+    relation,
+}: {
+    menuPosition?: MenuProps;
+    className?: string;
+    relation?: IEventRelation;
+}): JSX.Element {
     const overflowMenuCloser = useContext(OverflowMenuContext);
     const matrixClient = useContext(MatrixClientContext);
     const { room } = useScopedRoomContext("room");
@@ -179,10 +197,12 @@ function GifButton({ menuPosition, className, relation }: { menuPosition?: MenuP
             const stored = localStorage.getItem("recentGifs");
             let recents: string[] = [];
             if (stored) {
-                try { recents = JSON.parse(stored); } catch {}
+                try {
+                    recents = JSON.parse(stored);
+                } catch {}
             }
             setRecentGifs(recents);
-            setGifs(recents.map(url => ({ id: url, media_formats: { gif: { url } } })));
+            setGifs(recents.map((url) => ({ id: url, media_formats: { gif: { url } } })));
             setLoading(false);
             setError("");
             return;
@@ -194,8 +214,8 @@ function GifButton({ menuPosition, className, relation }: { menuPosition?: MenuP
         const key = "AIzaSyAMs-zGFu1BFxDdc6p9f1K84snQadw9uGw";
         const q = search.trim();
         fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(q)}&key=${key}&limit=100&media_filter=gif`)
-            .then(res => res.json())
-            .then(data => {
+            .then((res) => res.json())
+            .then((data) => {
                 setGifs(data.results || []);
                 setLoading(false);
             })
@@ -219,10 +239,10 @@ function GifButton({ menuPosition, className, relation }: { menuPosition?: MenuP
                 room.roomId,
                 relation,
                 matrixClient,
-                undefined // replyToEvent nếu cần, có thể truyền thêm
+                undefined, // replyToEvent nếu cần, có thể truyền thêm
             );
             // Lưu vào recentGifs (localStorage)
-            let updated = [gifUrl, ...recentGifs.filter(url => url !== gifUrl)];
+            let updated = [gifUrl, ...recentGifs.filter((url) => url !== gifUrl)];
             if (updated.length > 20) updated = updated.slice(0, 20);
             setRecentGifs(updated);
             localStorage.setItem("recentGifs", JSON.stringify(updated));
@@ -234,10 +254,10 @@ function GifButton({ menuPosition, className, relation }: { menuPosition?: MenuP
     }
 
     function handleRemoveRecentGif(gifUrl: string) {
-        const updated = recentGifs.filter(url => url !== gifUrl);
+        const updated = recentGifs.filter((url) => url !== gifUrl);
         setRecentGifs(updated);
-        localStorage.setItem('recentGifs', JSON.stringify(updated));
-        setGifs(updated.map(url => ({ id: url, media_formats: { gif: { url } } })));
+        localStorage.setItem("recentGifs", JSON.stringify(updated));
+        setGifs(updated.map((url) => ({ id: url, media_formats: { gif: { url } } })));
     }
 
     let contextMenu: React.ReactElement | null = null;
@@ -250,33 +270,33 @@ function GifButton({ menuPosition, className, relation }: { menuPosition?: MenuP
         // Style cho theme
         const isDark = theme === "dark";
         const inputStyle = {
-            width: '90%',
+            width: "90%",
             padding: 8,
             borderRadius: 4,
-            border: isDark ? '1px solid #444' : '1px solid #ccc',
+            border: isDark ? "1px solid #444" : "1px solid #ccc",
             fontSize: 14,
-            outline: 'none',
-            transition: 'border 0.2s',
-            boxShadow: isDark ? '0 1px 2px rgba(0,0,0,0.6)' : '0 1px 2px rgba(0,0,0,0.03)',
-            background: isDark ? '#23272f' : '#fafbfc',
-            color: isDark ? '#fff' : '#222',
+            outline: "none",
+            transition: "border 0.2s",
+            boxShadow: isDark ? "0 1px 2px rgba(0,0,0,0.6)" : "0 1px 2px rgba(0,0,0,0.03)",
+            background: isDark ? "#23272f" : "#fafbfc",
+            color: isDark ? "#fff" : "#222",
             marginBottom: 12,
         };
         const popupStyle: React.CSSProperties = {
-            display: 'flex',
-            flexDirection: 'column' as const,
-            alignItems: 'center',
+            display: "flex",
+            flexDirection: "column" as const,
+            alignItems: "center",
             padding: 16,
-            background: isDark ? '#181a20' : '#fff',
+            background: isDark ? "#181a20" : "#fff",
             borderRadius: 12,
         };
         const gridStyle: React.CSSProperties = {
-            display: 'grid',
-            gridTemplateColumns: 'repeat(4, 70px)',
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 70px)",
             gap: 8,
             maxHeight: 260,
-            overflowY: 'auto' as const,
-            justifyContent: 'center',
+            overflowY: "auto" as const,
+            justifyContent: "center",
         };
         contextMenu = (
             <ContextMenu {...position} onFinished={onFinished} managed={false}>
@@ -286,7 +306,7 @@ function GifButton({ menuPosition, className, relation }: { menuPosition?: MenuP
                             type="text"
                             placeholder="Tìm GIF..."
                             value={search}
-                            onChange={e => setSearch(e.target.value)}
+                            onChange={(e) => setSearch(e.target.value)}
                             style={inputStyle}
                             autoFocus
                         />
@@ -294,49 +314,61 @@ function GifButton({ menuPosition, className, relation }: { menuPosition?: MenuP
                             <div style={{ fontWeight: 500, marginBottom: 8 }}>Đã dùng gần đây</div>
                         )}
                         {loading && <div>Đang tải...</div>}
-                        {error && <div style={{ color: 'red' }}>{error}</div>}
-                        {uploadError && <div style={{ color: 'red' }}>{uploadError}</div>}
+                        {error && <div style={{ color: "red" }}>{error}</div>}
+                        {uploadError && <div style={{ color: "red" }}>{uploadError}</div>}
                         <div style={gridStyle}>
                             {gifs.map((gif, idx) => {
                                 const gifUrl = gif.media_formats?.gif?.url || gif.media[0]?.gif?.url;
                                 // Nếu là recentGifs (search rỗng), hiển thị nút X
                                 const isRecent = search.trim() === "" && recentGifs.includes(gifUrl);
                                 return (
-                                    <div key={gif.id || idx} style={{ position: 'relative' }}>
+                                    <div key={gif.id || idx} style={{ position: "relative" }}>
                                         <img
                                             src={gifUrl}
-                                            alt={gif.content_description || 'gif'}
-                                            style={{ width: 70, height: 70, objectFit: 'cover', borderRadius: 6, cursor: 'pointer', background: isDark ? '#222' : '#eee' }}
+                                            alt={gif.content_description || "gif"}
+                                            style={{
+                                                width: 70,
+                                                height: 70,
+                                                objectFit: "cover",
+                                                borderRadius: 6,
+                                                cursor: "pointer",
+                                                background: isDark ? "#222" : "#eee",
+                                            }}
                                             onClick={() => handleGifClick(gifUrl)}
                                             loading="lazy"
                                         />
                                         {isRecent && (
                                             <button
-                                                onClick={e => { e.stopPropagation(); handleRemoveRecentGif(gifUrl); }}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleRemoveRecentGif(gifUrl);
+                                                }}
                                                 style={{
-                                                    position: 'absolute',
+                                                    position: "absolute",
                                                     top: 2,
                                                     right: 2,
-                                                    background: 'rgba(0,0,0,0.5)',
-                                                    color: 'white',
-                                                    border: 'none',
-                                                    borderRadius: '50%',
+                                                    background: "rgba(0,0,0,0.5)",
+                                                    color: "white",
+                                                    border: "none",
+                                                    borderRadius: "50%",
                                                     width: 18,
                                                     height: 18,
-                                                    cursor: 'pointer',
+                                                    cursor: "pointer",
                                                     fontSize: 12,
-                                                    lineHeight: '18px',
+                                                    lineHeight: "18px",
                                                     padding: 0,
                                                     zIndex: 2,
                                                 }}
                                                 title="Xoá GIF này khỏi danh sách"
-                                            >×</button>
+                                            >
+                                                ×
+                                            </button>
                                         )}
                                     </div>
                                 );
                             })}
                         </div>
-                        {(!loading && gifs.length === 0 && !error) && <div>Không tìm thấy GIF phù hợp.</div>}
+                        {!loading && gifs.length === 0 && !error && <div>Không tìm thấy GIF phù hợp.</div>}
                     </div>
                 </div>
             </ContextMenu>
@@ -363,6 +395,603 @@ function gifButton(props: IProps): ReactElement {
     return (
         <GifButton
             key="gif_button"
+            menuPosition={props.menuPosition}
+            className="mx_MessageComposer_button"
+            relation={props.relation}
+        />
+    );
+}
+
+function StickerButton({
+    menuPosition,
+    className,
+    relation,
+}: {
+    menuPosition?: MenuProps;
+    className?: string;
+    relation?: IEventRelation;
+}): JSX.Element {
+    const overflowMenuCloser = useContext(OverflowMenuContext);
+    const matrixClient = useContext(MatrixClientContext);
+    const { room } = useScopedRoomContext("room");
+    const { theme } = useTheme();
+    const isDark = theme === "dark";
+    const [menuDisplayed, button, openMenu, closeMenu] = useContextMenu();
+    const [search, setSearch] = useState("");
+    const [stickers, setStickers] = useState<Sticker[]>([]);
+    const [stickerPacks, setStickerPacks] = useState<any[]>([]);
+    const [selectedPack, setSelectedPack] = useState<string>("all");
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+    const [uploadError, setUploadError] = useState("");
+    const [recentStickers, setRecentStickers] = useState<Sticker[]>([]);
+
+    // Load stickers from GitHub repository when menu opens
+    useEffect(() => {
+        if (!menuDisplayed) return;
+
+        setLoading(true);
+        setError("");
+        setUploadError("");
+
+        const loadStickers = async () => {
+            try {
+                let allStickers: Sticker[] = [];
+
+                if (search.trim() === "") {
+                    // Load all stickers from repository
+                    allStickers = await stickerRepository.loadAllStickers();
+                } else {
+                    // Search stickers based on query
+                    allStickers = await stickerRepository.searchStickers(search);
+                }
+
+                // Convert relative URLs to absolute URLs
+                const stickersWithAbsoluteUrls = allStickers.map((sticker) => ({
+                    ...sticker,
+                    url: sticker.url.startsWith("http")
+                        ? sticker.url
+                        : `https://raw.githubusercontent.com/seven-gitt/sevenchat-stickers/main/${sticker.url}`,
+                }));
+
+                setStickers(stickersWithAbsoluteUrls);
+
+                // Group stickers by pack
+                const packs = new Map<string, Sticker[]>();
+                stickersWithAbsoluteUrls.forEach((sticker) => {
+                    const packName = sticker.pack || "unknown";
+                    if (!packs.has(packName)) {
+                        packs.set(packName, []);
+                    }
+                    packs.get(packName)!.push(sticker);
+                });
+
+                // Create pack list with metadata
+                const packList = Array.from(packs.entries()).map(([packName, packStickers]) => ({
+                    id: packName,
+                    name: packName
+                        .replace("-pack", "")
+                        .replace(/[-_]/g, " ")
+                        .replace(/\b\w/g, (l) => l.toUpperCase()),
+                    count: packStickers.length,
+                    stickers: packStickers,
+                }));
+
+                setStickerPacks(packList);
+
+                // Reset selected pack to "all" when opening
+                setSelectedPack("all");
+            } catch (error) {
+                console.error("Error loading stickers:", error);
+                setError("Không thể tải stickers từ repository. Vui lòng thử lại sau.");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadStickers();
+    }, [menuDisplayed, search]);
+
+    // Auto-refresh stickers every 30 seconds when menu is open
+    useEffect(() => {
+        if (!menuDisplayed) return;
+
+        const refreshInterval = setInterval(async () => {
+            try {
+                console.log("🔄 Auto-refreshing stickers...");
+                let allStickers: Sticker[] = [];
+
+                if (search.trim() === "") {
+                    allStickers = await stickerRepository.loadAllStickers();
+                } else {
+                    allStickers = await stickerRepository.searchStickers(search);
+                }
+
+                const stickersWithAbsoluteUrls = allStickers.map((sticker) => ({
+                    ...sticker,
+                    url: sticker.url.startsWith("http")
+                        ? sticker.url
+                        : `https://raw.githubusercontent.com/seven-gitt/sevenchat-stickers/main/${sticker.url}`,
+                }));
+
+                setStickers(stickersWithAbsoluteUrls);
+
+                // Update packs as well
+                const packs = new Map<string, Sticker[]>();
+                stickersWithAbsoluteUrls.forEach((sticker) => {
+                    const packName = sticker.pack || "unknown";
+                    if (!packs.has(packName)) {
+                        packs.set(packName, []);
+                    }
+                    packs.get(packName)!.push(sticker);
+                });
+
+                const packList = Array.from(packs.entries()).map(([packName, packStickers]) => ({
+                    id: packName,
+                    name: packName
+                        .replace("-pack", "")
+                        .replace(/[-_]/g, " ")
+                        .replace(/\b\w/g, (l) => l.toUpperCase()),
+                    count: packStickers.length,
+                    stickers: packStickers,
+                }));
+
+                setStickerPacks(packList);
+                console.log("✅ Stickers refreshed successfully");
+            } catch (error) {
+                console.error("Error auto-refreshing stickers:", error);
+            }
+        }, 30000); // Refresh every 30 seconds
+
+        return () => clearInterval(refreshInterval);
+    }, [menuDisplayed, search]);
+
+    async function handleStickerClick(sticker: Sticker) {
+        setUploadError("");
+        if (!room) return;
+        try {
+            // Fetch sticker image from GitHub
+            const res = await fetch(sticker.url);
+            if (!res.ok) {
+                throw new Error(`Failed to fetch sticker: ${res.statusText}`);
+            }
+
+            const blob = await res.blob();
+            const fileName = sticker.url.split("/").pop()?.split("?")[0] || `${sticker.id}.png`;
+            const file = new File([blob], fileName, { type: blob.type || "image/png" });
+
+            await ContentMessages.sharedInstance().sendContentToRoom(
+                file,
+                room.roomId,
+                relation,
+                matrixClient,
+                undefined,
+            );
+
+            // Add to recent stickers
+            const updatedRecentStickers = [sticker, ...recentStickers.filter((s) => s.id !== sticker.id)].slice(0, 10);
+            setRecentStickers(updatedRecentStickers);
+            closeMenu();
+            overflowMenuCloser?.();
+        } catch (e) {
+            console.error("Error sending sticker:", e);
+            setUploadError("Không tải lên được sticker. Vui lòng thử lại.");
+        }
+    }
+
+    function handleRemoveRecentSticker(sticker: Sticker) {
+        const updatedRecentStickers = recentStickers.filter((s) => s.id !== sticker.id);
+        setRecentStickers(updatedRecentStickers);
+    }
+
+    let contextMenu: React.ReactElement | null = null;
+    if (menuDisplayed && button.current) {
+        const rect = button.current.getBoundingClientRect();
+        contextMenu = (
+            <ContextMenu {...aboveLeftOf(rect)} onFinished={closeMenu} managed={false} zIndex={3500}>
+                <div
+                    className="mx_StickerPicker"
+                    style={{
+                        width: "400px",
+                        maxHeight: "450px",
+                        overflow: "hidden",
+                        background: isDark ? "#23272f" : "white",
+                        borderRadius: "8px",
+                        boxShadow: isDark ? "0 4px 12px rgba(0,0,0,0.4)" : "0 4px 12px rgba(0,0,0,0.15)",
+                        display: "flex",
+                        flexDirection: "column",
+                        border: isDark ? "1px solid #444" : "none",
+                    }}
+                >
+                    <div
+                        className="mx_StickerPicker_search"
+                        style={{
+                            padding: "12px",
+                            borderBottom: isDark ? "1px solid #444" : "1px solid #eee",
+                            background: isDark ? "#1a1d23" : "#f8f9fa",
+                            display: "flex",
+                            gap: "8px",
+                            alignItems: "center",
+                        }}
+                    >
+                        <input
+                            type="text"
+                            placeholder="Tìm kiếm sticker..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            style={{
+                                flex: "1",
+                                padding: "8px 12px",
+                                border: isDark ? "1px solid #555" : "1px solid #ddd",
+                                borderRadius: "6px",
+                                fontSize: "14px",
+                                outline: "none",
+                                background: isDark ? "#2d3139" : "white",
+                                color: isDark ? "#fff" : "#333",
+                            }}
+                        />
+                    </div>
+
+                    {error && <div style={{ color: "#ff6b6b", padding: "8px", textAlign: "center" }}>{error}</div>}
+
+                    {uploadError && (
+                        <div style={{ color: "#ff6b6b", padding: "8px", textAlign: "center" }}>{uploadError}</div>
+                    )}
+
+                    {loading ? (
+                        <div
+                            style={{ textAlign: "center", padding: "20px", flex: "1", color: isDark ? "#ccc" : "#666" }}
+                        >
+                            <div>Đang tải stickers...</div>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Main Stickers Area */}
+                            <div
+                                className="mx_StickerPicker_content"
+                                style={{
+                                    padding: "12px",
+                                    flex: "1",
+                                    overflowY: "auto",
+                                }}
+                            >
+                                {/* Stickers Display */}
+                                {(() => {
+                                    if (selectedPack === "all") {
+                                        // Hiển thị theo từng pack khi chọn "Tất cả"
+                                        if (stickerPacks.length === 0) {
+                                            return (
+                                                <div
+                                                    style={{
+                                                        textAlign: "center",
+                                                        padding: "20px",
+                                                        color: isDark ? "#ccc" : "#666",
+                                                    }}
+                                                >
+                                                    {search.trim()
+                                                        ? "Không tìm thấy stickers phù hợp"
+                                                        : "Không có stickers"}
+                                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <div
+                                                style={{
+                                                    display: "flex",
+                                                    flexDirection: "column",
+                                                    gap: "20px",
+                                                    width: "100%",
+                                                }}
+                                            >
+                                                {stickerPacks.map((pack) => (
+                                                    <div
+                                                        key={pack.id}
+                                                        style={{
+                                                            width: "100%",
+                                                            borderBottom: isDark
+                                                                ? "1px solid #444"
+                                                                : "1px solid #f0f0f0",
+                                                            paddingBottom: "16px",
+                                                        }}
+                                                    >
+                                                        {/* Pack Title */}
+                                                        <div
+                                                            style={{
+                                                                fontSize: "16px",
+                                                                fontWeight: "bold",
+                                                                color: isDark ? "#fff" : "#333",
+                                                                marginBottom: "12px",
+                                                                padding: "0 4px",
+                                                            }}
+                                                        >
+                                                            {pack.name}
+                                                        </div>
+
+                                                        {/* Pack Stickers Grid */}
+                                                        <div
+                                                            style={{
+                                                                display: "grid",
+                                                                gridTemplateColumns: "repeat(4, 1fr)",
+                                                                gap: "14px",
+                                                                width: "100%",
+                                                            }}
+                                                        >
+                                                            {pack.stickers.map((sticker: Sticker) => (
+                                                                <div
+                                                                    key={sticker.id}
+                                                                    className="mx_StickerPicker_item"
+                                                                    onClick={() => handleStickerClick(sticker)}
+                                                                    title={`${sticker.name}${sticker.pack ? ` (${sticker.pack})` : ""}`}
+                                                                    style={{
+                                                                        position: "relative",
+                                                                        cursor: "pointer",
+                                                                        padding: "8px",
+                                                                        borderRadius: "10px",
+                                                                        border: isDark
+                                                                            ? "1px solid #555"
+                                                                            : "1px solid #eee",
+                                                                        background: isDark ? "#2d3139" : "white",
+                                                                        transition: "all 0.2s ease",
+                                                                        display: "flex",
+                                                                        flexDirection: "column",
+                                                                        alignItems: "center",
+                                                                    }}
+                                                                    onMouseEnter={(e) => {
+                                                                        e.currentTarget.style.transform = "scale(1.05)";
+                                                                        e.currentTarget.style.boxShadow =
+                                                                            "0 2px 8px rgba(0,0,0,0.1)";
+                                                                    }}
+                                                                    onMouseLeave={(e) => {
+                                                                        e.currentTarget.style.transform = "scale(1)";
+                                                                        e.currentTarget.style.boxShadow = "none";
+                                                                    }}
+                                                                >
+                                                                    <img
+                                                                        src={sticker.url}
+                                                                        alt={sticker.name}
+                                                                        style={{
+                                                                            width: "60px",
+                                                                            height: "60px",
+                                                                            objectFit: "contain",
+                                                                            borderRadius: "6px",
+                                                                        }}
+                                                                        onError={(e) => {
+                                                                            console.error(
+                                                                                "Failed to load sticker image:",
+                                                                                sticker.url,
+                                                                            );
+                                                                            e.currentTarget.style.display = "none";
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    } else {
+                                        // Hiển thị stickers của pack được chọn
+                                        const selectedPackData = stickerPacks.find((p) => p.id === selectedPack);
+                                        const displayStickers = selectedPackData ? selectedPackData.stickers : [];
+
+                                        if (displayStickers.length === 0) {
+                                            return (
+                                                <div
+                                                    style={{
+                                                        textAlign: "center",
+                                                        padding: "20px",
+                                                        color: isDark ? "#ccc" : "#666",
+                                                    }}
+                                                >
+                                                    {search.trim()
+                                                        ? "Không tìm thấy stickers phù hợp"
+                                                        : "Không có stickers"}
+                                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <div
+                                                style={{
+                                                    display: "grid",
+                                                    gridTemplateColumns: "repeat(4, 1fr)",
+                                                    gap: "14px",
+                                                }}
+                                            >
+                                                {displayStickers.map((sticker: Sticker) => (
+                                                    <div
+                                                        key={sticker.id}
+                                                        className="mx_StickerPicker_item"
+                                                        onClick={() => handleStickerClick(sticker)}
+                                                        title={`${sticker.name}${sticker.pack ? ` (${sticker.pack})` : ""}`}
+                                                        style={{
+                                                            position: "relative",
+                                                            cursor: "pointer",
+                                                            padding: "8px",
+                                                            borderRadius: "10px",
+                                                            border: isDark ? "1px solid #555" : "1px solid #eee",
+                                                            background: isDark ? "#2d3139" : "white",
+                                                            transition: "all 0.2s ease",
+                                                            display: "flex",
+                                                            flexDirection: "column",
+                                                            alignItems: "center",
+                                                        }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.transform = "scale(1.05)";
+                                                            e.currentTarget.style.boxShadow =
+                                                                "0 2px 8px rgba(0,0,0,0.1)";
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.transform = "scale(1)";
+                                                            e.currentTarget.style.boxShadow = "none";
+                                                        }}
+                                                    >
+                                                        <img
+                                                            src={sticker.url}
+                                                            alt={sticker.name}
+                                                            style={{
+                                                                width: "60px",
+                                                                height: "60px",
+                                                                objectFit: "contain",
+                                                                borderRadius: "6px",
+                                                            }}
+                                                            onError={(e) => {
+                                                                console.error(
+                                                                    "Failed to load sticker image:",
+                                                                    sticker.url,
+                                                                );
+                                                                e.currentTarget.style.display = "none";
+                                                            }}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    }
+                                })()}
+                            </div>
+
+                            {/* Pack Selection Bar (Bottom) - Like Zalo */}
+                            {stickerPacks.length > 0 && (
+                                <div
+                                    style={{
+                                        borderTop: isDark ? "1px solid #444" : "1px solid #eee",
+                                        padding: "8px 12px",
+                                        background: isDark ? "#1a1d23" : "#f8f9fa",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "8px",
+                                        overflowX: "auto",
+                                        overflowY: "hidden",
+                                        minHeight: "60px",
+                                        maxWidth: "100%",
+                                        scrollbarWidth: "thin",
+                                        scrollbarColor: isDark ? "#555 #1a1d23" : "#ccc #f8f9fa",
+                                        // Webkit scrollbar styles
+                                        ...(isDark
+                                            ? {
+                                                  "&::-webkit-scrollbar": { height: "6px" },
+                                                  "&::-webkit-scrollbar-track": { background: "#1a1d23" },
+                                                  "&::-webkit-scrollbar-thumb": {
+                                                      background: "#555",
+                                                      borderRadius: "3px",
+                                                  },
+                                              }
+                                            : {
+                                                  "&::-webkit-scrollbar": { height: "6px" },
+                                                  "&::-webkit-scrollbar-track": { background: "#f8f9fa" },
+                                                  "&::-webkit-scrollbar-thumb": {
+                                                      background: "#ccc",
+                                                      borderRadius: "3px",
+                                                  },
+                                              }),
+                                    }}
+                                >
+                                    {/* Recent Button */}
+                                    <button
+                                        onClick={() => setSelectedPack("all")}
+                                        style={{
+                                            minWidth: "50px",
+                                            width: "50px",
+                                            height: "50px",
+                                            background:
+                                                selectedPack === "all" ? "#007bff" : isDark ? "#2d3139" : "#fff",
+                                            color: selectedPack === "all" ? "white" : isDark ? "#fff" : "#333",
+                                            border: isDark ? "1px solid #555" : "1px solid #ddd",
+                                            borderRadius: "8px",
+                                            cursor: "pointer",
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            fontSize: "10px",
+                                            fontWeight: selectedPack === "all" ? "bold" : "normal",
+                                            flexShrink: 0,
+                                            whiteSpace: "nowrap",
+                                        }}
+                                    >
+                                        <div>Tất cả</div>
+                                    </button>
+
+                                    {/* Pack Buttons */}
+                                    {stickerPacks.map((pack) => (
+                                        <button
+                                            key={pack.id}
+                                            onClick={() => setSelectedPack(pack.id)}
+                                            style={{
+                                                minWidth: "50px",
+                                                width: "50px",
+                                                height: "50px",
+                                                background:
+                                                    selectedPack === pack.id ? "#007bff" : isDark ? "#2d3139" : "#fff",
+                                                color: selectedPack === pack.id ? "white" : isDark ? "#fff" : "#333",
+                                                border: isDark ? "1px solid #555" : "1px solid #ddd",
+                                                borderRadius: "8px",
+                                                cursor: "pointer",
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                fontSize: "10px",
+                                                fontWeight: selectedPack === pack.id ? "bold" : "normal",
+                                                flexShrink: 0,
+                                                position: "relative",
+                                                whiteSpace: "nowrap",
+                                            }}
+                                        >
+                                            {/* Pack Thumbnail */}
+                                            {pack.stickers.length > 0 && (
+                                                <img
+                                                    src={pack.stickers[0].url}
+                                                    alt={pack.name}
+                                                    style={{
+                                                        width: "32px",
+                                                        height: "32px",
+                                                        objectFit: "contain",
+                                                        borderRadius: "4px",
+                                                        marginBottom: "2px",
+                                                    }}
+                                                    onError={(e) => {
+                                                        e.currentTarget.style.display = "none";
+                                                    }}
+                                                />
+                                            )}
+                                            <div>{pack.name}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            </ContextMenu>
+        );
+    }
+
+    const computedClassName = classNames(className, {
+        mx_MessageComposer_button_active: menuDisplayed,
+    });
+
+    return (
+        <>
+            <CollapsibleButton
+                className={computedClassName}
+                iconClassName="mx_MessageComposer_stickers"
+                onClick={openMenu}
+                title={"Sticker"}
+                inputRef={button}
+            />
+            {contextMenu}
+        </>
+    );
+}
+
+function stickerButton(props: IProps): ReactElement {
+    return (
+        <StickerButton
+            key="sticker_button"
             menuPosition={props.menuPosition}
             className="mx_MessageComposer_button"
             relation={props.relation}

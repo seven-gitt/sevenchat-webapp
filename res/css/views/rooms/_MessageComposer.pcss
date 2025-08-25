@@ -308,6 +308,107 @@ Please see LICENSE files in the repository root for full details.
     mask-image: url("$(res)/img/element-icons/room/composer/gif.svg");
 }
 
+.mx_StickerPicker {
+    background: var(--cpd-color-bg-canvas-default);
+    border: 1px solid var(--cpd-color-border-interactive-primary);
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.mx_StickerPicker_search {
+    margin-bottom: 12px;
+}
+
+.mx_StickerPicker_search input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--cpd-color-border-interactive-primary);
+    border-radius: 6px;
+    font-size: 14px;
+    background: var(--cpd-color-bg-canvas-default);
+    color: var(--cpd-color-text-primary);
+}
+
+.mx_StickerPicker_search input:focus {
+    outline: none;
+    border-color: var(--cpd-color-border-accent);
+    box-shadow: 0 0 0 2px var(--cpd-color-border-accent-alpha-20);
+}
+
+.mx_StickerPicker_content {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.mx_StickerPicker_content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.mx_StickerPicker_content::-webkit-scrollbar-track {
+    background: var(--cpd-color-bg-canvas-default);
+    border-radius: 3px;
+}
+
+.mx_StickerPicker_content::-webkit-scrollbar-thumb {
+    background: var(--cpd-color-border-interactive-primary);
+    border-radius: 3px;
+}
+
+.mx_StickerPicker_content::-webkit-scrollbar-thumb:hover {
+    background: var(--cpd-color-border-interactive-secondary);
+}
+
+.mx_StickerPicker_item {
+    cursor: pointer;
+    border: 1px solid var(--cpd-color-border-interactive-primary);
+    border-radius: 6px;
+    padding: 6px;
+    text-align: center;
+    position: relative;
+    transition: all 0.2s ease;
+    background: var(--cpd-color-bg-canvas-default);
+}
+
+.mx_StickerPicker_item:hover {
+    border-color: var(--cpd-color-border-accent);
+    background: var(--cpd-color-bg-canvas-default);
+    transform: scale(1.05);
+}
+
+.mx_StickerPicker_item img {
+    width: 100%;
+    height: auto;
+    max-width: 80px;
+    max-height: 80px;
+    border-radius: 4px;
+}
+
+.mx_StickerPicker_remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background: var(--cpd-color-bg-critical-primary);
+    color: var(--cpd-color-text-on-solid-primary);
+    border: none;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease;
+}
+
+.mx_StickerPicker_remove:hover {
+    background: var(--cpd-color-bg-critical-secondary);
+}
+
 .mx_MatrixChat_useCompactLayout {
     .mx_MessageComposer_input {
         min-height: 50px;

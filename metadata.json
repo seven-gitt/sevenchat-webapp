@@ -1,0 +1,248 @@
+{
+  "name": "SevenChat Stickers",
+  "description": "Collection of stickers for SevenChat app",
+  "version": "1.0.0",
+  "author": "SevenChat Team",
+  "repository": "https://github.com/seven-gitt/sevenchat-stickers",
+  "createdAt": "2024-01-01T00:00:00Z",
+  "updatedAt": "2024-01-01T00:00:00Z",
+  "packs": [
+    {
+      "id": "pig-pack",
+      "name": "Pig Stickers Pack",
+      "description": "Collection of cute pig stickers with various emotions and expressions",
+      "author": "SevenChat Team",
+      "version": "1.0.0",
+      "thumbnail": "thumbnails/pig-pack.png",
+      "category": "animals",
+      "createdAt": "2024-01-01T00:00:00Z",
+      "updatedAt": "2024-01-01T00:00:00Z",
+      "stickers": [
+        {
+          "id": "pig-helmet",
+          "name": "Pig with Helmet",
+          "url": "stickers/pig/pig-helmet.png",
+          "tags": ["pig", "helmet", "safety", "cute", "thumbsup"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-push-cart",
+          "name": "Pig Pushing Cart",
+          "url": "stickers/pig/pig-push-cart.png",
+          "tags": ["pig", "cart", "working", "cute", "helpful"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-hug",
+          "name": "Pig Hugging",
+          "url": "stickers/pig/pig-hug.png",
+          "tags": ["pig", "hug", "love", "cute", "affection"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-happy",
+          "name": "Happy Pig",
+          "url": "stickers/pig/pig-happy.png",
+          "tags": ["pig", "happy", "smile", "joy", "cute"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-wave",
+          "name": "Pig Waving",
+          "url": "stickers/pig/pig-wave.png",
+          "tags": ["pig", "wave", "hello", "greeting", "cute"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-laugh",
+          "name": "Laughing Pig",
+          "url": "stickers/pig/pig-laugh.png",
+          "tags": ["pig", "laugh", "funny", "joy", "cute"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-surprised",
+          "name": "Surprised Pig",
+          "url": "stickers/pig/pig-surprised.png",
+          "tags": ["pig", "surprised", "shock", "amazed", "cute"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-peek",
+          "name": "Peeking Pig",
+          "url": "stickers/pig/pig-peek.png",
+          "tags": ["pig", "peek", "sneaky", "cute", "curious"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-thumbsup",
+          "name": "Pig Thumbs Up",
+          "url": "stickers/pig/pig-thumbsup.png",
+          "tags": ["pig", "thumbsup", "approval", "good", "cute"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-sad",
+          "name": "Sad Pig",
+          "url": "stickers/pig/pig-sad.png",
+          "tags": ["pig", "sad", "unhappy", "cute", "emotion"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-standing",
+          "name": "Standing Pig",
+          "url": "stickers/pig/pig-standing.png",
+          "tags": ["pig", "standing", "normal", "cute", "simple"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-hold-hands",
+          "name": "Pig Holding Hands",
+          "url": "stickers/pig/pig-hold-hands.png",
+          "tags": ["pig", "friendship", "together", "cute", "love"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-hood",
+          "name": "Pig with Hood",
+          "url": "stickers/pig/pig-hood.png",
+          "tags": ["pig", "hood", "cute", "fashion", "warm"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-simple",
+          "name": "Simple Pig",
+          "url": "stickers/pig/pig-simple.png",
+          "tags": ["pig", "simple", "basic", "cute", "normal"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-flying",
+          "name": "Flying Pig",
+          "url": "stickers/pig/pig-flying.png",
+          "tags": ["pig", "flying", "jump", "cute", "excited"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-hearts",
+          "name": "Pig with Hearts",
+          "url": "stickers/pig/pig-hearts.png",
+          "tags": ["pig", "hearts", "love", "cute", "romantic"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-hearts-around",
+          "name": "Pig with Hearts Around",
+          "url": "stickers/pig/pig-hearts-around.png",
+          "tags": ["pig", "hearts", "love", "cute", "romantic"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-baby",
+          "name": "Baby Pig",
+          "url": "stickers/pig/pig-baby.png",
+          "tags": ["pig", "baby", "small", "cute", "family"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-confused",
+          "name": "Confused Pig",
+          "url": "stickers/pig/pig-confused.png",
+          "tags": ["pig", "confused", "question", "cute", "thinking"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-love",
+          "name": "Loving Pig",
+          "url": "stickers/pig/pig-love.png",
+          "tags": ["pig", "love", "heart", "cute", "romantic"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-angry",
+          "name": "Angry Pig",
+          "url": "stickers/pig/pig-angry.png",
+          "tags": ["pig", "angry", "mad", "cute", "emotion"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-hug-baby",
+          "name": "Pig Hugging Baby",
+          "url": "stickers/pig/pig-hug-baby.png",
+          "tags": ["pig", "hug", "baby", "family", "cute"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-satisfied",
+          "name": "Satisfied Pig",
+          "url": "stickers/pig/pig-satisfied.png",
+          "tags": ["pig", "satisfied", "happy", "content", "cute"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-confused-questions",
+          "name": "Confused Pig with Questions",
+          "url": "stickers/pig/pig-confused-questions.png",
+          "tags": ["pig", "confused", "questions", "thinking", "cute"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-love-heart",
+          "name": "Pig with Love Heart",
+          "url": "stickers/pig/pig-love-heart.png",
+          "tags": ["pig", "love", "heart", "romantic", "cute"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-angry-lightning",
+          "name": "Angry Pig with Lightning",
+          "url": "stickers/pig/pig-angry-lightning.png",
+          "tags": ["pig", "angry", "lightning", "mad", "cute"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-hug-simple",
+          "name": "Simple Pig Hug",
+          "url": "stickers/pig/pig-hug-simple.png",
+          "tags": ["pig", "hug", "simple", "love", "cute"],
+          "category": "animals",
+          "pack": "pig-pack"
+        },
+        {
+          "id": "pig-point",
+          "name": "Pig Pointing",
+          "url": "stickers/pig/pig-point.png",
+          "tags": ["pig", "point", "direction", "cute", "helpful"],
+          "category": "animals",
+          "pack": "pig-pack"
+        }
+      ]
+    }
+  ]
+}
