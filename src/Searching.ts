@@ -37,7 +37,23 @@ async function serverSideSearch(
 
     if (roomId !== undefined) filter.rooms = [roomId];
 
-    const body: ISearchRequestBody = {
+    // Enhanced URL detection patterns
+    const URL_PATTERNS = {
+        FULL_URL: /^https?:\/\/[^\s]+$/i,
+        DOMAIN_WITH_PATH: /^[^\s]+\.[^\s]+\/[^\s]*$/i,
+        DOMAIN_ONLY: /^[^\s]+\.[^\s]+$/i,
+        IP_ADDRESS: /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
+        LOCALHOST: /^localhost(:\d+)?(\/.*)?$/i,
+    };
+
+    // Check if search term looks like a URL pattern
+    const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(term)) ||
+                       term.includes('.') || 
+                       term.includes('://') || 
+                       term.includes('/');
+
+    let response;
+    let query: ISearchRequestBody = {
         search_categories: {
             room_events: {
                 search_term: term,
@@ -52,9 +68,76 @@ async function serverSideSearch(
         },
     };
 
-    const response = await client.search({ body: body }, abortSignal);
+    if (isUrlSearch) {
+        console.log(`Server-side URL search detected for term: "${term}"`);
+        
+        // Try multiple search strategies for URLs
+        const searchStrategies = [
+            { term: term, description: "exact" },
+            { term: term.replace(/^https?:\/\//, ''), description: "without protocol" },
+            { term: term.match(/(?:https?:\/\/)?([^\/\s?#]+)/)?.[1] || term, description: "domain only" },
+            { term: term.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/)?.[1] || term, description: "path only" },
+            { term: term.match(/[?&]([^=]+)=([^&\s]+)/)?.[2] || term, description: "query parameter" },
+            { term: term.match(/#([^\s]+)/)?.[1] || term, description: "fragment" },
+        ];
 
-    return { response, query: body };
+        for (const strategy of searchStrategies) {
+            if (strategy.term && strategy.term !== term) {
+                try {
+                    const body: ISearchRequestBody = {
+                        search_categories: {
+                            room_events: {
+                                search_term: strategy.term,
+                                filter: filter,
+                                order_by: SearchOrderBy.Recent,
+                                event_context: {
+                                    before_limit: 1,
+                                    after_limit: 1,
+                                    include_profile: true,
+                                },
+                            },
+                        },
+                    };
+
+                    const strategyResponse = await client.search({ body: body }, abortSignal);
+                    
+                    // Check if we got meaningful results
+                    const results = strategyResponse.search_categories?.room_events?.results;
+                    if (results && results.length > 0) {
+                        console.log(`Server-side ${strategy.description} search returned ${results.length} results`);
+                        response = strategyResponse;
+                        query = body;
+                        break;
+                    }
+                } catch (error) {
+                    console.log(`Server-side ${strategy.description} search failed:`, error);
+                }
+            }
+        }
+    }
+
+    // If no URL-specific results or not a URL search, use original term
+    if (!response || !query) {
+        const body: ISearchRequestBody = {
+            search_categories: {
+                room_events: {
+                    search_term: term,
+                    filter: filter,
+                    order_by: SearchOrderBy.Recent,
+                    event_context: {
+                        before_limit: 1,
+                        after_limit: 1,
+                        include_profile: true,
+                    },
+                },
+            },
+        };
+
+        response = await client.search({ body: body }, abortSignal);
+        query = body;
+    }
+
+    return { response, query };
 }
 
 async function serverSideSearchProcess(
@@ -170,7 +253,127 @@ async function localSearch(
         searchArgs.room_id = roomId;
     }
 
-    const localResult = await eventIndex!.search(searchArgs);
+    // Enhanced URL detection patterns
+    const URL_PATTERNS = {
+        FULL_URL: /^https?:\/\/[^\s]+$/i,
+        DOMAIN_WITH_PATH: /^[^\s]+\.[^\s]+\/[^\s]*$/i,
+        DOMAIN_ONLY: /^[^\s]+\.[^\s]+$/i,
+        IP_ADDRESS: /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
+        LOCALHOST: /^localhost(:\d+)?(\/.*)?$/i,
+    };
+
+    // Check if search term looks like a URL pattern
+    const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(searchTerm)) ||
+                       searchTerm.includes('.') || 
+                       searchTerm.includes('://') || 
+                       searchTerm.includes('/');
+    
+    let localResult;
+    
+    if (isUrlSearch) {
+        console.log(`URL search detected for term: "${searchTerm}"`);
+        
+        // Strategy 1: Try exact search first
+        try {
+            localResult = await eventIndex!.search(searchArgs);
+            console.log(`Exact search returned ${localResult?.count || 0} results`);
+        } catch (error) {
+            console.log("Exact URL search failed:", error);
+        }
+        
+        // Strategy 2: If no results, try without protocol
+        if (!localResult || localResult.count === 0) {
+            const urlWithoutProtocol = searchTerm.replace(/^https?:\/\//, '');
+            if (urlWithoutProtocol !== searchTerm) {
+                const alternativeArgs = { ...searchArgs, search_term: urlWithoutProtocol };
+                try {
+                    localResult = await eventIndex!.search(alternativeArgs);
+                    console.log(`Protocol-removed search returned ${localResult?.count || 0} results`);
+                } catch (error) {
+                    console.log("Protocol-removed search failed:", error);
+                }
+            }
+        }
+        
+        // Strategy 3: Try domain-only search
+        if (!localResult || localResult.count === 0) {
+            const domainMatch = searchTerm.match(/(?:https?:\/\/)?([^\/\s?#]+)/);
+            if (domainMatch && domainMatch[1]) {
+                const domainArgs = { ...searchArgs, search_term: domainMatch[1] };
+                try {
+                    localResult = await eventIndex!.search(domainArgs);
+                    console.log(`Domain-only search returned ${localResult?.count || 0} results`);
+                } catch (error) {
+                    console.log("Domain-only search failed:", error);
+                }
+            }
+        }
+        
+        // Strategy 4: Try path-only search (for URLs with paths)
+        if (!localResult || localResult.count === 0) {
+            const pathMatch = searchTerm.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/);
+            if (pathMatch && pathMatch[1]) {
+                const pathArgs = { ...searchArgs, search_term: pathMatch[1] };
+                try {
+                    localResult = await eventIndex!.search(pathArgs);
+                    console.log(`Path-only search returned ${localResult?.count || 0} results`);
+                } catch (error) {
+                    console.log("Path-only search failed:", error);
+                }
+            }
+        }
+        
+        // Strategy 5: Try query parameter search
+        if (!localResult || localResult.count === 0) {
+            const queryMatch = searchTerm.match(/[?&]([^=]+)=([^&\s]+)/);
+            if (queryMatch) {
+                const queryArgs = { ...searchArgs, search_term: queryMatch[2] };
+                try {
+                    localResult = await eventIndex!.search(queryArgs);
+                    console.log(`Query parameter search returned ${localResult?.count || 0} results`);
+                } catch (error) {
+                    console.log("Query parameter search failed:", error);
+                }
+            }
+        }
+        
+        // Strategy 6: Try fragment search
+        if (!localResult || localResult.count === 0) {
+            const fragmentMatch = searchTerm.match(/#([^\s]+)/);
+            if (fragmentMatch) {
+                const fragmentArgs = { ...searchArgs, search_term: fragmentMatch[1] };
+                try {
+                    localResult = await eventIndex!.search(fragmentArgs);
+                    console.log(`Fragment search returned ${localResult?.count || 0} results`);
+                } catch (error) {
+                    console.log("Fragment search failed:", error);
+                }
+            }
+        }
+        
+        // Strategy 7: Try partial domain search (for subdomains)
+        if (!localResult || localResult.count === 0) {
+            const domainParts = searchTerm.replace(/^https?:\/\//, '').split('.');
+            if (domainParts.length > 1) {
+                // Try with main domain
+                const mainDomain = domainParts.slice(-2).join('.');
+                const mainDomainArgs = { ...searchArgs, search_term: mainDomain };
+                try {
+                    localResult = await eventIndex!.search(mainDomainArgs);
+                    console.log(`Main domain search returned ${localResult?.count || 0} results`);
+                } catch (error) {
+                    console.log("Main domain search failed:", error);
+                }
+            }
+        }
+    }
+    
+    // Fallback to normal search if no URL-specific results
+    if (!localResult) {
+        console.log("Falling back to normal search");
+        localResult = await eventIndex!.search(searchArgs);
+    }
+    
     if (!localResult) {
         throw new Error("Local search failed");
     }
