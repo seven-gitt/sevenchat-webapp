@@ -47,7 +47,9 @@ import { useScopedRoomContext } from "../../../contexts/ScopedRoomContext";
 import ContextMenu, { aboveLeftOf, useContextMenu, ChevronFace } from "../../structures/ContextMenu";
 import RoomContext from "../../../contexts/RoomContext";
 import { useTheme } from "../../../hooks/useTheme";
+import { type ImageInfo } from "matrix-js-sdk/src/types";
 import stickerRepository, { type Sticker } from "../../../utils/StickerRepository";
+import { createThumbnail } from "../../../utils/image-media";
 
 interface IProps {
     addContent: (content: string) => boolean;
@@ -560,12 +562,87 @@ function StickerButton({
             const fileName = sticker.url.split("/").pop()?.split("?")[0] || `${sticker.id}.png`;
             const file = new File([blob], fileName, { type: blob.type || "image/png" });
 
-            await ContentMessages.sharedInstance().sendContentToRoom(
-                file,
+            // Load image and create thumbnail
+            const objectUrl = URL.createObjectURL(file);
+            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => resolve(image);
+                image.onerror = (e) => reject(e);
+                image.src = objectUrl;
+            });
+            URL.revokeObjectURL(objectUrl);
+
+            // Create small thumbnail for sticker (150x150 max)
+            const thumbnailType = file.type === "image/jpeg" ? "image/jpeg" : "image/png";
+            
+            // Calculate thumbnail dimensions (max 150x150)
+            let thumbWidth = img.width;
+            let thumbHeight = img.height;
+            if (thumbHeight > 150) {
+                thumbWidth = Math.floor(thumbWidth * (150 / thumbHeight));
+                thumbHeight = 150;
+            }
+            if (thumbWidth > 150) {
+                thumbHeight = Math.floor(thumbHeight * (150 / thumbWidth));
+                thumbWidth = 150;
+            }
+            
+            // Create canvas for thumbnail
+            const canvas = document.createElement('canvas');
+            canvas.width = thumbWidth;
+            canvas.height = thumbHeight;
+            const ctx = canvas.getContext('2d')!;
+            ctx.drawImage(img, 0, 0, thumbWidth, thumbHeight);
+            
+            // Convert to blob
+            const thumbnailBlob = await new Promise<Blob>((resolve, reject) => {
+                canvas.toBlob((blob) => {
+                    if (blob) {
+                        resolve(blob);
+                    } else {
+                        reject(new Error('Failed to create thumbnail blob'));
+                    }
+                }, thumbnailType);
+            }) as Blob;
+            
+            const thumbnailInfo = {
+                w: thumbWidth,
+                h: thumbHeight,
+                mimetype: thumbnailType,
+                size: thumbnailBlob.size,
+            };
+            
+            // Upload original image
+            const { content_uri } = await matrixClient.uploadContent(file, {
+                includeFilename: false,
+                type: file.type,
+            });
+
+            // Upload thumbnail
+            const thumbnailUploadResult = await matrixClient.uploadContent(thumbnailBlob, {
+                includeFilename: false,
+                type: thumbnailType,
+            });
+
+            const info: ImageInfo = {
+                w: img.width,
+                h: img.height,
+                mimetype: file.type || "image/png",
+                size: file.size,
+                thumbnail_url: thumbnailUploadResult.content_uri,
+                thumbnail_info: thumbnailInfo,
+            };
+
+            const threadId = relation?.rel_type === THREAD_RELATION_TYPE.name ? relation.event_id ?? null : null;
+            const text = sticker.name || fileName;
+
+            await ContentMessages.sharedInstance().sendStickerContentToRoom(
+                content_uri,
                 room.roomId,
-                relation,
+                threadId,
+                info,
+                text,
                 matrixClient,
-                undefined,
             );
 
             // Add to recent stickers
