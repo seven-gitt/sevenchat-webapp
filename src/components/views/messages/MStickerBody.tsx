@@ -58,14 +58,8 @@ class MStickerBodyInner extends MImageBodyInner {
 
     // Tooltip to show on mouse over
     protected getTooltipProps(): ComponentProps<typeof Tooltip> | null {
-        const content = this.props.mxEvent && this.props.mxEvent.getContent();
-
-        if (!content?.body || !content.info?.w) return null;
-
-        return {
-            placement: "right",
-            description: content.body,
-        };
+        // Disable tooltip for stickers to avoid showing filename/body on hover
+        return null;
     }
 
     // Don't show "Download this_file.png ..."
@@ -74,7 +68,7 @@ class MStickerBodyInner extends MImageBodyInner {
     }
 
     protected getBanner(content: MediaEventContent): ReactNode {
-        return null; // we don't need a banner, we have a tooltip
+        return null; // we don't need a banner, and we disabled tooltip
     }
 }
 
