@@ -453,7 +453,20 @@ class NotifierClass extends TypedEventEmitter<keyof EmittedEvents, EmittedEvents
 
         const actions = MatrixClientPeg.safeGet().getPushActionsForEvent(ev);
 
-        if (actions?.notify) {
+        // For sticker events, if no actions are returned, treat them like message events
+        let finalActions = actions;
+        if (ev.getType() === EventType.Sticker && !actions?.notify) {
+            // Create default notification actions for stickers
+            finalActions = {
+                notify: true,
+                tweaks: {
+                    sound: "default",
+                    highlight: false,
+                },
+            };
+        }
+
+        if (finalActions?.notify) {
             this.performCustomEventHandling(ev);
 
             const store = SdkContextClass.instance.roomViewStore;
@@ -471,10 +484,16 @@ class NotifierClass extends TypedEventEmitter<keyof EmittedEvents, EmittedEvents
             if (this.isEnabled()) {
                 this.displayPopupNotification(ev, room);
             }
-            if (actions.tweaks.sound && this.isAudioEnabled()) {
+            if (finalActions.tweaks.sound && this.isAudioEnabled()) {
                 PlatformPeg.get()?.loudNotification(ev, room);
                 this.playAudioNotification(ev, room);
             }
+        }
+
+        // Force sticker events to be counted in notification counts
+        if (ev.getType() === EventType.Sticker && ev.getSender() !== MatrixClientPeg.safeGet().getUserId()) {
+            // Manually trigger notification count update for sticker events
+            room.emit(RoomEvent.UnreadNotifications, room.getUnreadNotificationCount());
         }
     }
 
@@ -507,6 +526,8 @@ class NotifierClass extends TypedEventEmitter<keyof EmittedEvents, EmittedEvents
                 props: { notifyEvent: ev },
             });
         }
+
+        // Sticker events are handled like regular messages, no special handling needed
     }
 }
 

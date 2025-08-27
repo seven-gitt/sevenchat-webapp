@@ -26,6 +26,11 @@ export function eventTriggersUnreadCount(client: MatrixClient, ev: MatrixEvent):
         return false;
     }
 
+    // Always count sticker events as unread messages
+    if (ev.getType() === EventType.Sticker) {
+        return true;
+    }
+
     switch (ev.getType()) {
         case EventType.RoomMember:
         case EventType.RoomThirdPartyInvite:

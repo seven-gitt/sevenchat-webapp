@@ -157,6 +157,16 @@ export const VectorPushRulesDefinitions: Record<string, VectorPushRuleDefinition
         syncedRuleIds: [RuleId.PollStart, RuleId.PollStartUnstable, RuleId.PollEnd, RuleId.PollEndUnstable],
     }),
 
+    // Sticker events - treat them like regular messages for notifications
+    ".m.rule.sticker": new VectorPushRuleDefinition({
+        description: _td("settings|notifications|rule_message"), // Use same description as regular messages
+        vectorStateToActions: {
+            [VectorState.On]: StandardActions.ACTION_NOTIFY,
+            [VectorState.Loud]: StandardActions.ACTION_NOTIFY_DEFAULT_SOUND,
+            [VectorState.Off]: StandardActions.ACTION_DONT_NOTIFY,
+        },
+    }),
+
     // Encrypted messages just sent to a group chat room
     // Encrypted 1:1 room messages are caught by the .m.rule.encrypted_room_one_to_one rule if any defined
     // By opposition, all other room messages are from group chat rooms.

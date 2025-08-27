@@ -13,6 +13,7 @@ import {
     PushRuleActionName,
     PushRuleKind,
     TweakName,
+    EventType,
 } from "matrix-js-sdk/src/matrix";
 
 import type { IPushRule, Room, MatrixClient } from "matrix-js-sdk/src/matrix";
@@ -86,6 +87,17 @@ export function getUnreadNotificationCount(
     let notificationCount = !!threadId
         ? room.getThreadUnreadNotificationCount(threadId, type)
         : getCountShownForRoom(room, type);
+
+    // For Total notification count, also count sticker events as unread messages
+    if (type === NotificationCountType.Total && !threadId) {
+        const timeline = room.getLiveTimeline().getEvents();
+        const stickerCount = timeline.filter(event => 
+            event.getType() === EventType.Sticker && 
+            event.getSender() !== room.client.getUserId() &&
+            !room.hasUserReadEvent(room.client.getUserId()!, event.getId()!)
+        ).length;
+        notificationCount += stickerCount;
+    }
 
     // Check notification counts in the old room just in case there's some lost
     // there. We only go one level down to avoid performance issues, and theory

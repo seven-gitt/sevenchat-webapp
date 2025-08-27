@@ -46,6 +46,7 @@ function toStandardRules(
             highlight: false,
         }),
     });
+
     standardRules.set(RuleId.EncryptedDM, {
         rule_id: RuleId.EncryptedDM,
         kind: PushRuleKind.Underride,
