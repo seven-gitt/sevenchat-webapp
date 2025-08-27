@@ -22,6 +22,7 @@ import {
     M_LOCATION,
     EventType,
     TypedEventEmitter,
+    NotificationCountType,
 } from "matrix-js-sdk/src/matrix";
 import { logger } from "matrix-js-sdk/src/logger";
 import { type PermissionChanged as PermissionChangedEvent } from "@matrix-org/analytics-events/types/typescript/PermissionChanged";
@@ -493,7 +494,9 @@ class NotifierClass extends TypedEventEmitter<keyof EmittedEvents, EmittedEvents
         // Force sticker events to be counted in notification counts
         if (ev.getType() === EventType.Sticker && ev.getSender() !== MatrixClientPeg.safeGet().getUserId()) {
             // Manually trigger notification count update for sticker events
-            room.emit(RoomEvent.UnreadNotifications, room.getUnreadNotificationCount());
+            room.emit(RoomEvent.UnreadNotifications, {
+                [NotificationCountType.Total]: room.getUnreadNotificationCount(NotificationCountType.Total) + 1,
+            });
         }
     }
 
