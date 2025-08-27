@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 
 import SettingsStore from "../settings/SettingsStore";
 import { type SettingLevel } from "../settings/SettingLevel";
-import { type FeatureSettingKey, type SettingKey, type Settings } from "../settings/Settings.tsx";
+import { type FeatureSettingKey, type SettingKey, type Settings } from "../settings/Settings";
 
 // Hook to fetch the value of a setting and dynamically update when it changes
 export function useSettingValue<S extends SettingKey>(

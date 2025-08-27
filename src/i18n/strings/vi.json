@@ -3224,7 +3224,7 @@
         "you_are_presenting": "Bạn đang trình bày"
     },
     "web_default_device_name": "%(appName)s: %(browserName)s trên %(osName)s",
-    "welcome_to_element": "Chào mừng tới SevenChat",
+    "welcome_to_element": "SevenChat - SevenCompany",
     "widget": {
         "added_by": "widget được thêm bởi",
         "capabilities_dialog": {
