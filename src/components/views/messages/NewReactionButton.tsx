@@ -10,7 +10,6 @@ import { EventType, type MatrixEvent, RelationType } from "matrix-js-sdk/src/mat
 
 import { _t } from "../../../languageHandler";
 import dis from "../../../dispatcher/dispatcher";
-import AccessibleButton from "../elements/AccessibleButton";
 import MatrixClientContext from "../../../contexts/MatrixClientContext";
 import Modal from "../../../Modal";
 
@@ -92,12 +91,12 @@ export default class NewReactionButton extends React.PureComponent<IProps, IStat
             // Show user-friendly error message
             alert("Không thể xử lý reaction. Vui lòng thử lại.");
         } finally {
-            // Reset processing state after a delay to ensure sync
+            // Reset processing state quickly to re-enable hover/tooltip
             setTimeout(() => {
                 if (!this.isUnmounted) {
                     this.setState({ isProcessing: false });
                 }
-            }, 1000);
+            }, 150);
         }
     };
 
@@ -198,7 +197,7 @@ export default class NewReactionButton extends React.PureComponent<IProps, IStat
         const { isProcessing } = this.state;
         
         const isSelected = !!myReactionEvent;
-        const isDisabled = disabled || isProcessing;
+        const isDisabled = disabled; // Cho phép hover/tooltip ngay cả khi đang xử lý
         const tooltipText = this.getTooltipText();
 
         // Keep the button visible while processing to avoid visual jumps.
