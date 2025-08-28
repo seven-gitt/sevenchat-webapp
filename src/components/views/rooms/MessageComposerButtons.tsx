@@ -427,6 +427,43 @@ function StickerButton({
     const [error, setError] = useState("");
     const [uploadError, setUploadError] = useState("");
     const [recentStickers, setRecentStickers] = useState<Sticker[]>([]);
+    const packScrollRef = useRef<HTMLDivElement>(null);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(false);
+
+    const scrollPacksBy = (delta: number): void => {
+        packScrollRef.current?.scrollBy({ left: delta, behavior: "smooth" });
+    };
+
+    const onPacksWheel: React.WheelEventHandler<HTMLDivElement> = (e) => {
+        if (e.deltaY !== 0) {
+            e.preventDefault();
+            scrollPacksBy(e.deltaY);
+        }
+    };
+
+    const reevaluateScrollButtons = (): void => {
+        const el = packScrollRef.current;
+        if (!el) return;
+        const maxScrollLeft = el.scrollWidth - el.clientWidth - 1; // tolerance
+        setCanScrollLeft(el.scrollLeft > 0);
+        setCanScrollRight(el.scrollLeft < maxScrollLeft);
+    };
+
+    useEffect(() => {
+        if (!menuDisplayed) return;
+        const el = packScrollRef.current;
+        if (!el) return;
+        reevaluateScrollButtons();
+        const handler = () => reevaluateScrollButtons();
+        el.addEventListener("scroll", handler, { passive: true });
+        window.addEventListener("resize", handler);
+        return () => {
+            el.removeEventListener("scroll", handler as EventListener);
+            window.removeEventListener("resize", handler);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [menuDisplayed, stickerPacks.length]);
 
     // Load stickers from GitHub repository when menu opens
     useEffect(() => {
@@ -493,6 +530,18 @@ function StickerButton({
 
         loadStickers();
     }, [menuDisplayed, search]);
+
+    // Load recent stickers from localStorage when menu opens
+    useEffect(() => {
+        if (!menuDisplayed) return;
+        try {
+            const raw = localStorage.getItem("recentStickers");
+            if (raw) {
+                const arr = JSON.parse(raw) as Sticker[];
+                if (Array.isArray(arr)) setRecentStickers(arr);
+            }
+        } catch {}
+    }, [menuDisplayed]);
 
     // Auto-refresh stickers every 30 seconds when menu is open
     useEffect(() => {
@@ -645,9 +694,15 @@ function StickerButton({
                 matrixClient,
             );
 
-            // Add to recent stickers
-            const updatedRecentStickers = [sticker, ...recentStickers.filter((s) => s.id !== sticker.id)].slice(0, 10);
+            // Add to recent stickers and persist
+            const updatedRecentStickers = [
+                sticker,
+                ...recentStickers.filter((s) => s.id !== sticker.id),
+            ].slice(0, 24);
             setRecentStickers(updatedRecentStickers);
+            try {
+                localStorage.setItem("recentStickers", JSON.stringify(updatedRecentStickers));
+            } catch {}
             closeMenu();
             overflowMenuCloser?.();
         } catch (e) {
@@ -761,6 +816,78 @@ function StickerButton({
                                                     width: "100%",
                                                 }}
                                             >
+                                                {recentStickers.length > 0 && (
+                                                    <div
+                                                        style={{
+                                                            width: "100%",
+                                                            borderBottom: isDark ? "1px solid #444" : "1px solid #f0f0f0",
+                                                            paddingBottom: "16px",
+                                                        }}
+                                                    >
+                                                        <div
+                                                            style={{
+                                                                fontSize: "16px",
+                                                                fontWeight: "bold",
+                                                                color: isDark ? "#fff" : "#333",
+                                                                marginBottom: "12px",
+                                                                padding: "0 4px",
+                                                            }}
+                                                        >
+                                                            Đã dùng gần đây
+                                                        </div>
+                                                        <div
+                                                            style={{
+                                                                display: "grid",
+                                                                gridTemplateColumns: "repeat(4, 1fr)",
+                                                                gap: "14px",
+                                                                width: "100%",
+                                                            }}
+                                                        >
+                                                            {recentStickers.map((st) => (
+                                                                <div
+                                                                    key={`recent-${st.id}`}
+                                                                    className="mx_StickerPicker_item"
+                                                                    onClick={() => handleStickerClick(st)}
+                                                                    title={`${st.name}${st.pack ? ` (${st.pack})` : ""}`}
+                                                                    style={{
+                                                                        position: "relative",
+                                                                        cursor: "pointer",
+                                                                        padding: "8px",
+                                                                        borderRadius: "10px",
+                                                                        border: isDark ? "1px solid #555" : "1px solid #eee",
+                                                                        background: isDark ? "#2d3139" : "white",
+                                                                        transition: "all 0.2s ease",
+                                                                        display: "flex",
+                                                                        flexDirection: "column",
+                                                                        alignItems: "center",
+                                                                    }}
+                                                                    onMouseEnter={(e) => {
+                                                                        e.currentTarget.style.transform = "scale(1.05)";
+                                                                        e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.1)";
+                                                                    }}
+                                                                    onMouseLeave={(e) => {
+                                                                        e.currentTarget.style.transform = "scale(1)";
+                                                                        e.currentTarget.style.boxShadow = "none";
+                                                                    }}
+                                                                >
+                                                                    <img
+                                                                        src={st.url}
+                                                                        alt={st.name}
+                                                                        style={{
+                                                                            width: "60px",
+                                                                            height: "60px",
+                                                                            objectFit: "contain",
+                                                                            borderRadius: "6px",
+                                                                        }}
+                                                                        onError={(e) => {
+                                                                            e.currentTarget.style.display = "none";
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
                                                 {stickerPacks.map((pack) => (
                                                     <div
                                                         key={pack.id}
@@ -935,75 +1062,66 @@ function StickerButton({
                                 <div
                                     style={{
                                         borderTop: isDark ? "1px solid #444" : "1px solid #eee",
-                                        padding: "8px 12px",
+                                        padding: "8px 8px",
                                         background: isDark ? "#1a1d23" : "#f8f9fa",
                                         display: "flex",
                                         alignItems: "center",
                                         gap: "8px",
-                                        overflowX: "auto",
-                                        overflowY: "hidden",
-                                        minHeight: "60px",
-                                        maxWidth: "100%",
-                                        scrollbarWidth: "thin",
-                                        scrollbarColor: isDark ? "#555 #1a1d23" : "#ccc #f8f9fa",
-                                        // Webkit scrollbar styles
-                                        ...(isDark
-                                            ? {
-                                                  "&::-webkit-scrollbar": { height: "6px" },
-                                                  "&::-webkit-scrollbar-track": { background: "#1a1d23" },
-                                                  "&::-webkit-scrollbar-thumb": {
-                                                      background: "#555",
-                                                      borderRadius: "3px",
-                                                  },
-                                              }
-                                            : {
-                                                  "&::-webkit-scrollbar": { height: "6px" },
-                                                  "&::-webkit-scrollbar-track": { background: "#f8f9fa" },
-                                                  "&::-webkit-scrollbar-thumb": {
-                                                      background: "#ccc",
-                                                      borderRadius: "3px",
-                                                  },
-                                              }),
                                     }}
                                 >
-                                    {/* Recent Button */}
                                     <button
-                                        onClick={() => setSelectedPack("all")}
+                                        onClick={() => scrollPacksBy(-220)}
+                                        title="Cuộn trái"
+                                        disabled={!canScrollLeft}
                                         style={{
-                                            minWidth: "50px",
-                                            width: "50px",
-                                            height: "50px",
-                                            background:
-                                                selectedPack === "all" ? "#007bff" : isDark ? "#2d3139" : "#fff",
-                                            color: selectedPack === "all" ? "white" : isDark ? "#fff" : "#333",
-                                            border: isDark ? "1px solid #555" : "1px solid #ddd",
-                                            borderRadius: "8px",
-                                            cursor: "pointer",
+                                            width: 32,
+                                            height: 32,
+                                            borderRadius: "50%",
+                                            border: "none",
+                                            background: canScrollLeft
+                                                ? (isDark ? "#2d3139" : "#ffffff")
+                                                : (isDark ? "#20232a" : "#f0f0f0"),
+                                            boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
+                                            color: canScrollLeft ? (isDark ? "#e6e6e6" : "#3a3a3a") : (isDark ? "#555" : "#aaa"),
+                        cursor: canScrollLeft ? "pointer" : "default",
                                             display: "flex",
-                                            flexDirection: "column",
                                             alignItems: "center",
                                             justifyContent: "center",
-                                            fontSize: "10px",
-                                            fontWeight: selectedPack === "all" ? "bold" : "normal",
                                             flexShrink: 0,
-                                            whiteSpace: "nowrap",
                                         }}
                                     >
-                                        <div>Tất cả</div>
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <polyline points="15 18 9 12 15 6"></polyline>
+                                        </svg>
                                     </button>
 
-                                    {/* Pack Buttons */}
-                                    {stickerPacks.map((pack) => (
+                                    <div
+                                        ref={packScrollRef}
+                                        onWheel={onPacksWheel}
+                                        style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "8px",
+                                            overflowX: "auto",
+                                            overflowY: "hidden",
+                                            minHeight: "60px",
+                                            maxWidth: "100%",
+                                            scrollbarWidth: "thin",
+                                            scrollbarColor: isDark ? "#555 #1a1d23" : "#ccc #f8f9fa",
+                                            flex: 1,
+                                            padding: "0 2px",
+                                        }}
+                                    >
+                                        {/* Recent Button */}
                                         <button
-                                            key={pack.id}
-                                            onClick={() => setSelectedPack(pack.id)}
+                                            onClick={() => setSelectedPack("all")}
                                             style={{
                                                 minWidth: "50px",
                                                 width: "50px",
                                                 height: "50px",
                                                 background:
-                                                    selectedPack === pack.id ? "#007bff" : isDark ? "#2d3139" : "#fff",
-                                                color: selectedPack === pack.id ? "white" : isDark ? "#fff" : "#333",
+                                                    selectedPack === "all" ? "#007bff" : isDark ? "#2d3139" : "#fff",
+                                                color: selectedPack === "all" ? "white" : isDark ? "#fff" : "#333",
                                                 border: isDark ? "1px solid #555" : "1px solid #ddd",
                                                 borderRadius: "8px",
                                                 cursor: "pointer",
@@ -1012,32 +1130,90 @@ function StickerButton({
                                                 alignItems: "center",
                                                 justifyContent: "center",
                                                 fontSize: "10px",
-                                                fontWeight: selectedPack === pack.id ? "bold" : "normal",
+                                                fontWeight: selectedPack === "all" ? "bold" : "normal",
                                                 flexShrink: 0,
-                                                position: "relative",
                                                 whiteSpace: "nowrap",
                                             }}
                                         >
-                                            {/* Pack Thumbnail */}
-                                            {pack.stickers.length > 0 && (
-                                                <img
-                                                    src={pack.stickers[0].url}
-                                                    alt={pack.name}
-                                                    style={{
-                                                        width: "32px",
-                                                        height: "32px",
-                                                        objectFit: "contain",
-                                                        borderRadius: "4px",
-                                                        marginBottom: "2px",
-                                                    }}
-                                                    onError={(e) => {
-                                                        e.currentTarget.style.display = "none";
-                                                    }}
-                                                />
-                                            )}
-                                            <div>{pack.name}</div>
+                                            <div>Tất cả</div>
                                         </button>
-                                    ))}
+
+                                        {/* Pack Buttons */}
+                                        {stickerPacks.map((pack) => (
+                                            <button
+                                                key={pack.id}
+                                                onClick={() => setSelectedPack(pack.id)}
+                                                style={{
+                                                    minWidth: "50px",
+                                                    width: "50px",
+                                                    height: "50px",
+                                                    background:
+                                                        selectedPack === pack.id
+                                                            ? "#007bff"
+                                                            : isDark
+                                                            ? "#2d3139"
+                                                            : "#fff",
+                                                    color: selectedPack === pack.id ? "white" : isDark ? "#fff" : "#333",
+                                                    border: isDark ? "1px solid #555" : "1px solid #ddd",
+                                                    borderRadius: "8px",
+                                                    cursor: "pointer",
+                                                    display: "flex",
+                                                    flexDirection: "column",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    fontSize: "10px",
+                                                    fontWeight: selectedPack === pack.id ? "bold" : "normal",
+                                                    flexShrink: 0,
+                                                    position: "relative",
+                                                    whiteSpace: "nowrap",
+                                                }}
+                                            >
+                                                {pack.stickers.length > 0 && (
+                                                    <img
+                                                        src={pack.stickers[0].url}
+                                                        alt={pack.name}
+                                                        style={{
+                                                            width: "32px",
+                                                            height: "32px",
+                                                            objectFit: "contain",
+                                                            borderRadius: "4px",
+                                                            marginBottom: "2px",
+                                                        }}
+                                                        onError={(e) => {
+                                                            e.currentTarget.style.display = "none";
+                                                        }}
+                                                    />
+                                                )}
+                                                <div>{pack.name}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    <button
+                                        onClick={() => scrollPacksBy(220)}
+                                        title="Cuộn phải"
+                                        disabled={!canScrollRight}
+                                        style={{
+                                            width: 32,
+                                            height: 32,
+                                            borderRadius: "50%",
+                                            border: "none",
+                                            background: canScrollRight
+                                                ? (isDark ? "#2d3139" : "#ffffff")
+                                                : (isDark ? "#20232a" : "#f0f0f0"),
+                                            boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
+                                            color: canScrollRight ? (isDark ? "#e6e6e6" : "#3a3a3a") : (isDark ? "#555" : "#aaa"),
+                        cursor: canScrollRight ? "pointer" : "default",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            flexShrink: 0,
+                                        }}
+                                    >
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <polyline points="9 18 15 12 9 6"></polyline>
+                                        </svg>
+                                    </button>
                                 </div>
                             )}
                         </>
