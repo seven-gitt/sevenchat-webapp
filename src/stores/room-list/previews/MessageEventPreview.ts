@@ -59,6 +59,26 @@ export class MessageEventPreview implements IPreview {
             return _t("event_preview|m.emote", { senderName: getSenderName(event), emote: body });
         }
 
+        // Xử lý hình ảnh và GIF
+        if (msgtype === MsgType.Image) {
+            // Check if the image is animated (GIF)
+            const isAnimated = eventContent.info?.["org.matrix.msc4230.is_animated"] === true;
+            
+            if (isSelf(event)) {
+                if (isAnimated) {
+                    return _t("timeline|m.image|sent_gif_self");
+                } else {
+                    return _t("timeline|m.image|sent_self");
+                }
+            } else {
+                if (isAnimated) {
+                    return _t("timeline|m.image|sent_gif", { senderDisplayName: getSenderName(event) });
+                } else {
+                    return _t("timeline|m.image|sent", { senderDisplayName: getSenderName(event) });
+                }
+            }
+        }
+
         // Đã chỉnh sửa: Phân biệt tin nhắn 1:1 và tin nhắn phòng
         const roomId = event.getRoomId();
         const shouldPrefix = roomId ? shouldPrefixMessagesIn(roomId, tagId) : true;

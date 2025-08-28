@@ -18,7 +18,10 @@ export class StickerEventPreview implements IPreview {
         const stickerName = event.getContent()["body"];
         if (!stickerName) return null;
 
-        if (isThread || isSelf(event) || !shouldPrefixMessagesIn(event.getRoomId()!, tagId)) {
+        // Check if the sender is the current user
+        if (isSelf(event)) {
+            return "Bạn đã gửi một sticker.";
+        } else if (isThread || !shouldPrefixMessagesIn(event.getRoomId()!, tagId)) {
             return stickerName;
         } else {
             return _t("event_preview|m.sticker", { senderName: getSenderName(event), stickerName });

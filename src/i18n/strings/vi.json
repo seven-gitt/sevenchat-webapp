@@ -925,7 +925,8 @@
         "m.reaction": {
             "user": "%(sender)s bày tỏ cảm xúc %(reaction)s với %(message)s",
             "you": "Bạn bày tỏ cảm xúc %(reaction)s với %(message)s"
-        }
+        },
+        "m.sticker": "%(senderName)s đã gửi một sticker."
     },
     "export_chat": {
         "cancelled": "Đã hủy trích xuất",
@@ -2687,9 +2688,14 @@
             "error": "Không thể hiển thị hình ảnh do lỗi",
             "error_decrypting": "Lỗi khi giải mã hình ảnh",
             "error_downloading": "Lỗi khi tải hình ảnh",
-            "sent": "%(senderDisplayName)s đã gửi một hình.",
+            "sent": "%(senderDisplayName)s đã gửi một ảnh.",
+            "sent_gif": "%(senderDisplayName)s đã gửi một GIF.",
+            "sent_gif_self": "Bạn đã gửi một GIF.",
+            "sent_self": "Bạn đã gửi một ảnh.",
             "show_image": "Hiển thị hình ảnh"
         },
+        "m.sticker": "%(senderDisplayName)s đã gửi một sticker.",
+        "m.sticker|sent_self": "Bạn đã gửi một sticker.",
         "m.key.verification.request": {
             "user_wants_to_verify": "%(name)s muốn xác thực",
             "you_started": "Bạn đã gửi một yêu cầu xác thực"
@@ -2813,7 +2819,6 @@
         "m.room.topic": {
             "changed": "%(senderDisplayName)s đổi chủ đề thành \"%(topic)s\"."
         },
-        "m.sticker": "%(senderDisplayName)s đã gửi một sticker.",
         "m.video": {
             "error_decrypting": "Lỗi khi giải mã video"
         },
@@ -3374,5 +3379,6 @@
             "topTen": "Đây là 1 trong 10 mật khẩu phổ biến",
             "wordByItself": "Một từ có nghĩa là rất dễ đoán"
         }
-    }
+    },
+    "m.sticker|sent_self": "Bạn đã gửi một sticker."
 }

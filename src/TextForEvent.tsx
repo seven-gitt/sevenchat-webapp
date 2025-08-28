@@ -38,7 +38,7 @@ import RightPanelStore from "./stores/right-panel/RightPanelStore";
 import { highlightEvent, isLocationEvent } from "./utils/EventUtils";
 import { ElementCall } from "./models/Call";
 import { getSenderName } from "./utils/event/getSenderName";
-import PosthogTrackers from "./PosthogTrackers.ts";
+import PosthogTrackers from "./PosthogTrackers";
 
 function getRoomMemberDisplayname(client: MatrixClient, event: MatrixEvent, userId = event.getSender()): string {
     const roomId = event.getRoomId();
@@ -389,9 +389,30 @@ function textForMessageEvent(ev: MatrixEvent, client: MatrixClient): (() => stri
         if (ev.getContent().msgtype === MsgType.Emote) {
             message = "* " + senderDisplayName + " " + message;
         } else if (ev.getContent().msgtype === MsgType.Image) {
-            message = _t("timeline|m.image|sent", { senderDisplayName });
+            // Check if the image is animated (GIF)
+            const content = ev.getContent();
+            const isAnimated = content.info?.["org.matrix.msc4230.is_animated"] === true;
+            
+            // Check if the sender is the current user
+            const isSelf = ev.getSender() === client.getUserId();
+            
+            if (isAnimated) {
+                if (isSelf) {
+                    message = _t("timeline|m.image|sent_gif_self");
+                } else {
+                    message = _t("timeline|m.image|sent_gif", { senderDisplayName });
+                }
+            } else {
+                message = _t("timeline|m.image|sent", { senderDisplayName });
+            }
         } else if (ev.getType() == EventType.Sticker) {
-            message = _t("timeline|m.sticker", { senderDisplayName });
+            // Check if the sender is the current user
+            const isSelf = ev.getSender() === client.getUserId();
+            if (isSelf) {
+                message = _t("timeline|m.sticker|sent_self");
+            } else {
+                message = _t("timeline|m.sticker", { senderDisplayName });
+            }
         } else {
             // in this case, parse it as a plain text message
             message = senderDisplayName + ": " + message;

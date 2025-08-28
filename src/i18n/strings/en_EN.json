@@ -1806,12 +1806,16 @@
         },
         "m.image": {
             "sent": "%(senderDisplayName)s sent an image.",
+            "sent_gif": "%(senderDisplayName)s sent a GIF.",
+            "sent_gif_self": "You sent a GIF.",
+            "sent_self": "You sent an image.",
             "show_image": "Show image",
             "error": "Unable to show image due to error",
             "error_decrypting": "Error decrypting image",
             "error_downloading": "Error downloading image"
         },
         "m.sticker": "%(senderDisplayName)s sent a sticker.",
+        "m.sticker|sent_self": "You sent a sticker.",
         "m.room.canonical_alias": {
             "set": "%(senderName)s set the main address for this room to %(address)s.",
             "removed": "%(senderName)s removed the main address for this room.",
@@ -2722,7 +2726,7 @@
             "you": "You reacted %(reaction)s to %(message)s",
             "user": "%(sender)s reacted %(reaction)s to %(message)s"
         },
-        "m.sticker": "%(senderName)s: %(stickerName)s",
+        "m.sticker": "%(senderName)s sent a sticker.",
         "preview": "<bold>%(prefix)s:</bold> %(preview)s",
         "prefix": {
             "poll": "Poll",
