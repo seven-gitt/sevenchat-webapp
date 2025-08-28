@@ -1,0 +1,117 @@
+/*
+Copyright 2024 New Vector Ltd.
+
+SPDX-License-Identifier: AGPL-3.0-only OR GPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE files in the repository root for full details.
+*/
+
+.mx_NewReactionButton {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border: 1px solid var(--cpd-color-border-interactive-secondary);
+    border-radius: 12px;
+    background-color: transparent;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.1s ease;
+    font-size: 13px;
+    line-height: 1.3;
+    position: relative;
+    z-index: 1;
+    pointer-events: auto;
+    color: var(--cpd-color-text-primary);
+    min-height: 24px;
+
+    /* Default/Light theme */
+    background-color: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.12);
+    
+    &:hover {
+        background-color: rgba(0, 0, 0, 0.08);
+        border-color: rgba(0, 0, 0, 0.18);
+    }
+
+    &:hover {
+        transform: none;
+    }
+
+    &:active {
+        transform: scale(0.98);
+    }
+
+    &.mx_NewReactionButton_selected {
+        background-color: #e2f6ed;
+        border-color: #019a78;
+        color: #019a78;
+
+        .mx_NewReactionButton_count {
+            color: #000;
+        }
+
+        &:hover {
+            background-color: #d1f2e1;
+            border-color: #017a61;
+            color: #017a61;
+
+            .mx_NewReactionButton_count {
+                color: #000;
+            }
+        }
+    }
+
+    &.mx_AccessibleButton_disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        
+        &:hover {
+            transform: none;
+        }
+    }
+
+    .mx_NewReactionButton_emoji {
+        font-size: 14px;
+        line-height: 1;
+    }
+
+    .mx_NewReactionButton_count {
+        font-size: 12px;
+        font-weight: 500;
+        min-width: 12px;
+        text-align: center;
+    }
+}
+
+/* Dark theme overrides */
+.cpd-theme-dark .mx_NewReactionButton,
+[data-theme="dark"] .mx_NewReactionButton {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.15);
+    
+    &:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Selected state in dark theme - custom green colors */
+    &.mx_NewReactionButton_selected {
+        background-color: #002513;
+        border-color: #017a63;
+        color: #017a63;
+
+        .mx_NewReactionButton_count {
+            color: white;
+        }
+
+        &:hover {
+            background-color: #003a1a;
+            border-color: #019a78;
+            color: #019a78;
+
+            .mx_NewReactionButton_count {
+                color: white;
+            }
+        }
+    }
+}

@@ -14,10 +14,11 @@ import { mediaFromMxc } from "../../../customisations/Media";
 import { _t } from "../../../languageHandler";
 import { formatList } from "../../../utils/FormattingUtils";
 import dis from "../../../dispatcher/dispatcher";
-import ReactionsRowButtonTooltip from "./ReactionsRowButtonTooltip";
+
 import AccessibleButton from "../elements/AccessibleButton";
 import MatrixClientContext from "../../../contexts/MatrixClientContext";
-import { REACTION_SHORTCODE_KEY } from "./ReactionsRow";
+import { REACTION_SHORTCODE_KEY } from "./NewReactionsRow";
+import Modal from "../../../Modal";
 
 export interface IProps {
     // The event we're displaying reactions for
@@ -54,6 +55,26 @@ export default class ReactionsRowButton extends React.PureComponent<IProps> {
             });
             dis.dispatch({ action: "message_sent" });
         }
+    };
+
+    public onRightClick = (e: React.MouseEvent): void => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.showReactionList();
+    };
+
+    public onLongPress = (): void => {
+        this.showReactionList();
+    };
+
+    private showReactionList = (): void => {
+        const ReactionListDialog = require("../dialogs/ReactionListDialog").default;
+        Modal.createDialog(ReactionListDialog, {
+            mxEvent: this.props.mxEvent,
+            content: this.props.content,
+            reactionEvents: this.props.reactionEvents,
+            customReactionImagesEnabled: this.props.customReactionImagesEnabled,
+        });
     };
 
     public render(): React.ReactNode {
@@ -110,24 +131,19 @@ export default class ReactionsRowButton extends React.PureComponent<IProps> {
         }
 
         return (
-            <ReactionsRowButtonTooltip
-                mxEvent={this.props.mxEvent}
-                content={content}
-                reactionEvents={reactionEvents}
-                customReactionImagesEnabled={this.props.customReactionImagesEnabled}
+            <AccessibleButton
+                className={classes}
+                aria-label={label}
+                title={label} // Add tooltip directly to AccessibleButton
+                onClick={this.onClick}
+                onContextMenu={this.onRightClick}
+                disabled={this.props.disabled}
             >
-                <AccessibleButton
-                    className={classes}
-                    aria-label={label}
-                    onClick={this.onClick}
-                    disabled={this.props.disabled}
-                >
-                    {reactionContent}
-                    <span className="mx_ReactionsRowButton_count" aria-hidden="true">
-                        {count}
-                    </span>
-                </AccessibleButton>
-            </ReactionsRowButtonTooltip>
+                {reactionContent}
+                <span className="mx_ReactionsRowButton_count" aria-hidden="true">
+                    {count}
+                </span>
+            </AccessibleButton>
         );
     }
 }

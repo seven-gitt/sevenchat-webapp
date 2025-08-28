@@ -59,7 +59,7 @@ import SenderProfile from "../messages/SenderProfile";
 import MessageTimestamp from "../messages/MessageTimestamp";
 import { type IReadReceiptPosition } from "./ReadReceiptMarker";
 import MessageActionBar from "../messages/MessageActionBar";
-import ReactionsRow from "../messages/ReactionsRow";
+import NewReactionsRow from "../messages/NewReactionsRow";
 import { getEventDisplayInfo } from "../../../utils/EventRenderingUtils";
 import RoomContext, { TimelineRenderingType } from "../../../contexts/RoomContext";
 import { MediaEventHelper } from "../../../utils/MediaEventHelper";
@@ -761,6 +761,10 @@ export class UnwrappedEventTile extends React.Component<EventTileProps, IState> 
                 case EventShieldReason.VERIFICATION_VIOLATION:
                     shieldReasonMessage = _t("timeline|decryption_failure|sender_identity_previously_verified");
                     break;
+                    
+                default:
+                    shieldReasonMessage = _t("error|unknown");
+                    break;
             }
 
             if (this.state.shieldColour === EventShieldColour.GREY) {
@@ -1143,7 +1147,7 @@ export class UnwrappedEventTile extends React.Component<EventTileProps, IState> 
         let reactionsRow: JSX.Element | undefined;
         if (!isRedacted) {
             reactionsRow = (
-                <ReactionsRow
+                <NewReactionsRow
                     mxEvent={this.props.mxEvent}
                     reactions={this.state.reactions}
                     key="mx_EventTile_reactionsRow"
