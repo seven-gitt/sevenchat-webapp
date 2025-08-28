@@ -153,10 +153,15 @@ const HomeButton: React.FC<MetaSpaceButtonProps> = ({ selected, isPanelCollapsed
             className="mx_SpaceButton_home"
             selected={selected}
             isPanelCollapsed={isPanelCollapsed}
-            label={getMetaSpaceName(MetaSpace.Home, allRoomsInHome)}
+            label={isPanelCollapsed ? _t("common|home") : getMetaSpaceName(MetaSpace.Home, allRoomsInHome)}
             notificationState={notificationState}
             ContextMenuComponent={HomeButtonContextMenu}
             contextMenuTooltip={_t("common|options")}
+            onClick={
+                isPanelCollapsed
+                    ? () => defaultDispatcher.dispatch({ action: Action.ViewHomePage })
+                    : undefined
+            }
             size="32px"
         />
     );
