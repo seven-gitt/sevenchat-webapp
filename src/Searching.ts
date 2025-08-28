@@ -47,10 +47,13 @@ async function serverSideSearch(
     };
 
     // Check if search term looks like a URL pattern
+    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker")
+    const isSingleToken = /^[-a-z0-9]+$/i.test(term);
     const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(term)) ||
                        term.includes('.') || 
                        term.includes('://') || 
-                       term.includes('/');
+                       term.includes('/') ||
+                       isSingleToken;
 
     let response;
     let query: ISearchRequestBody = {
@@ -71,14 +74,34 @@ async function serverSideSearch(
     if (isUrlSearch) {
         console.log(`Server-side URL search detected for term: "${term}"`);
         
-        // Try multiple search strategies for URLs
+        // Try multiple search strategies for URLs or domain-like keywords
+        const base = term;
+        const withoutProtocol = term.replace(/^https?:\/\//, '');
+        const domainOnly = term.match(/(?:https?:\/\/)?([^\/\s?#]+)/)?.[1] || term;
+        const pathOnly = term.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/)?.[1] || term;
+        const queryParam = term.match(/[?&]([^=]+)=([^&\s]+)/)?.[2] || term;
+        const fragment = term.match(/#([^\s]+)/)?.[1] || term;
+
+        const domainExpansions: string[] = isSingleToken
+            ? [
+                  `${base}.com`,
+                  `${base}.vn`,
+                  `${base}.net`,
+                  `${base}.org`,
+                  `www.${base}.com`,
+                  `https://${base}.com`,
+                  `http://${base}.com`,
+              ]
+            : [];
+
         const searchStrategies = [
-            { term: term, description: "exact" },
-            { term: term.replace(/^https?:\/\//, ''), description: "without protocol" },
-            { term: term.match(/(?:https?:\/\/)?([^\/\s?#]+)/)?.[1] || term, description: "domain only" },
-            { term: term.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/)?.[1] || term, description: "path only" },
-            { term: term.match(/[?&]([^=]+)=([^&\s]+)/)?.[2] || term, description: "query parameter" },
-            { term: term.match(/#([^\s]+)/)?.[1] || term, description: "fragment" },
+            { term: base, description: "exact" },
+            { term: withoutProtocol, description: "without protocol" },
+            { term: domainOnly, description: "domain only" },
+            { term: pathOnly, description: "path only" },
+            { term: queryParam, description: "query parameter" },
+            { term: fragment, description: "fragment" },
+            ...domainExpansions.map((t) => ({ term: t, description: "keyword domain expansion" })),
         ];
 
         for (const strategy of searchStrategies) {
@@ -263,10 +286,13 @@ async function localSearch(
     };
 
     // Check if search term looks like a URL pattern
+    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker")
+    const isSingleToken = /^[-a-z0-9]+$/i.test(searchTerm);
     const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(searchTerm)) ||
                        searchTerm.includes('.') || 
                        searchTerm.includes('://') || 
-                       searchTerm.includes('/');
+                       searchTerm.includes('/') ||
+                       isSingleToken;
     
     let localResult;
     
@@ -363,6 +389,32 @@ async function localSearch(
                     console.log(`Main domain search returned ${localResult?.count || 0} results`);
                 } catch (error) {
                     console.log("Main domain search failed:", error);
+                }
+            }
+        }
+
+        // Strategy 8: If keyword without TLD, try common domain expansions
+        if ((!localResult || localResult.count === 0) && isSingleToken) {
+            const expansions = [
+                `${searchTerm}.com`,
+                `${searchTerm}.vn`,
+                `${searchTerm}.net`,
+                `${searchTerm}.org`,
+                `www.${searchTerm}.com`,
+                `https://${searchTerm}.com`,
+                `http://${searchTerm}.com`,
+            ];
+            for (const exp of expansions) {
+                const args = { ...searchArgs, search_term: exp };
+                try {
+                    const r = await eventIndex!.search(args);
+                    if (r && r.count && r.count > 0) {
+                        localResult = r;
+                        console.log(`Keyword domain expansion search returned ${r.count} results for ${exp}`);
+                        break;
+                    }
+                } catch (error) {
+                    console.log("Keyword domain expansion search failed:", error);
                 }
             }
         }
