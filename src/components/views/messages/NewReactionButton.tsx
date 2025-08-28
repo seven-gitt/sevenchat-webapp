@@ -31,34 +31,73 @@ interface IProps {
 
 interface IState {
     showTooltip: boolean;
+    isProcessing: boolean;
 }
 
 export default class NewReactionButton extends React.PureComponent<IProps, IState> {
     public static contextType = MatrixClientContext;
     declare public context: React.ContextType<typeof MatrixClientContext>;
 
+    private isUnmounted = false;
+
     public constructor(props: IProps) {
         super(props);
         this.state = {
             showTooltip: false,
+            isProcessing: false,
         };
     }
 
-    public onClick = (): void => {
+    public componentWillUnmount(): void {
+        this.isUnmounted = true;
+    }
+
+    public onClick = async (): Promise<void> => {
+        // Prevent multiple clicks while processing
+        if (this.state.isProcessing || this.props.disabled) {
+            return;
+        }
+
         const { mxEvent, myReactionEvent, content } = this.props;
-        if (myReactionEvent) {
-            // Remove existing reaction
-            this.context.redactEvent(mxEvent.getRoomId()!, myReactionEvent.getId()!);
-        } else {
-            // Add new reaction
-            this.context.sendEvent(mxEvent.getRoomId()!, EventType.Reaction, {
-                "m.relates_to": {
-                    rel_type: RelationType.Annotation,
-                    event_id: mxEvent.getId()!,
-                    key: content,
-                },
-            });
-            dis.dispatch({ action: "message_sent" });
+        const currentUserId = this.context.getUserId?.() ?? undefined;
+        
+        this.setState({ isProcessing: true });
+        
+        try {
+            if (
+                myReactionEvent &&
+                !myReactionEvent.isRedacted() &&
+                // Extra safety: only allow redacting reactions that we authored
+                myReactionEvent.getSender?.() === currentUserId
+            ) {
+                // Remove existing reaction
+                console.log("Removing reaction:", myReactionEvent.getId());
+                await this.context.redactEvent(mxEvent.getRoomId()!, myReactionEvent.getId()!);
+                console.log("Reaction removed successfully");
+            } else {
+                // Add new reaction
+                console.log("Adding reaction:", content);
+                const result = await this.context.sendEvent(mxEvent.getRoomId()!, EventType.Reaction, {
+                    "m.relates_to": {
+                        rel_type: RelationType.Annotation,
+                        event_id: mxEvent.getId()!,
+                        key: content,
+                    },
+                });
+                console.log("Reaction added successfully:", result);
+                dis.dispatch({ action: "message_sent" });
+            }
+        } catch (error) {
+            console.error("Error handling reaction:", error);
+            // Show user-friendly error message
+            alert("Không thể xử lý reaction. Vui lòng thử lại.");
+        } finally {
+            // Reset processing state after a delay to ensure sync
+            setTimeout(() => {
+                if (!this.isUnmounted) {
+                    this.setState({ isProcessing: false });
+                }
+            }, 1000);
         }
     };
 
@@ -77,12 +116,20 @@ export default class NewReactionButton extends React.PureComponent<IProps, IStat
     };
 
     private showUserList = (): void => {
-        const UserListDialog = require("../dialogs/ReactionUserListDialog").default;
-        Modal.createDialog(UserListDialog, {
-            mxEvent: this.props.mxEvent,
-            reactionKey: this.props.content,
-            reactionEvents: this.props.reactionEvents,
-        });
+        try {
+            // Filter out redacted/invalid events before opening the dialog
+            const validEvents = this.props.reactionEvents.filter((e) => !e.isRedacted());
+            if (validEvents.length === 0) return;
+
+            const UserListDialog = require("../dialogs/ReactionUserListDialog").default;
+            Modal.createDialog(UserListDialog, {
+                mxEvent: this.props.mxEvent,
+                reactionKey: this.props.content,
+                reactionEvents: validEvents,
+            });
+        } catch (e) {
+            console.error("Failed to open ReactionUserListDialog", e);
+        }
     };
 
     private getTooltipText = (): string => {
@@ -148,22 +195,26 @@ export default class NewReactionButton extends React.PureComponent<IProps, IStat
 
     public render(): React.ReactNode {
         const { content, count, myReactionEvent, disabled } = this.props;
+        const { isProcessing } = this.state;
         
         const isSelected = !!myReactionEvent;
+        const isDisabled = disabled || isProcessing;
         const tooltipText = this.getTooltipText();
+
+        // Keep the button visible while processing to avoid visual jumps.
 
 
 
         return (
             <div style={{ position: "relative", display: "inline-block" }}>
                 <button
-                    className={`mx_NewReactionButton ${isSelected ? 'mx_NewReactionButton_selected' : ''}`}
+                    className={`mx_NewReactionButton ${isSelected ? 'mx_NewReactionButton_selected' : ''} ${isProcessing ? 'mx_NewReactionButton_processing' : ''}`}
                     onClick={this.onClick}
                     onContextMenu={this.onRightClick}
                     onMouseEnter={this.onMouseEnter}
                     onMouseLeave={this.onMouseLeave}
-                    disabled={disabled}
-                    aria-label={tooltipText}
+                    disabled={isDisabled}
+                    aria-label={isProcessing ? "Đang xử lý..." : tooltipText}
                     type="button"
                 >
                     <span className="mx_NewReactionButton_emoji">{content}</span>

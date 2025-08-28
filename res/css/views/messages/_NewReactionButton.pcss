@@ -61,12 +61,21 @@ Please see LICENSE files in the repository root for full details.
         }
     }
 
-    &.mx_AccessibleButton_disabled {
-        opacity: 0.5;
+    &.mx_AccessibleButton_disabled,
+    &.mx_NewReactionButton_processing {
+        opacity: 0.6;
         cursor: not-allowed;
         
         &:hover {
             transform: none;
+        }
+    }
+
+    &.mx_NewReactionButton_processing {
+        pointer-events: none;
+        
+        .mx_NewReactionButton_count {
+            opacity: 0.7;
         }
     }
 

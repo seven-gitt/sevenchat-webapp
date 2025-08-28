@@ -130,8 +130,11 @@ export default class NewReactionsRow extends React.PureComponent<IProps, IState>
                     return null;
                 }
 
-                // Deduplicate events by sender
-                const deduplicatedEvents = uniqBy([...events], (e) => e.getSender());
+                // Filter out redacted events and deduplicate by sender
+                const deduplicatedEvents = uniqBy(
+                    [...events].filter((e) => !e.isRedacted()),
+                    (e) => e.getSender(),
+                );
                 
                 // Find my reaction for this emoji
                 const myReactionEvent = myReactions?.find((mxEvent) => {
