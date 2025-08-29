@@ -211,6 +211,16 @@ Please see LICENSE files in the repository root for full details.
         }
 
         --backgroundColor: $eventbubble-others-bg;
+
+        /* Position timestamp nicely for received messages */
+        .mx_EventTile_line {
+            > a, /* timestamp wrapper anchor */
+            .mx_MessageActionBar + .mx_MessageTimestamp {
+                bottom: -5px;
+                right: unset;
+                left: 4px;
+            }
+        }
     }
 
     &[data-self="true"] {
@@ -292,9 +302,9 @@ Please see LICENSE files in the repository root for full details.
         .mx_MessageActionBar + .mx_MessageTimestamp {
             position: absolute;
             padding: 4px 8px;
-            /* place timestamp just below the bubble */
-            bottom: -5px;
-            right: 6px;
+            /* place timestamp just below the bubble and align to its outer edge */
+            bottom: -6px;
+            right: -2px;
             z-index: 3; /* above media and location share maps */
         }
 
