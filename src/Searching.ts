@@ -89,6 +89,51 @@ function extractKeywordsFromUrl(url: string): string[] {
     return [...new Set(keywords)]; // Remove duplicates
 }
 
+// Function to generate search variations for better matching
+function generateSearchVariations(term: string): string[] {
+    const variations: string[] = [];
+    
+    // Basic variations
+    variations.push(term);
+    variations.push(term.toLowerCase());
+    variations.push(term.toUpperCase());
+    variations.push(term.charAt(0).toUpperCase() + term.slice(1).toLowerCase());
+    
+    // Common domain variations
+    const domainVariations = [
+        `${term}.com`,
+        `${term}.org`,
+        `${term}.net`,
+        `${term}.io`,
+        `${term}.app`,
+        `www.${term}.com`,
+        `app.${term}.com`,
+        `https://${term}.com`,
+        `http://${term}.com`,
+    ];
+    variations.push(...domainVariations);
+    
+    // Substring variations (for partial matching)
+    if (term.length > 3) {
+        variations.push(`*${term}*`);
+        variations.push(`%${term}%`);
+        variations.push(`.*${term}.*`);
+    }
+    
+    // Common service variations
+    const serviceVariations = [
+        `${term}app`,
+        `${term}web`,
+        `${term}site`,
+        `${term}page`,
+        `${term}link`,
+        `${term}url`,
+    ];
+    variations.push(...serviceVariations);
+    
+    return [...new Set(variations)]; // Remove duplicates
+}
+
 // Enhanced search term analysis
 function analyzeSearchTerm(term: string): {
     isUrlSearch: boolean;
@@ -186,11 +231,13 @@ async function serverSideSearch(
         const queryParam = term.match(/[?&]([^=]+)=([^&\s]+)/)?.[2] || term;
         const fragment = term.match(/#([^\s]+)/)?.[1] || term;
 
-        // Use extracted keywords and potential domains
+        // Use extracted keywords, potential domains, and search variations
+        const searchVariations = generateSearchVariations(term);
         const searchTerms = [
             base,
             ...keywords.filter(k => k !== base && k.length > 1),
-            ...potentialDomains
+            ...potentialDomains,
+            ...searchVariations.filter(v => v !== base && v !== term)
         ];
 
         // Additional strategies for complex URLs
@@ -245,6 +292,48 @@ async function serverSideSearch(
                     const strategyResponse = await client.search({ body: body }, abortSignal);
                     
                     // Check if we got meaningful results
+                    const results = strategyResponse.search_categories?.room_events?.results;
+                    if (results && results.length > 0) {
+                        console.log(`Server-side ${strategy.description} search returned ${results.length} results`);
+                        response = strategyResponse;
+                        query = body;
+                        break;
+                    }
+                } catch (error) {
+                    console.log(`Server-side ${strategy.description} search failed:`, error);
+                }
+            }
+        }
+        
+        // Additional server-side strategies for better partial matching
+        if (!response) {
+            const additionalServerStrategies = [
+                { term: `*${term}*`, description: "wildcard search" },
+                { term: `%${term}%`, description: "SQL-like wildcard" },
+                { term: `.*${term}.*`, description: "regex-like search" },
+                { term: term + '*', description: "prefix wildcard" },
+                { term: '*' + term, description: "suffix wildcard" },
+            ];
+            
+            for (const strategy of additionalServerStrategies) {
+                try {
+                    const body: ISearchRequestBody = {
+                        search_categories: {
+                            room_events: {
+                                search_term: strategy.term,
+                                filter: filter,
+                                order_by: SearchOrderBy.Recent,
+                                event_context: {
+                                    before_limit: 1,
+                                    after_limit: 1,
+                                    include_profile: true,
+                                },
+                            },
+                        },
+                    };
+
+                    const strategyResponse = await client.search({ body: body }, abortSignal);
+                    
                     const results = strategyResponse.search_categories?.room_events?.results;
                     if (results && results.length > 0) {
                         console.log(`Server-side ${strategy.description} search returned ${results.length} results`);
@@ -683,6 +772,81 @@ async function localSearch(
                         }
                     } catch (error) {
                         console.log(`Fuzzy search failed for "${fuzzyTerm}":`, error);
+                    }
+                }
+            }
+        }
+        
+        // Strategy 11: Try substring search for better partial matching
+        if (!localResult || localResult.count === 0) {
+            // Try searching with wildcard-like patterns
+            const substringPatterns = [
+                `*${searchTerm}*`,
+                `%${searchTerm}%`,
+                `.*${searchTerm}.*`,
+                searchTerm + '*',
+                '*' + searchTerm,
+            ];
+            
+            for (const pattern of substringPatterns) {
+                const patternArgs = { ...searchArgs, search_term: pattern };
+                try {
+                    const patternResult = await eventIndex!.search(patternArgs);
+                    if (patternResult?.count && patternResult.count > 0) {
+                        localResult = patternResult;
+                        console.log(`Substring pattern search returned ${patternResult.count} results for "${pattern}"`);
+                        break;
+                    }
+                } catch (error) {
+                    console.log(`Substring pattern search failed for "${pattern}":`, error);
+                }
+            }
+        }
+        
+        // Strategy 12: Try searching with common URL patterns that might contain the term
+        if (!localResult || localResult.count === 0) {
+            const urlPatterns = [
+                `https://*${searchTerm}*`,
+                `http://*${searchTerm}*`,
+                `*${searchTerm}*.com`,
+                `*${searchTerm}*.org`,
+                `*${searchTerm}*.net`,
+                `*${searchTerm}*.io`,
+                `*${searchTerm}*.app`,
+            ];
+            
+            for (const urlPattern of urlPatterns) {
+                const urlArgs = { ...searchArgs, search_term: urlPattern };
+                try {
+                    const urlResult = await eventIndex!.search(urlArgs);
+                    if (urlResult?.count && urlResult.count > 0) {
+                        localResult = urlResult;
+                        console.log(`URL pattern search returned ${urlResult.count} results for "${urlPattern}"`);
+                        break;
+                    }
+                } catch (error) {
+                    console.log(`URL pattern search failed for "${urlPattern}":`, error);
+                }
+            }
+        }
+        
+        // Strategy 13: Try searching with all generated variations
+        if (!localResult || localResult.count === 0) {
+            const allVariations = generateSearchVariations(searchTerm);
+            console.log(`Trying ${allVariations.length} search variations for "${searchTerm}"`);
+            
+            for (const variation of allVariations) {
+                if (variation !== searchTerm) {
+                    const variationArgs = { ...searchArgs, search_term: variation };
+                    try {
+                        const variationResult = await eventIndex!.search(variationArgs);
+                        if (variationResult?.count && variationResult.count > 0) {
+                            localResult = variationResult;
+                            console.log(`Variation search returned ${variationResult.count} results for "${variation}"`);
+                            break;
+                        }
+                    } catch (error) {
+                        console.log(`Variation search failed for "${variation}":`, error);
                     }
                 }
             }
