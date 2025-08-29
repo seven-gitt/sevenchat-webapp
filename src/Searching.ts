@@ -25,6 +25,123 @@ import { isNotUndefined } from "./Typeguards";
 
 const SEARCH_LIMIT = 10;
 
+// Enhanced search patterns for better URL and domain matching
+const ENHANCED_SEARCH_PATTERNS = {
+    // URL patterns
+    FULL_URL: /^https?:\/\/[^\s]+$/i,
+    DOMAIN_WITH_PATH: /^[^\s]+\.[^\s]+\/[^\s]*$/i,
+    DOMAIN_ONLY: /^[^\s]+\.[^\s]+$/i,
+    IP_ADDRESS: /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
+    LOCALHOST: /^localhost(:\d+)?(\/.*)?$/i,
+    
+    // Enhanced patterns for better matching
+    SUBDOMAIN: /^[a-z0-9]+\./i,
+    PATH_SEGMENT: /^[a-z0-9-_]+$/i,
+    QUERY_PARAM: /^[a-z0-9_]+$/i,
+    
+    // New patterns for better keyword extraction
+    SINGLE_WORD: /^[a-z0-9]+$/i,
+    MULTI_WORD: /^[a-z0-9\s]+$/i,
+    SPECIAL_CHARS: /[^a-z0-9\s]/i,
+};
+
+// Enhanced keyword extraction function
+function extractKeywordsFromUrl(url: string): string[] {
+    const keywords: string[] = [];
+    
+    try {
+        // Parse URL
+        const urlObj = new URL(url);
+        
+        // Extract domain parts
+        const domainParts = urlObj.hostname.split('.');
+        keywords.push(...domainParts.filter(part => part.length > 1));
+        
+        // Extract path segments
+        const pathSegments = urlObj.pathname.split('/').filter(segment => segment.length > 0);
+        keywords.push(...pathSegments);
+        
+        // Extract query parameters
+        urlObj.searchParams.forEach((value, key) => {
+            if (key.length > 1) keywords.push(key);
+            if (value.length > 1) keywords.push(value);
+        });
+        
+        // Extract common TLDs and subdomains
+        const commonTlds = ['com', 'org', 'net', 'io', 'app', 'co', 'vn'];
+        const commonSubdomains = ['www', 'app', 'api', 'docs', 'blog'];
+        
+        domainParts.forEach(part => {
+            if (!commonTlds.includes(part) && !commonSubdomains.includes(part)) {
+                keywords.push(part);
+            }
+        });
+        
+    } catch (error) {
+        // Fallback: simple text extraction
+        const words = url.toLowerCase()
+            .replace(/[^\w\s]/g, ' ')
+            .split(/\s+/)
+            .filter(word => word.length > 1);
+        keywords.push(...words);
+    }
+    
+    return [...new Set(keywords)]; // Remove duplicates
+}
+
+// Enhanced search term analysis
+function analyzeSearchTerm(term: string): {
+    isUrlSearch: boolean;
+    isUrl: boolean;
+    isDomain: boolean;
+    isSingleToken: boolean;
+    keywords: string[];
+    potentialDomains: string[];
+} {
+    const isUrl = Object.values(ENHANCED_SEARCH_PATTERNS).some(pattern => pattern.test(term)) ||
+                  term.includes('.') || 
+                  term.includes('://') || 
+                  term.includes('/') ||
+                  term.includes('?');
+    
+    const isSingleToken = ENHANCED_SEARCH_PATTERNS.SINGLE_WORD.test(term);
+    const isDomain = term.includes('.') && !term.includes('://') && !term.includes('/');
+    
+    // Enhanced URL search detection
+    const isUrlSearch = isUrl || isSingleToken || isDomain || term.includes('.') || term.includes('/');
+    
+    // Extract keywords from the term itself
+    const keywords = extractKeywordsFromUrl(term);
+    
+    // Generate potential domains for single tokens
+    const potentialDomains = isSingleToken ? [
+        `${term}.com`,
+        `${term}.vn`,
+        `${term}.net`,
+        `${term}.org`,
+        `${term}.io`,
+        `${term}.app`,
+        `www.${term}.com`,
+        `app.${term}.com`,
+        `https://${term}.com`,
+        `http://${term}.com`,
+        `https://app.${term}.com`,
+        `https://www.${term}.com`,
+        `${term}.co`,
+        `${term}.dev`,
+        `${term}.me`,
+    ] : [];
+    
+    return {
+        isUrlSearch,
+        isUrl,
+        isDomain,
+        isSingleToken,
+        keywords,
+        potentialDomains,
+    };
+}
+
 async function serverSideSearch(
     client: MatrixClient,
     term: string,
@@ -37,23 +154,9 @@ async function serverSideSearch(
 
     if (roomId !== undefined) filter.rooms = [roomId];
 
-    // Enhanced URL detection patterns
-    const URL_PATTERNS = {
-        FULL_URL: /^https?:\/\/[^\s]+$/i,
-        DOMAIN_WITH_PATH: /^[^\s]+\.[^\s]+\/[^\s]*$/i,
-        DOMAIN_ONLY: /^[^\s]+\.[^\s]+$/i,
-        IP_ADDRESS: /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
-        LOCALHOST: /^localhost(:\d+)?(\/.*)?$/i,
-    };
-
-    // Check if search term looks like a URL pattern
-    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker")
-    const isSingleToken = /^[-a-z0-9]+$/i.test(term);
-    const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(term)) ||
-                       term.includes('.') || 
-                       term.includes('://') || 
-                       term.includes('/') ||
-                       isSingleToken;
+    // Use enhanced search term analysis
+    const searchAnalysis = analyzeSearchTerm(term);
+    const { isUrlSearch, isSingleToken, keywords, potentialDomains } = searchAnalysis;
 
     let response;
     let query: ISearchRequestBody = {
@@ -73,6 +176,7 @@ async function serverSideSearch(
 
     if (isUrlSearch || isSingleToken) {
         console.log(`Server-side enhanced search detected for term: "${term}"`);
+        console.log(`Extracted keywords: ${keywords.join(', ')}`);
         
         // Try multiple search strategies for URLs or domain-like keywords
         const base = term;
@@ -82,23 +186,12 @@ async function serverSideSearch(
         const queryParam = term.match(/[?&]([^=]+)=([^&\s]+)/)?.[2] || term;
         const fragment = term.match(/#([^\s]+)/)?.[1] || term;
 
-        // Enhanced domain expansions for single tokens
-        const domainExpansions: string[] = isSingleToken
-            ? [
-                  `${base}.com`,
-                  `${base}.vn`,
-                  `${base}.net`,
-                  `${base}.org`,
-                  `${base}.io`,
-                  `${base}.app`,
-                  `www.${base}.com`,
-                  `app.${base}.com`,
-                  `https://${base}.com`,
-                  `http://${base}.com`,
-                  `https://app.${base}.com`,
-                  `https://www.${base}.com`,
-              ]
-            : [];
+        // Use extracted keywords and potential domains
+        const searchTerms = [
+            base,
+            ...keywords.filter(k => k !== base && k.length > 1),
+            ...potentialDomains
+        ];
 
         // Additional strategies for complex URLs
         const additionalStrategies = [];
@@ -123,7 +216,7 @@ async function serverSideSearch(
             { term: pathOnly, description: "path only" },
             { term: queryParam, description: "query parameter" },
             { term: fragment, description: "fragment" },
-            ...domainExpansions.map((t) => ({ term: t, description: "keyword domain expansion" })),
+            ...searchTerms.map((t: string) => ({ term: t, description: "keyword/domain search" })),
             ...additionalStrategies,
         ];
 
@@ -303,33 +396,16 @@ async function localSearch(
         searchArgs.room_id = roomId;
     }
 
-    // Enhanced URL detection patterns
-    const URL_PATTERNS = {
-        FULL_URL: /^https?:\/\/[^\s]+$/i,
-        DOMAIN_WITH_PATH: /^[^\s]+\.[^\s]+\/[^\s]*$/i,
-        DOMAIN_ONLY: /^[^\s]+\.[^\s]+$/i,
-        IP_ADDRESS: /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
-        LOCALHOST: /^localhost(:\d+)?(\/.*)?$/i,
-        SUBDOMAIN: /^[a-z0-9]+\./i,
-        PATH_SEGMENT: /^[a-z0-9-_]+$/i,
-        QUERY_PARAM: /^[a-z0-9_]+$/i
-    };
-
-    // Check if search term looks like a URL pattern
-    // Also treat single-token keywords as potential URL/domain fragments
-    const isSingleToken = /^[a-z0-9-_]+$/i.test(searchTerm);
-    const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(searchTerm)) ||
-                       searchTerm.includes('.') || 
-                       searchTerm.includes('://') || 
-                       searchTerm.includes('/') ||
-                       searchTerm.includes('?') ||
-                       isSingleToken;
+    // Use enhanced search term analysis
+    const searchAnalysis = analyzeSearchTerm(searchTerm);
+    const { isUrlSearch, isSingleToken, keywords, potentialDomains } = searchAnalysis;
     
     let localResult;
     
     // Always try enhanced search for single tokens or URL-like terms
     if (isUrlSearch || isSingleToken) {
         console.log(`Enhanced search detected for term: "${searchTerm}"`);
+        console.log(`Extracted keywords: ${keywords.join(', ')}`);
         
         // Strategy 1: Try exact search first
         try {
@@ -337,6 +413,25 @@ async function localSearch(
             console.log(`Exact search returned ${localResult?.count || 0} results`);
         } catch (error) {
             console.log("Exact search failed:", error);
+        }
+        
+        // Strategy 1.5: Try searching with extracted keywords
+        if (!localResult || localResult.count === 0) {
+            for (const keyword of keywords) {
+                if (keyword !== searchTerm && keyword.length > 2) {
+                    const keywordArgs = { ...searchArgs, search_term: keyword };
+                    try {
+                        const keywordResult = await eventIndex!.search(keywordArgs);
+                        if (keywordResult?.count && keywordResult.count > 0) {
+                            localResult = keywordResult;
+                            console.log(`Keyword search returned ${keywordResult.count} results for "${keyword}"`);
+                            break;
+                        }
+                    } catch (error) {
+                        console.log(`Keyword search failed for "${keyword}":`, error);
+                    }
+                }
+            }
         }
         
         // Strategy 2: If no results, try without protocol
@@ -558,6 +653,36 @@ async function localSearch(
                         } catch (error) {
                             console.log("Subdomain extraction search failed:", error);
                         }
+                    }
+                }
+            }
+        }
+        
+        // Strategy 10: Try fuzzy matching for single tokens
+        if (!localResult || localResult.count === 0) {
+            if (isSingleToken) {
+                // Try partial matches and common variations
+                const fuzzyTerms = [
+                    searchTerm.toLowerCase(),
+                    searchTerm.toUpperCase(),
+                    searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1),
+                    searchTerm + 'app',
+                    searchTerm + 'web',
+                    searchTerm + 'site',
+                    searchTerm + 'page',
+                ];
+                
+                for (const fuzzyTerm of fuzzyTerms) {
+                    const fuzzyArgs = { ...searchArgs, search_term: fuzzyTerm };
+                    try {
+                        const fuzzyResult = await eventIndex!.search(fuzzyArgs);
+                        if (fuzzyResult?.count && fuzzyResult.count > 0) {
+                            localResult = fuzzyResult;
+                            console.log(`Fuzzy search returned ${fuzzyResult.count} results for "${fuzzyTerm}"`);
+                            break;
+                        }
+                    } catch (error) {
+                        console.log(`Fuzzy search failed for "${fuzzyTerm}":`, error);
                     }
                 }
             }
