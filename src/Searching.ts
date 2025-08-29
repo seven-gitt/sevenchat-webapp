@@ -71,8 +71,8 @@ async function serverSideSearch(
         },
     };
 
-    if (isUrlSearch) {
-        console.log(`Server-side URL search detected for term: "${term}"`);
+    if (isUrlSearch || isSingleToken) {
+        console.log(`Server-side enhanced search detected for term: "${term}"`);
         
         // Try multiple search strategies for URLs or domain-like keywords
         const base = term;
@@ -82,17 +82,39 @@ async function serverSideSearch(
         const queryParam = term.match(/[?&]([^=]+)=([^&\s]+)/)?.[2] || term;
         const fragment = term.match(/#([^\s]+)/)?.[1] || term;
 
+        // Enhanced domain expansions for single tokens
         const domainExpansions: string[] = isSingleToken
             ? [
                   `${base}.com`,
                   `${base}.vn`,
                   `${base}.net`,
                   `${base}.org`,
+                  `${base}.io`,
+                  `${base}.app`,
                   `www.${base}.com`,
+                  `app.${base}.com`,
                   `https://${base}.com`,
                   `http://${base}.com`,
+                  `https://app.${base}.com`,
+                  `https://www.${base}.com`,
               ]
             : [];
+
+        // Additional strategies for complex URLs
+        const additionalStrategies = [];
+        if (term.includes('.')) {
+            // Extract subdomain and main domain parts
+            const domainParts = term.replace(/^https?:\/\//, '').split('.');
+            if (domainParts.length >= 2) {
+                const mainDomain = domainParts.slice(-2).join('.');
+                const subdomain = domainParts[0];
+                additionalStrategies.push(
+                    { term: mainDomain, description: "main domain" },
+                    { term: subdomain, description: "subdomain" },
+                    { term: `${subdomain}.${mainDomain}`, description: "subdomain.main" }
+                );
+            }
+        }
 
         const searchStrategies = [
             { term: base, description: "exact" },
@@ -102,6 +124,7 @@ async function serverSideSearch(
             { term: queryParam, description: "query parameter" },
             { term: fragment, description: "fragment" },
             ...domainExpansions.map((t) => ({ term: t, description: "keyword domain expansion" })),
+            ...additionalStrategies,
         ];
 
         for (const strategy of searchStrategies) {
@@ -296,15 +319,16 @@ async function localSearch(
     
     let localResult;
     
-    if (isUrlSearch) {
-        console.log(`URL search detected for term: "${searchTerm}"`);
+    // Always try enhanced search for single tokens or URL-like terms
+    if (isUrlSearch || isSingleToken) {
+        console.log(`Enhanced search detected for term: "${searchTerm}"`);
         
         // Strategy 1: Try exact search first
         try {
             localResult = await eventIndex!.search(searchArgs);
             console.log(`Exact search returned ${localResult?.count || 0} results`);
         } catch (error) {
-            console.log("Exact URL search failed:", error);
+            console.log("Exact search failed:", error);
         }
         
         // Strategy 2: If no results, try without protocol
@@ -462,7 +486,7 @@ async function localSearch(
         }
     }
     
-    // Fallback to normal search if no URL-specific results
+    // Fallback to normal search if no enhanced results
     if (!localResult) {
         console.log("Falling back to normal search");
         localResult = await eventIndex!.search(searchArgs);
