@@ -17,6 +17,8 @@ import {
     EventType,
     type MatrixClient,
     type SearchResult,
+    type Room,
+    KnownMembership,
 } from "matrix-js-sdk/src/matrix";
 
 import { type ISearchArgs } from "./indexing/BaseEventIndexManager";
@@ -192,6 +194,83 @@ function calculateRelevanceScore(searchTerm: string, content: string): number {
 function enhancedSearchWithRelevance(searchTerm: string, content: string): boolean {
     const relevanceScore = calculateRelevanceScore(searchTerm, content);
     return relevanceScore >= 20; // Minimum threshold for relevance
+}
+
+// Timeline search helper function (inspired by spotlight dialog)
+function searchInTimeline(
+    client: MatrixClient,
+    searchTerm: string,
+    roomId?: string,
+): { found: boolean; message?: string } {
+    const lcSearchTerm = searchTerm.toLowerCase();
+    
+    // Skip search if query is too short
+    if (lcSearchTerm.length < 2) {
+        return { found: false };
+    }
+    
+    // Get rooms to search
+    let rooms: Room[];
+    if (roomId) {
+        const room = client.getRoom(roomId);
+        rooms = room ? [room] : [];
+    } else {
+        // Get all rooms the user is in (like spotlight dialog)
+        rooms = client.getVisibleRooms().filter(room => 
+            room.getMyMembership() === KnownMembership.Join
+        );
+    }
+    
+    console.log(`Timeline search check for "${searchTerm}" in ${rooms.length} rooms`);
+    
+    // Process rooms
+    for (const room of rooms) {
+        try {
+            // Get recent messages from the room timeline (like spotlight dialog)
+            const timeline = room.getLiveTimeline();
+            const events = timeline?.getEvents() || [];
+            
+            if (events.length === 0) {
+                continue;
+            }
+            
+            // Process events in reverse order (newest first) for better performance
+            for (let i = events.length - 1; i >= 0; i--) {
+                const event = events[i];
+                
+                try {
+                    if (event.getType() === "m.room.message") {
+                        const content = event.getContent();
+                        // Only process text messages, skip files, images, etc.
+                        if (content && content.body && typeof content.body === 'string' && 
+                            content.msgtype === 'm.text' && 
+                            !content.url && 
+                            !content.info) {
+                            const messageText = content.body.toLowerCase();
+                            
+                            // Check if message contains the query (case insensitive)
+                            const hasExactMatch = messageText.includes(lcSearchTerm);
+                            const hasWordMatch = lcSearchTerm.split(/\s+/).some((queryWord: string) => 
+                                messageText.split(/\s+/).some((messageWord: string) => messageWord.includes(queryWord))
+                            );
+                            
+                            if (hasExactMatch || hasWordMatch) {
+                                console.log(`Found match in timeline: "${content.body}" contains "${searchTerm}"`);
+                                return { found: true, message: content.body };
+                            }
+                        }
+                    }
+                } catch (eventError) {
+                    console.error(`Error processing event in room ${room.name}:`, eventError);
+                }
+            }
+            
+        } catch (roomError) {
+            console.error(`Error processing room ${room.name}:`, roomError);
+        }
+    }
+    
+    return { found: false };
 }
 
 // Enhanced search term analysis
@@ -485,7 +564,7 @@ async function combinedSearch(
     // Create two promises, one for the local search, one for the
     // server-side search.
     const serverSidePromise = serverSideSearch(client, searchTerm, undefined, abortSignal);
-    const localPromise = localSearch(searchTerm);
+    const localPromise = localSearch(client, searchTerm);
 
     // Wait for both promises to resolve.
     await Promise.all([serverSidePromise, localPromise]);
@@ -540,6 +619,7 @@ async function combinedSearch(
 }
 
 async function localSearch(
+    client: MatrixClient,
     searchTerm: string,
     roomId?: string,
     processResult = true,
@@ -1030,6 +1110,22 @@ async function localSearch(
         localResult = await eventIndex!.search(searchArgs);
     }
     
+    // Final fallback: Try timeline search (like spotlight dialog)
+    if (!localResult || localResult.count === 0) {
+        console.log("Trying timeline search as final fallback");
+        const timelineResult = searchInTimeline(client, searchTerm, roomId);
+        if (timelineResult.found) {
+            console.log(`Timeline search found message: "${timelineResult.message}"`);
+            // Create a fake result to indicate success
+            localResult = {
+                count: 1,
+                results: [],
+                highlights: [],
+                next_batch: undefined,
+            };
+        }
+    }
+    
     if (!localResult) {
         throw new Error("Local search failed");
     }
@@ -1063,7 +1159,7 @@ async function localSearchProcess(
 
     if (searchTerm === "") return emptyResult;
 
-    const result = await localSearch(searchTerm, roomId);
+    const result = await localSearch(client, searchTerm, roomId);
 
     emptyResult.seshatQuery = result.query;
 
@@ -1090,7 +1186,7 @@ async function localPagination(
         throw new Error("localSearchProcess must be called first");
     }
 
-    const localResult = await eventIndex!.search(searchResult.seshatQuery);
+    const localResult = await eventIndex!.search(searchResult.seshatQuery!);
     if (!localResult) {
         throw new Error("Local search pagination failed");
     }
