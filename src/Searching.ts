@@ -127,6 +127,10 @@ async function serverSideSearch(
             ...additionalStrategies,
         ];
 
+        let bestResponse = null;
+        let bestQuery: ISearchRequestBody | null = null;
+        let bestCount = 0;
+
         for (const strategy of searchStrategies) {
             if (strategy.term && strategy.term !== term) {
                 try {
