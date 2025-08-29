@@ -286,8 +286,8 @@ async function localSearch(
     };
 
     // Check if search term looks like a URL pattern
-    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker")
-    const isSingleToken = /^[-a-z0-9]+$/i.test(searchTerm);
+    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker", "fortraders")
+    const isSingleToken = /^[a-z0-9]+$/i.test(searchTerm);
     const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(searchTerm)) ||
                        searchTerm.includes('.') || 
                        searchTerm.includes('://') || 
@@ -400,9 +400,14 @@ async function localSearch(
                 `${searchTerm}.vn`,
                 `${searchTerm}.net`,
                 `${searchTerm}.org`,
+                `${searchTerm}.io`,
+                `${searchTerm}.app`,
                 `www.${searchTerm}.com`,
+                `app.${searchTerm}.com`,
                 `https://${searchTerm}.com`,
                 `http://${searchTerm}.com`,
+                `https://app.${searchTerm}.com`,
+                `https://www.${searchTerm}.com`,
             ];
             for (const exp of expansions) {
                 const args = { ...searchArgs, search_term: exp };
@@ -415,6 +420,43 @@ async function localSearch(
                     }
                 } catch (error) {
                     console.log("Keyword domain expansion search failed:", error);
+                }
+            }
+        }
+
+        // Strategy 9: Try subdomain extraction for complex URLs
+        if (!localResult || localResult.count === 0) {
+            if (searchTerm.includes('.')) {
+                const domainParts = searchTerm.replace(/^https?:\/\//, '').split('.');
+                if (domainParts.length >= 2) {
+                    const mainDomain = domainParts.slice(-2).join('.');
+                    const subdomain = domainParts[0];
+                    
+                    // Try main domain
+                    const mainDomainArgs = { ...searchArgs, search_term: mainDomain };
+                    try {
+                        const r = await eventIndex!.search(mainDomainArgs);
+                        if (r && r.count && r.count > 0) {
+                            localResult = r;
+                            console.log(`Main domain extraction search returned ${r.count} results for ${mainDomain}`);
+                        }
+                    } catch (error) {
+                        console.log("Main domain extraction search failed:", error);
+                    }
+
+                    // Try subdomain if main domain didn't work
+                    if (!localResult || localResult.count === 0) {
+                        const subdomainArgs = { ...searchArgs, search_term: subdomain };
+                        try {
+                            const r = await eventIndex!.search(subdomainArgs);
+                            if (r && r.count && r.count > 0) {
+                                localResult = r;
+                                console.log(`Subdomain extraction search returned ${r.count} results for ${subdomain}`);
+                            }
+                        } catch (error) {
+                            console.log("Subdomain extraction search failed:", error);
+                        }
+                    }
                 }
             }
         }
