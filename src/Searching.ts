@@ -33,6 +33,14 @@ async function serverSideSearch(
 ): Promise<{ response: ISearchResponse; query: ISearchRequestBody }> {
     console.log(`🌐 Server-side search called with term: "${term}"`);
     
+    // Add a small delay to prevent too rapid aborting
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    if (abortSignal?.aborted) {
+        console.log("⚠️ Search was aborted during delay");
+        throw new Error("Search aborted");
+    }
+    
     const filter: IRoomEventFilter = {
         limit: SEARCH_LIMIT,
     };
@@ -265,11 +273,21 @@ async function serverSideSearch(
         };
 
         try {
+            // Add a small delay to prevent too rapid aborting
+            if (abortSignal?.aborted) {
+                console.log("⚠️ Search was aborted before starting");
+                throw new Error("Search aborted");
+            }
+            
             response = await client.search({ body: body }, abortSignal);
             query = body;
             console.log(`🌐 Server-side search completed with ${response.search_categories?.room_events?.results?.length || 0} results`);
         } catch (error) {
-            console.error("❌ Server-side search failed:", error);
+            if (error instanceof Error && error.name === 'AbortError') {
+                console.log("⚠️ Server-side search was aborted");
+            } else {
+                console.error("❌ Server-side search failed:", error);
+            }
             throw error;
         }
     }
@@ -1348,6 +1366,12 @@ export default function eventSearch(
     abortSignal?: AbortSignal,
 ): Promise<ISearchResults> {
     console.log(`🚀 eventSearch called with term: "${term}", roomId: ${roomId || 'all'}`);
+    
+    // Add a small delay to prevent too rapid aborting
+    if (abortSignal?.aborted) {
+        console.log("⚠️ Search was aborted before starting");
+        return Promise.reject(new Error("Search aborted"));
+    }
     
     const eventIndex = EventIndexPeg.get();
     console.log(`📊 EventIndex available: ${eventIndex !== null}`);

@@ -1698,6 +1698,13 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
     private onSearch = (term: string, scope = SearchScope.Room): void => {
         const roomId = scope === SearchScope.Room ? this.getRoomId() : undefined;
         debuglog("sending search request");
+        
+        // Abort previous search if it exists
+        if (this.state.search?.abortController) {
+            console.log("🔄 Aborting previous search");
+            this.state.search.abortController.abort();
+        }
+        
         const abortController = new AbortController();
         const promise = eventSearch(this.context.client!, term, roomId, abortController.signal);
 
