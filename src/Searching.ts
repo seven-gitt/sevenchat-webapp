@@ -179,7 +179,7 @@ async function serverSideSearch(
                         },
                     };
 
-                    const strategyResponse = await client.search({ body: body }, abortSignal);
+                    const strategyResponse = await client.search({ body: body });
                     
                     // Check if we got meaningful results
                     const results = strategyResponse.search_categories?.room_events?.results;
@@ -218,33 +218,28 @@ async function serverSideSearch(
         };
 
         try {
-            // Check if search was aborted
-            if (abortSignal?.aborted) {
-                console.log("⚠️ Search was aborted before starting");
-                throw new Error("Search aborted");
-            }
+                // Remove abort check to avoid issues
+    // if (abortSignal?.aborted) {
+    //     console.log("⚠️ Search was aborted before starting");
+    //     throw new Error("Search aborted");
+    // }
             
-            response = await client.search({ body: body }, abortSignal);
+            response = await client.search({ body: body });
             query = body;
             console.log(`🌐 Server-side search completed with ${response.search_categories?.room_events?.results?.length || 0} results`);
         } catch (error) {
-            if (error instanceof Error && error.name === 'AbortError') {
-                console.log("⚠️ Server-side search was aborted");
-                // Return empty results instead of throwing
-                response = {
-                    search_categories: {
-                        room_events: {
-                            results: [],
-                            highlights: [],
-                            count: 0
-                        }
+            console.error("❌ Server-side search failed:", error);
+            // Return empty results instead of throwing
+            response = {
+                search_categories: {
+                    room_events: {
+                        results: [],
+                        highlights: [],
+                        count: 0
                     }
-                } as ISearchResponse;
-                query = body;
-            } else {
-                console.error("❌ Server-side search failed:", error);
-                throw error;
-            }
+                }
+            } as ISearchResponse;
+            query = body;
         }
     }
 
