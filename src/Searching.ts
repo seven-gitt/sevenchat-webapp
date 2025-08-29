@@ -225,14 +225,18 @@ function searchInTimeline(
     
     // Process rooms
     for (const room of rooms) {
+        console.log(`Checking room: ${room.name} (${room.roomId})`);
         try {
             // Get recent messages from the room timeline (like spotlight dialog)
             const timeline = room.getLiveTimeline();
             const events = timeline?.getEvents() || [];
             
             if (events.length === 0) {
+                console.log(`Room ${room.name} has no events`);
                 continue;
             }
+            
+            console.log(`Room ${room.name} has ${events.length} events`);
             
             // Process events in reverse order (newest first) for better performance
             for (let i = events.length - 1; i >= 0; i--) {
@@ -257,6 +261,8 @@ function searchInTimeline(
                             if (hasExactMatch || hasWordMatch) {
                                 console.log(`Found match in timeline: "${content.body}" contains "${searchTerm}"`);
                                 return { found: true, message: content.body };
+                            } else {
+                                console.log(`No match in message: "${content.body}" (searching for "${searchTerm}")`);
                             }
                         }
                     }
@@ -1123,7 +1129,11 @@ async function localSearch(
                 highlights: [],
                 next_batch: undefined,
             };
+        } else {
+            console.log("Timeline search did not find any matches");
         }
+    } else {
+        console.log(`Local search found ${localResult.count} results, skipping timeline search`);
     }
     
     if (!localResult) {
