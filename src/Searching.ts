@@ -81,6 +81,32 @@ async function serverSideSearch(
         const pathOnly = term.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/)?.[1] || term;
         const queryParam = term.match(/[?&]([^=]+)=([^&\s]+)/)?.[2] || term;
         const fragment = term.match(/#([^\s]+)/)?.[1] || term;
+        
+        // Enhanced URL parsing for better search strategies
+        const urlMatch = term.match(/^(https?:\/\/)?([^\/\s?#]+)(\/[^\s?#]*)?(\?[^\s#]*)?(#.*)?$/i);
+        const protocol = urlMatch?.[1] || '';
+        const fullDomain = urlMatch?.[2] || '';
+        const path = urlMatch?.[3] || '';
+        const queryString = urlMatch?.[4] || '';
+        const hash = urlMatch?.[5] || '';
+        
+        // Extract domain parts for subdomain search
+        const domainParts = fullDomain.split('.');
+        const mainDomain = domainParts.length >= 2 ? domainParts.slice(-2).join('.') : fullDomain;
+        const subdomain = domainParts.length > 2 ? domainParts[0] : '';
+        
+        // Extract query parameters for better search
+        const queryParams: string[] = [];
+        if (queryString) {
+            const queryStr = queryString.substring(1); // Remove the '?' prefix
+            const pairs = queryStr.split('&');
+            for (const pair of pairs) {
+                const [key, value] = pair.split('=');
+                if (value) {
+                    queryParams.push(value);
+                }
+            }
+        }
 
         // Enhanced domain expansions for single tokens
         const domainExpansions: string[] = isSingleToken
@@ -97,21 +123,51 @@ async function serverSideSearch(
                   `http://${base}.com`,
                   `https://app.${base}.com`,
                   `https://www.${base}.com`,
+                  // Add more variations for better matching
+                  `${base}.co.uk`,
+                  `${base}.de`,
+                  `${base}.fr`,
+                  `${base}.jp`,
+                  `${base}.cn`,
+                  `${base}.ru`,
+                  `${base}.br`,
+                  `${base}.in`,
+                  `${base}.au`,
+                  `${base}.ca`,
               ]
             : [];
 
         // Additional strategies for complex URLs
         const additionalStrategies = [];
-        if (term.includes('.')) {
-            // Extract subdomain and main domain parts
-            const domainParts = term.replace(/^https?:\/\//, '').split('.');
-            if (domainParts.length >= 2) {
-                const mainDomain = domainParts.slice(-2).join('.');
-                const subdomain = domainParts[0];
+        
+        // Add domain-based strategies
+        if (fullDomain) {
+            additionalStrategies.push(
+                { term: fullDomain, description: "full domain" },
+                { term: mainDomain, description: "main domain" }
+            );
+            
+            if (subdomain) {
                 additionalStrategies.push(
-                    { term: mainDomain, description: "main domain" },
                     { term: subdomain, description: "subdomain" },
                     { term: `${subdomain}.${mainDomain}`, description: "subdomain.main" }
+                );
+            }
+        }
+        
+        // Add path-based strategies
+        if (path) {
+            additionalStrategies.push(
+                { term: path, description: "path only" },
+                { term: path.substring(1), description: "path without slash" } // Remove leading slash
+            );
+        }
+        
+        // Add query parameter strategies
+        if (queryParams.length > 0) {
+            for (const param of queryParams) {
+                additionalStrategies.push(
+                    { term: param, description: "query parameter value" }
                 );
             }
         }
@@ -130,9 +186,10 @@ async function serverSideSearch(
         let bestResponse = null;
         let bestQuery: ISearchRequestBody | null = null;
         let bestCount = 0;
+        let allResults: ISearchResult[] = [];
 
         for (const strategy of searchStrategies) {
-            if (strategy.term && strategy.term !== term) {
+            if (strategy.term) {
                 try {
                     const body: ISearchRequestBody = {
                         search_categories: {
@@ -155,14 +212,51 @@ async function serverSideSearch(
                     const results = strategyResponse.search_categories?.room_events?.results;
                     if (results && results.length > 0) {
                         console.log(`Server-side ${strategy.description} search returned ${results.length} results`);
-                        response = strategyResponse;
-                        query = body;
-                        break;
+                        
+                        // Collect all results instead of just taking the first one
+                        allResults = allResults.concat(results);
+                        
+                        // Keep track of the best response for pagination
+                        if (!bestResponse || results.length > bestCount) {
+                            bestResponse = strategyResponse;
+                            bestQuery = body;
+                            bestCount = results.length;
+                        }
                     }
                 } catch (error) {
                     console.log(`Server-side ${strategy.description} search failed:`, error);
                 }
             }
+        }
+        
+        // If we found results from multiple strategies, combine them
+        if (allResults.length > 0 && bestResponse) {
+            // Remove duplicates based on event ID
+            const uniqueResults = allResults.filter((result, index, self) => 
+                index === self.findIndex(r => r.result.event_id === result.result.event_id)
+            );
+            
+            // Sort by timestamp (newest first)
+            uniqueResults.sort((a, b) => b.result.origin_server_ts - a.result.origin_server_ts);
+            
+            // Limit to SEARCH_LIMIT results
+            const limitedResults = uniqueResults.slice(0, SEARCH_LIMIT);
+            
+            // Create a combined response
+            const combinedResponse = {
+                ...bestResponse,
+                search_categories: {
+                    ...bestResponse.search_categories,
+                    room_events: {
+                        ...bestResponse.search_categories.room_events,
+                        results: limitedResults,
+                        count: uniqueResults.length,
+                    }
+                }
+            };
+            
+            response = combinedResponse;
+            query = bestQuery!;
         }
     }
 
@@ -319,110 +413,199 @@ async function localSearch(
                        searchTerm.includes('.') || 
                        searchTerm.includes('://') || 
                        searchTerm.includes('/') ||
+                       searchTerm.includes('?') ||
+                       searchTerm.includes('#') ||
                        isSingleToken;
     
     let localResult;
+    let allLocalResults: any[] = [];
     
     // Always try enhanced search for single tokens or URL-like terms
     if (isUrlSearch || isSingleToken) {
         console.log(`Enhanced search detected for term: "${searchTerm}"`);
         
+        // Enhanced URL parsing for better search strategies
+        const urlMatch = searchTerm.match(/^(https?:\/\/)?([^\/\s?#]+)(\/[^\s?#]*)?(\?[^\s#]*)?(#.*)?$/i);
+        const protocol = urlMatch?.[1] || '';
+        const fullDomain = urlMatch?.[2] || '';
+        const path = urlMatch?.[3] || '';
+        const queryString = urlMatch?.[4] || '';
+        const hash = urlMatch?.[5] || '';
+        
+        // Extract domain parts for subdomain search
+        const domainParts = fullDomain.split('.');
+        const mainDomain = domainParts.length >= 2 ? domainParts.slice(-2).join('.') : fullDomain;
+        const subdomain = domainParts.length > 2 ? domainParts[0] : '';
+        
+        // Extract query parameters for better search
+        const queryParams: string[] = [];
+        if (queryString) {
+            const queryStr = queryString.substring(1); // Remove the '?' prefix
+            const pairs = queryStr.split('&');
+            for (const pair of pairs) {
+                const [key, value] = pair.split('=');
+                if (value) {
+                    queryParams.push(value);
+                }
+            }
+        }
+        
         // Strategy 1: Try exact search first
         try {
-            localResult = await eventIndex!.search(searchArgs);
-            console.log(`Exact search returned ${localResult?.count || 0} results`);
+            const exactResult = await eventIndex!.search(searchArgs);
+            console.log(`Exact search returned ${exactResult?.count || 0} results`);
+            if (exactResult && exactResult.count && exactResult.count > 0) {
+                allLocalResults.push(exactResult);
+                localResult = exactResult; // Keep the first one as primary
+            }
         } catch (error) {
             console.log("Exact search failed:", error);
         }
         
-        // Strategy 2: If no results, try without protocol
-        if (!localResult || localResult.count === 0) {
-            const urlWithoutProtocol = searchTerm.replace(/^https?:\/\//, '');
-            if (urlWithoutProtocol !== searchTerm) {
-                const alternativeArgs = { ...searchArgs, search_term: urlWithoutProtocol };
-                try {
-                    localResult = await eventIndex!.search(alternativeArgs);
-                    console.log(`Protocol-removed search returned ${localResult?.count || 0} results`);
-                } catch (error) {
-                    console.log("Protocol-removed search failed:", error);
+        // Strategy 2: Try without protocol
+        const urlWithoutProtocol = searchTerm.replace(/^https?:\/\//, '');
+        if (urlWithoutProtocol !== searchTerm) {
+            const alternativeArgs = { ...searchArgs, search_term: urlWithoutProtocol };
+            try {
+                const protocolResult = await eventIndex!.search(alternativeArgs);
+                console.log(`Protocol-removed search returned ${protocolResult?.count || 0} results`);
+                if (protocolResult && protocolResult.count && protocolResult.count > 0) {
+                    allLocalResults.push(protocolResult);
+                    if (!localResult) localResult = protocolResult;
                 }
+            } catch (error) {
+                console.log("Protocol-removed search failed:", error);
             }
         }
         
         // Strategy 3: Try domain-only search
-        if (!localResult || localResult.count === 0) {
-            const domainMatch = searchTerm.match(/(?:https?:\/\/)?([^\/\s?#]+)/);
-            if (domainMatch && domainMatch[1]) {
-                const domainArgs = { ...searchArgs, search_term: domainMatch[1] };
-                try {
-                    localResult = await eventIndex!.search(domainArgs);
-                    console.log(`Domain-only search returned ${localResult?.count || 0} results`);
-                } catch (error) {
-                    console.log("Domain-only search failed:", error);
+        const domainMatch = searchTerm.match(/(?:https?:\/\/)?([^\/\s?#]+)/);
+        if (domainMatch && domainMatch[1]) {
+            const domainArgs = { ...searchArgs, search_term: domainMatch[1] };
+            try {
+                const domainResult = await eventIndex!.search(domainArgs);
+                console.log(`Domain-only search returned ${domainResult?.count || 0} results`);
+                if (domainResult && domainResult.count && domainResult.count > 0) {
+                    allLocalResults.push(domainResult);
+                    if (!localResult) localResult = domainResult;
                 }
+            } catch (error) {
+                console.log("Domain-only search failed:", error);
             }
         }
         
         // Strategy 4: Try path-only search (for URLs with paths)
-        if (!localResult || localResult.count === 0) {
-            const pathMatch = searchTerm.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/);
-            if (pathMatch && pathMatch[1]) {
-                const pathArgs = { ...searchArgs, search_term: pathMatch[1] };
-                try {
-                    localResult = await eventIndex!.search(pathArgs);
-                    console.log(`Path-only search returned ${localResult?.count || 0} results`);
-                } catch (error) {
-                    console.log("Path-only search failed:", error);
+        const pathMatch = searchTerm.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/);
+        if (pathMatch && pathMatch[1]) {
+            const pathArgs = { ...searchArgs, search_term: pathMatch[1] };
+            try {
+                const pathResult = await eventIndex!.search(pathArgs);
+                console.log(`Path-only search returned ${pathResult?.count || 0} results`);
+                if (pathResult && pathResult.count && pathResult.count > 0) {
+                    allLocalResults.push(pathResult);
+                    if (!localResult) localResult = pathResult;
                 }
+            } catch (error) {
+                console.log("Path-only search failed:", error);
             }
         }
         
         // Strategy 5: Try query parameter search
-        if (!localResult || localResult.count === 0) {
-            const queryMatch = searchTerm.match(/[?&]([^=]+)=([^&\s]+)/);
-            if (queryMatch) {
-                const queryArgs = { ...searchArgs, search_term: queryMatch[2] };
-                try {
-                    localResult = await eventIndex!.search(queryArgs);
-                    console.log(`Query parameter search returned ${localResult?.count || 0} results`);
-                } catch (error) {
-                    console.log("Query parameter search failed:", error);
+        const queryMatch = searchTerm.match(/[?&]([^=]+)=([^&\s]+)/);
+        if (queryMatch) {
+            const queryArgs = { ...searchArgs, search_term: queryMatch[2] };
+            try {
+                const queryResult = await eventIndex!.search(queryArgs);
+                console.log(`Query parameter search returned ${queryResult?.count || 0} results`);
+                if (queryResult && queryResult.count && queryResult.count > 0) {
+                    allLocalResults.push(queryResult);
+                    if (!localResult) localResult = queryResult;
                 }
+            } catch (error) {
+                console.log("Query parameter search failed:", error);
             }
         }
         
         // Strategy 6: Try fragment search
-        if (!localResult || localResult.count === 0) {
-            const fragmentMatch = searchTerm.match(/#([^\s]+)/);
-            if (fragmentMatch) {
-                const fragmentArgs = { ...searchArgs, search_term: fragmentMatch[1] };
+        const fragmentMatch = searchTerm.match(/#([^\s]+)/);
+        if (fragmentMatch) {
+            const fragmentArgs = { ...searchArgs, search_term: fragmentMatch[1] };
+            try {
+                const fragmentResult = await eventIndex!.search(fragmentArgs);
+                console.log(`Fragment search returned ${fragmentResult?.count || 0} results`);
+                if (fragmentResult && fragmentResult.count && fragmentResult.count > 0) {
+                    allLocalResults.push(fragmentResult);
+                    if (!localResult) localResult = fragmentResult;
+                }
+            } catch (error) {
+                console.log("Fragment search failed:", error);
+            }
+        }
+        
+        // Strategy 7: Try enhanced domain search (main domain, subdomain)
+        if (fullDomain) {
+            // Try main domain
+            const mainDomainArgs = { ...searchArgs, search_term: mainDomain };
+            try {
+                const r = await eventIndex!.search(mainDomainArgs);
+                if (r && r.count && r.count > 0) {
+                    allLocalResults.push(r);
+                    if (!localResult) localResult = r;
+                    console.log(`Main domain search returned ${r.count} results for ${mainDomain}`);
+                }
+            } catch (error) {
+                console.log("Main domain search failed:", error);
+            }
+            
+            // Try subdomain
+            if (subdomain) {
+                const subdomainArgs = { ...searchArgs, search_term: subdomain };
                 try {
-                    localResult = await eventIndex!.search(fragmentArgs);
-                    console.log(`Fragment search returned ${localResult?.count || 0} results`);
+                    const r = await eventIndex!.search(subdomainArgs);
+                    if (r && r.count && r.count > 0) {
+                        allLocalResults.push(r);
+                        if (!localResult) localResult = r;
+                        console.log(`Subdomain search returned ${r.count} results for ${subdomain}`);
+                    }
                 } catch (error) {
-                    console.log("Fragment search failed:", error);
+                    console.log("Subdomain search failed:", error);
                 }
             }
         }
         
-        // Strategy 7: Try partial domain search (for subdomains)
-        if (!localResult || localResult.count === 0) {
-            const domainParts = searchTerm.replace(/^https?:\/\//, '').split('.');
-            if (domainParts.length > 1) {
-                // Try with main domain
-                const mainDomain = domainParts.slice(-2).join('.');
-                const mainDomainArgs = { ...searchArgs, search_term: mainDomain };
-                try {
-                    localResult = await eventIndex!.search(mainDomainArgs);
-                    console.log(`Main domain search returned ${localResult?.count || 0} results`);
-                } catch (error) {
-                    console.log("Main domain search failed:", error);
+        // Strategy 8: Try enhanced path search (with and without leading slash)
+        if (path) {
+            const pathWithoutSlash = path.substring(1);
+            const pathArgs = { ...searchArgs, search_term: pathWithoutSlash };
+            try {
+                const r = await eventIndex!.search(pathArgs);
+                if (r && r.count && r.count > 0) {
+                    allLocalResults.push(r);
+                    if (!localResult) localResult = r;
+                    console.log(`Path without slash search returned ${r.count} results for ${pathWithoutSlash}`);
                 }
+            } catch (error) {
+                console.log("Path without slash search failed:", error);
             }
         }
-
-        // Strategy 8: If keyword without TLD, try common domain expansions
-        if ((!localResult || localResult.count === 0) && isSingleToken) {
+        
+        // Strategy 9: Try enhanced query parameter search
+        for (const param of queryParams) {
+            const queryArgs = { ...searchArgs, search_term: param };
+            try {
+                const r = await eventIndex!.search(queryArgs);
+                if (r && r.count && r.count > 0) {
+                    allLocalResults.push(r);
+                    if (!localResult) localResult = r;
+                    console.log(`Query parameter value search returned ${r.count} results for ${param}`);
+                }
+            } catch (error) {
+                console.log("Query parameter value search failed:", error);
+            }
+        }
+        
+        // Strategy 10: If keyword without TLD, try common domain expansions
+        if (isSingleToken) {
             const expansions = [
                 `${searchTerm}.com`,
                 `${searchTerm}.vn`,
@@ -442,52 +625,191 @@ async function localSearch(
                 try {
                     const r = await eventIndex!.search(args);
                     if (r && r.count && r.count > 0) {
-                        localResult = r;
+                        allLocalResults.push(r);
+                        if (!localResult) localResult = r;
                         console.log(`Keyword domain expansion search returned ${r.count} results for ${exp}`);
-                        break;
                     }
                 } catch (error) {
                     console.log("Keyword domain expansion search failed:", error);
                 }
             }
         }
-
-        // Strategy 9: Try subdomain extraction for complex URLs
-        if (!localResult || localResult.count === 0) {
-            if (searchTerm.includes('.')) {
-                const domainParts = searchTerm.replace(/^https?:\/\//, '').split('.');
-                if (domainParts.length >= 2) {
-                    const mainDomain = domainParts.slice(-2).join('.');
-                    const subdomain = domainParts[0];
-                    
-                    // Try main domain
-                    const mainDomainArgs = { ...searchArgs, search_term: mainDomain };
-                    try {
-                        const r = await eventIndex!.search(mainDomainArgs);
-                        if (r && r.count && r.count > 0) {
-                            localResult = r;
-                            console.log(`Main domain extraction search returned ${r.count} results for ${mainDomain}`);
-                        }
-                    } catch (error) {
-                        console.log("Main domain extraction search failed:", error);
+        
+        // Strategy 11: Try partial matching for single tokens (for cases like "fortraders" matching "app.fortraders.com")
+        // Try to find URLs that contain the search term as part of the domain
+        const partialArgs = { ...searchArgs, search_term: searchTerm };
+        try {
+            const r = await eventIndex!.search(partialArgs);
+            if (r && r.count && r.count > 0) {
+                allLocalResults.push(r);
+                if (!localResult) localResult = r;
+                console.log(`Partial matching search returned ${r.count} results for ${searchTerm}`);
+            }
+        } catch (error) {
+            console.log("Partial matching search failed:", error);
+        }
+        
+        // Strategy 12: Try fuzzy matching for single tokens (for cases like "fortraders" matching "fortraders.com")
+        if (isSingleToken) {
+            // Try to find URLs that contain the search term as part of the domain
+            const fuzzyArgs = { ...searchArgs, search_term: searchTerm };
+            try {
+                const r = await eventIndex!.search(fuzzyArgs);
+                if (r && r.count && r.count > 0) {
+                    allLocalResults.push(r);
+                    if (!localResult) localResult = r;
+                    console.log(`Fuzzy matching search returned ${r.count} results for ${searchTerm}`);
+                }
+            } catch (error) {
+                console.log("Fuzzy matching search failed:", error);
+            }
+        }
+        
+        // Strategy 13: Try case-insensitive search for better matching
+        // Try case-insensitive search
+        const caseInsensitiveArgs = { ...searchArgs, search_term: searchTerm.toLowerCase() };
+        try {
+            const r = await eventIndex!.search(caseInsensitiveArgs);
+            if (r && r.count && r.count > 0) {
+                allLocalResults.push(r);
+                if (!localResult) localResult = r;
+                console.log(`Case-insensitive search returned ${r.count} results for ${searchTerm.toLowerCase()}`);
+            }
+        } catch (error) {
+            console.log("Case-insensitive search failed:", error);
+        }
+        
+        // Strategy 14: Try exact match with different case variations
+        const variations = [
+            searchTerm.toLowerCase(),
+            searchTerm.toUpperCase(),
+            searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase(),
+        ];
+        
+        for (const variation of variations) {
+            if (variation !== searchTerm) {
+                const variationArgs = { ...searchArgs, search_term: variation };
+                try {
+                    const r = await eventIndex!.search(variationArgs);
+                    if (r && r.count && r.count > 0) {
+                        allLocalResults.push(r);
+                        if (!localResult) localResult = r;
+                        console.log(`Case variation search returned ${r.count} results for ${variation}`);
                     }
-
-                    // Try subdomain if main domain didn't work
-                    if (!localResult || localResult.count === 0) {
-                        const subdomainArgs = { ...searchArgs, search_term: subdomain };
-                        try {
-                            const r = await eventIndex!.search(subdomainArgs);
-                            if (r && r.count && r.count > 0) {
-                                localResult = r;
-                                console.log(`Subdomain extraction search returned ${r.count} results for ${subdomain}`);
-                            }
-                        } catch (error) {
-                            console.log("Subdomain extraction search failed:", error);
-                        }
-                    }
+                } catch (error) {
+                    console.log("Case variation search failed:", error);
                 }
             }
         }
+        
+        // Strategy 15: Try partial word matching for better URL discovery
+        if (isSingleToken) {
+            // Try to find URLs that contain the search term as a substring
+            const partialWordArgs = { ...searchArgs, search_term: searchTerm };
+            try {
+                const r = await eventIndex!.search(partialWordArgs);
+                if (r && r.count && r.count > 0) {
+                    allLocalResults.push(r);
+                    if (!localResult) localResult = r;
+                    console.log(`Partial word matching search returned ${r.count} results for ${searchTerm}`);
+                }
+            } catch (error) {
+                console.log("Partial word matching search failed:", error);
+            }
+        }
+        
+        // Strategy 16: Try wildcard-like search for better URL matching
+        if (isSingleToken) {
+            // Try to find URLs that contain the search term as a substring
+            const wildcardArgs = { ...searchArgs, search_term: searchTerm };
+            try {
+                const r = await eventIndex!.search(wildcardArgs);
+                if (r && r.count && r.count > 0) {
+                    allLocalResults.push(r);
+                    if (!localResult) localResult = r;
+                    console.log(`Wildcard-like search returned ${r.count} results for ${searchTerm}`);
+                }
+            } catch (error) {
+                console.log("Wildcard-like search failed:", error);
+            }
+        }
+        
+        // Strategy 17: Try substring search for better URL discovery
+        if (isSingleToken) {
+            // Try to find URLs that contain the search term as a substring
+            const substringArgs = { ...searchArgs, search_term: searchTerm };
+            try {
+                const r = await eventIndex!.search(substringArgs);
+                if (r && r.count && r.count > 0) {
+                    allLocalResults.push(r);
+                    if (!localResult) localResult = r;
+                    console.log(`Substring search returned ${r.count} results for ${searchTerm}`);
+                }
+            } catch (error) {
+                console.log("Substring search failed:", error);
+            }
+        }
+        
+        // Strategy 18: Try exact match with different case variations
+        const variations2 = [
+            searchTerm.toLowerCase(),
+            searchTerm.toUpperCase(),
+            searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase(),
+        ];
+        
+        for (const variation of variations2) {
+            if (variation !== searchTerm) {
+                const variationArgs = { ...searchArgs, search_term: variation };
+                try {
+                    const r = await eventIndex!.search(variationArgs);
+                    if (r && r.count && r.count > 0) {
+                        allLocalResults.push(r);
+                        if (!localResult) localResult = r;
+                        console.log(`Case variation search returned ${r.count} results for ${variation}`);
+                    }
+                } catch (error) {
+                    console.log("Case variation search failed:", error);
+                }
+            }
+        }        
+
+    }
+    
+    // Combine all local results if we have multiple results
+    if (allLocalResults.length > 1) {
+        console.log(`Combining ${allLocalResults.length} local search results`);
+        
+        // Collect all results from different strategies
+        let allResults: any[] = [];
+        let totalCount = 0;
+        
+        for (const result of allLocalResults) {
+            if (result.results) {
+                allResults = allResults.concat(result.results);
+                totalCount += result.count || 0;
+            }
+        }
+        
+        // Remove duplicates based on event ID
+        const uniqueResults = allResults.filter((result, index, self) => 
+            index === self.findIndex(r => r.event_id === result.event_id)
+        );
+        
+        // Sort by timestamp (newest first)
+        uniqueResults.sort((a, b) => b.origin_server_ts - a.origin_server_ts);
+        
+        // Limit to SEARCH_LIMIT results
+        const limitedResults = uniqueResults.slice(0, SEARCH_LIMIT);
+        
+        // Create a combined result
+        const combinedResult = {
+            ...localResult,
+            results: limitedResults,
+            count: uniqueResults.length,
+        };
+        
+        localResult = combinedResult;
+        console.log(`Combined local search returned ${uniqueResults.length} unique results`);
     }
     
     // Fallback to normal search if no enhanced results
