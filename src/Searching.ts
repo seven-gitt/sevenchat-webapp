@@ -635,38 +635,7 @@ async function localSearch(
             }
         }
         
-        // Strategy 11: Try partial matching for single tokens (for cases like "fortraders" matching "app.fortraders.com")
-        // Try to find URLs that contain the search term as part of the domain
-        const partialArgs = { ...searchArgs, search_term: searchTerm };
-        try {
-            const r = await eventIndex!.search(partialArgs);
-            if (r && r.count && r.count > 0) {
-                allLocalResults.push(r);
-                if (!localResult) localResult = r;
-                console.log(`Partial matching search returned ${r.count} results for ${searchTerm}`);
-            }
-        } catch (error) {
-            console.log("Partial matching search failed:", error);
-        }
-        
-        // Strategy 12: Try fuzzy matching for single tokens (for cases like "fortraders" matching "fortraders.com")
-        if (isSingleToken) {
-            // Try to find URLs that contain the search term as part of the domain
-            const fuzzyArgs = { ...searchArgs, search_term: searchTerm };
-            try {
-                const r = await eventIndex!.search(fuzzyArgs);
-                if (r && r.count && r.count > 0) {
-                    allLocalResults.push(r);
-                    if (!localResult) localResult = r;
-                    console.log(`Fuzzy matching search returned ${r.count} results for ${searchTerm}`);
-                }
-            } catch (error) {
-                console.log("Fuzzy matching search failed:", error);
-            }
-        }
-        
-        // Strategy 13: Try case-insensitive search for better matching
-        // Try case-insensitive search
+        // Strategy 11: Try case-insensitive search for better matching
         const caseInsensitiveArgs = { ...searchArgs, search_term: searchTerm.toLowerCase() };
         try {
             const r = await eventIndex!.search(caseInsensitiveArgs);
@@ -679,86 +648,14 @@ async function localSearch(
             console.log("Case-insensitive search failed:", error);
         }
         
-        // Strategy 14: Try exact match with different case variations
+        // Strategy 12: Try exact match with different case variations
         const variations = [
-            searchTerm.toLowerCase(),
             searchTerm.toUpperCase(),
             searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase(),
         ];
         
         for (const variation of variations) {
-            if (variation !== searchTerm) {
-                const variationArgs = { ...searchArgs, search_term: variation };
-                try {
-                    const r = await eventIndex!.search(variationArgs);
-                    if (r && r.count && r.count > 0) {
-                        allLocalResults.push(r);
-                        if (!localResult) localResult = r;
-                        console.log(`Case variation search returned ${r.count} results for ${variation}`);
-                    }
-                } catch (error) {
-                    console.log("Case variation search failed:", error);
-                }
-            }
-        }
-        
-        // Strategy 15: Try partial word matching for better URL discovery
-        if (isSingleToken) {
-            // Try to find URLs that contain the search term as a substring
-            const partialWordArgs = { ...searchArgs, search_term: searchTerm };
-            try {
-                const r = await eventIndex!.search(partialWordArgs);
-                if (r && r.count && r.count > 0) {
-                    allLocalResults.push(r);
-                    if (!localResult) localResult = r;
-                    console.log(`Partial word matching search returned ${r.count} results for ${searchTerm}`);
-                }
-            } catch (error) {
-                console.log("Partial word matching search failed:", error);
-            }
-        }
-        
-        // Strategy 16: Try wildcard-like search for better URL matching
-        if (isSingleToken) {
-            // Try to find URLs that contain the search term as a substring
-            const wildcardArgs = { ...searchArgs, search_term: searchTerm };
-            try {
-                const r = await eventIndex!.search(wildcardArgs);
-                if (r && r.count && r.count > 0) {
-                    allLocalResults.push(r);
-                    if (!localResult) localResult = r;
-                    console.log(`Wildcard-like search returned ${r.count} results for ${searchTerm}`);
-                }
-            } catch (error) {
-                console.log("Wildcard-like search failed:", error);
-            }
-        }
-        
-        // Strategy 17: Try substring search for better URL discovery
-        if (isSingleToken) {
-            // Try to find URLs that contain the search term as a substring
-            const substringArgs = { ...searchArgs, search_term: searchTerm };
-            try {
-                const r = await eventIndex!.search(substringArgs);
-                if (r && r.count && r.count > 0) {
-                    allLocalResults.push(r);
-                    if (!localResult) localResult = r;
-                    console.log(`Substring search returned ${r.count} results for ${searchTerm}`);
-                }
-            } catch (error) {
-                console.log("Substring search failed:", error);
-            }
-        }
-        
-        // Strategy 18: Try exact match with different case variations
-        const variations2 = [
-            searchTerm.toLowerCase(),
-            searchTerm.toUpperCase(),
-            searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase(),
-        ];
-        
-        for (const variation of variations2) {
-            if (variation !== searchTerm) {
+            if (variation !== searchTerm && variation !== searchTerm.toLowerCase()) {
                 const variationArgs = { ...searchArgs, search_term: variation };
                 try {
                     const r = await eventIndex!.search(variationArgs);
