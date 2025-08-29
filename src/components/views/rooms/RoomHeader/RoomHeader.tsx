@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR GPL-3.0-only OR LicenseRef-Element-Com
 Please see LICENSE files in the repository root for full details.
 */
 
-import React, { type JSX, useCallback, useMemo, useState } from "react";
+import React, { type JSX, useCallback, useMemo, useState, useEffect } from "react";
 import { Body as BodyText, Button, IconButton, Menu, MenuItem, Tooltip } from "@vector-im/compound-web";
 import VideoCallIcon from "@vector-im/compound-design-tokens/assets/web/icons/video-call-solid";
 import VoiceCallIcon from "@vector-im/compound-design-tokens/assets/web/icons/voice-call-solid";
@@ -20,40 +20,44 @@ import PublicIcon from "@vector-im/compound-design-tokens/assets/web/icons/publi
 import { JoinRule, type Room } from "matrix-js-sdk/src/matrix";
 import { type ViewRoomOpts } from "@matrix-org/react-sdk-module-api/lib/lifecycles/RoomViewLifecycle";
 
-import { useRoomName } from "../../../../hooks/useRoomName.ts";
-import { RightPanelPhases } from "../../../../stores/right-panel/RightPanelStorePhases.ts";
-import { useMatrixClientContext } from "../../../../contexts/MatrixClientContext.tsx";
-import { useRoomMemberCount, useRoomMembers } from "../../../../hooks/useRoomMembers.ts";
-import { _t } from "../../../../languageHandler.tsx";
-import { Flex } from "../../../utils/Flex.tsx";
-import { Box } from "../../../utils/Box.tsx";
-import { getPlatformCallTypeProps, useRoomCall } from "../../../../hooks/room/useRoomCall.tsx";
-import { useRoomThreadNotifications } from "../../../../hooks/room/useRoomThreadNotifications.ts";
-import { useGlobalNotificationState } from "../../../../hooks/useGlobalNotificationState.ts";
-import SdkConfig from "../../../../SdkConfig.ts";
-import { useFeatureEnabled } from "../../../../hooks/useSettings.ts";
-import { useEncryptionStatus } from "../../../../hooks/useEncryptionStatus.ts";
-import { E2EStatus } from "../../../../utils/ShieldUtils.ts";
-import FacePile from "../../elements/FacePile.tsx";
-import { useRoomState } from "../../../../hooks/useRoomState.ts";
-import RoomAvatar from "../../avatars/RoomAvatar.tsx";
-import { formatCount } from "../../../../utils/FormattingUtils.ts";
-import RightPanelStore from "../../../../stores/right-panel/RightPanelStore.ts";
-import PosthogTrackers from "../../../../PosthogTrackers.ts";
-import { VideoRoomChatButton } from "./VideoRoomChatButton.tsx";
-import { RoomKnocksBar } from "../RoomKnocksBar.tsx";
-import { isVideoRoom as calcIsVideoRoom } from "../../../../utils/video-rooms.ts";
-import { notificationLevelToIndicator } from "../../../../utils/notifications.ts";
-import { CallGuestLinkButton } from "./CallGuestLinkButton.tsx";
-import { type ButtonEvent } from "../../elements/AccessibleButton.tsx";
-import WithPresenceIndicator, { useDmMember } from "../../avatars/WithPresenceIndicator.tsx";
-import { type IOOBData } from "../../../../stores/ThreepidInviteStore.ts";
-import { MainSplitContentType } from "../../../structures/RoomView.tsx";
-import defaultDispatcher from "../../../../dispatcher/dispatcher.ts";
-import { RoomSettingsTab } from "../../dialogs/RoomSettingsDialog.tsx";
-import { useScopedRoomContext } from "../../../../contexts/ScopedRoomContext.tsx";
-import { ToggleableIcon } from "./toggle/ToggleableIcon.tsx";
-import { CurrentRightPanelPhaseContextProvider } from "../../../../contexts/CurrentRightPanelPhaseContext.tsx";
+import { useRoomName } from "../../../../hooks/useRoomName";
+import { RightPanelPhases } from "../../../../stores/right-panel/RightPanelStorePhases";
+import { useMatrixClientContext } from "../../../../contexts/MatrixClientContext";
+import { useRoomMemberCount, useRoomMembers } from "../../../../hooks/useRoomMembers";
+import { _t } from "../../../../languageHandler";
+import { Flex } from "../../../utils/Flex";
+import { Box } from "../../../utils/Box";
+import { getPlatformCallTypeProps, useRoomCall } from "../../../../hooks/room/useRoomCall";
+import { useRoomThreadNotifications } from "../../../../hooks/room/useRoomThreadNotifications";
+import { useGlobalNotificationState } from "../../../../hooks/useGlobalNotificationState";
+import SdkConfig from "../../../../SdkConfig";
+import { useFeatureEnabled } from "../../../../hooks/useSettings";
+import { useEncryptionStatus } from "../../../../hooks/useEncryptionStatus";
+import { E2EStatus } from "../../../../utils/ShieldUtils";
+import FacePile from "../../elements/FacePile";
+import { useRoomState } from "../../../../hooks/useRoomState";
+import RoomAvatar from "../../avatars/RoomAvatar";
+import { formatCount } from "../../../../utils/FormattingUtils";
+import RightPanelStore from "../../../../stores/right-panel/RightPanelStore";
+import PosthogTrackers from "../../../../PosthogTrackers";
+import { VideoRoomChatButton } from "./VideoRoomChatButton";
+import { RoomKnocksBar } from "../RoomKnocksBar";
+import { isVideoRoom as calcIsVideoRoom } from "../../../../utils/video-rooms";
+import { notificationLevelToIndicator } from "../../../../utils/notifications";
+import { CallGuestLinkButton } from "./CallGuestLinkButton";
+import { type ButtonEvent } from "../../elements/AccessibleButton";
+import WithPresenceIndicator, { useDmMember } from "../../avatars/WithPresenceIndicator";
+import { type IOOBData } from "../../../../stores/ThreepidInviteStore";
+import { MainSplitContentType } from "../../../structures/RoomView";
+import defaultDispatcher from "../../../../dispatcher/dispatcher";
+import { Action } from "../../../../dispatcher/actions";
+import { type OpenSpotlightPayload } from "../../../../dispatcher/payloads/OpenSpotlightPayload";
+import { Filter } from "../../dialogs/spotlight/Filter";
+import { RoomSettingsTab } from "../../dialogs/RoomSettingsDialog";
+import { useScopedRoomContext } from "../../../../contexts/ScopedRoomContext";
+import { ToggleableIcon } from "./toggle/ToggleableIcon";
+import { CurrentRightPanelPhaseContextProvider } from "../../../../contexts/CurrentRightPanelPhaseContext";
+import SearchIcon from "@vector-im/compound-design-tokens/assets/web/icons/search";
 
 export default function RoomHeader({
     room,
@@ -248,6 +252,26 @@ export default function RoomHeader({
         });
     };
 
+    // Ctrl/Cmd + F opens Spotlight in "Search messages"
+    useEffect(() => {
+        const onKeyDown = (ev: KeyboardEvent): void => {
+            const target = ev.target as HTMLElement | null;
+            const tag = target?.tagName?.toLowerCase();
+            const isEditable = target?.getAttribute?.("contenteditable") === "true";
+            if (isEditable || tag === "input" || tag === "textarea") return;
+            if ((ev.ctrlKey || ev.metaKey) && (ev.key === "f" || ev.key === "F")) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                defaultDispatcher.dispatch<OpenSpotlightPayload>({
+                    action: Action.OpenSpotlight,
+                    initialFilter: Filter.PublicSpaces,
+                });
+            }
+        };
+        window.addEventListener("keydown", onKeyDown, { capture: true });
+        return () => window.removeEventListener("keydown", onKeyDown, { capture: true } as any);
+    }, []);
+
     return (
         <>
             <CurrentRightPanelPhaseContextProvider roomId={room.roomId}>
@@ -347,6 +371,22 @@ export default function RoomHeader({
                     )}
 
                     {showChatButton && <VideoRoomChatButton room={room} />}
+
+                    {/* Search messages in Spotlight */}
+                    <Tooltip label={_t("action|search")}>
+                        <IconButton
+                            onClick={(evt) => {
+                                evt.stopPropagation();
+                                defaultDispatcher.dispatch<OpenSpotlightPayload>({
+                                    action: Action.OpenSpotlight,
+                                    initialFilter: Filter.PublicSpaces,
+                                });
+                            }}
+                            aria-label={_t("action|search")}
+                        >
+                            <SearchIcon />
+                        </IconButton>
+                    </Tooltip>
 
                     <Tooltip label={_t("common|threads")}>
                         <IconButton
