@@ -31,6 +31,8 @@ async function serverSideSearch(
     roomId?: string,
     abortSignal?: AbortSignal,
 ): Promise<{ response: ISearchResponse; query: ISearchRequestBody }> {
+    console.log(`🌐 Server-side search called with term: "${term}"`);
+    
     const filter: IRoomEventFilter = {
         limit: SEARCH_LIMIT,
     };
@@ -246,6 +248,7 @@ async function serverSideSearch(
 
     // If no URL-specific results or not a URL search, use original term
     if (!response || !query) {
+        console.log("🔄 Using original search term for server-side search");
         const body: ISearchRequestBody = {
             search_categories: {
                 room_events: {
@@ -261,8 +264,14 @@ async function serverSideSearch(
             },
         };
 
-        response = await client.search({ body: body }, abortSignal);
-        query = body;
+        try {
+            response = await client.search({ body: body }, abortSignal);
+            query = body;
+            console.log(`🌐 Server-side search completed with ${response.search_categories?.room_events?.results?.length || 0} results`);
+        } catch (error) {
+            console.error("❌ Server-side search failed:", error);
+            throw error;
+        }
     }
 
     return { response, query };
@@ -304,16 +313,51 @@ async function combinedSearch(
     searchTerm: string,
     abortSignal?: AbortSignal,
 ): Promise<ISearchResults> {
+    console.log(`🔄 combinedSearch called with term: "${searchTerm}"`);
+    
     // Create two promises, one for the local search, one for the
     // server-side search.
     const serverSidePromise = serverSideSearch(client, searchTerm, undefined, abortSignal);
-    const localPromise = localSearch(searchTerm);
+    
+    // Wrap local search in try-catch to handle EventIndex not available
+    let localPromise: Promise<{ response: IResultRoomEvents; query: ISearchArgs }>;
+    try {
+        localPromise = localSearch(searchTerm);
+    } catch (error) {
+        console.log("⚠️ Local search not available, using server-side only");
+        localPromise = Promise.resolve({
+            response: { results: [], highlights: [], count: 0 },
+            query: { 
+                search_term: searchTerm,
+                before_limit: 1,
+                after_limit: 1,
+                limit: SEARCH_LIMIT,
+                order_by_recency: true
+            }
+        });
+    }
 
     // Wait for both promises to resolve.
     await Promise.all([serverSidePromise, localPromise]);
 
     // Get both search results.
-    const localResult = await localPromise;
+    let localResult;
+    try {
+        localResult = await localPromise;
+    } catch (error) {
+        console.log("⚠️ Local search failed, using server-side only");
+        localResult = {
+            response: { results: [], highlights: [], count: 0 },
+            query: { 
+                search_term: searchTerm,
+                before_limit: 1,
+                after_limit: 1,
+                limit: SEARCH_LIMIT,
+                order_by_recency: true
+            }
+        };
+    }
+    
     const serverSideResult = await serverSidePromise;
 
     const serverQuery = serverSideResult.query;
@@ -367,6 +411,15 @@ async function localSearch(
     processResult = true,
 ): Promise<{ response: IResultRoomEvents; query: ISearchArgs }> {
     const eventIndex = EventIndexPeg.get();
+    
+    // Debug logging
+    console.log(`🔍 Local search called with term: "${searchTerm}"`);
+    console.log(`📊 EventIndex available: ${eventIndex !== null}`);
+    
+    if (!eventIndex) {
+        console.log("❌ EventIndex is null - falling back to server-side search only");
+        throw new Error("EventIndex not available");
+    }
 
     const searchArgs: ISearchArgs = {
         search_term: searchTerm,
@@ -782,13 +835,22 @@ async function localSearch(
     
     // Fallback to normal search if no enhanced results
     if (!localResult) {
-        console.log("Falling back to normal search");
-        localResult = await eventIndex!.search(searchArgs);
+        console.log("🔄 Falling back to normal search");
+        try {
+            localResult = await eventIndex!.search(searchArgs);
+            console.log(`📈 Normal search returned: ${localResult?.count || 0} results`);
+        } catch (error) {
+            console.error("❌ Normal search failed:", error);
+            throw error;
+        }
     }
     
     if (!localResult) {
+        console.error("❌ No search results returned");
         throw new Error("Local search failed");
     }
+    
+    console.log(`✅ Final search result: ${localResult.count} results found`);
 
     searchArgs.next_batch = localResult.next_batch;
 
@@ -1217,21 +1279,26 @@ async function eventIndexSearch(
     roomId?: string,
     abortSignal?: AbortSignal,
 ): Promise<ISearchResults> {
+    console.log(`🔍 eventIndexSearch called with term: "${term}", roomId: ${roomId || 'all'}`);
+    
     let searchPromise: Promise<ISearchResults>;
 
     if (roomId !== undefined) {
         if (await client.getCrypto()?.isEncryptionEnabledInRoom(roomId)) {
             // The search is for a single encrypted room, use our local
             // search method.
+            console.log("🔐 Using local search for encrypted room");
             searchPromise = localSearchProcess(client, term, roomId);
         } else {
             // The search is for a single non-encrypted room, use the
             // server-side search.
+            console.log("🌐 Using server-side search for non-encrypted room");
             searchPromise = serverSideSearchProcess(client, term, roomId, abortSignal);
         }
     } else {
         // Search across all rooms, combine a server side search and a
         // local search.
+        console.log("🔍 Using combined search across all rooms");
         searchPromise = combinedSearch(client, term, abortSignal);
     }
 
@@ -1280,11 +1347,16 @@ export default function eventSearch(
     roomId?: string,
     abortSignal?: AbortSignal,
 ): Promise<ISearchResults> {
+    console.log(`🚀 eventSearch called with term: "${term}", roomId: ${roomId || 'all'}`);
+    
     const eventIndex = EventIndexPeg.get();
+    console.log(`📊 EventIndex available: ${eventIndex !== null}`);
 
     if (eventIndex === null) {
+        console.log("🌐 Using server-side search only (no EventIndex)");
         return serverSideSearchProcess(client, term, roomId, abortSignal);
     } else {
+        console.log("🔍 Using combined search (EventIndex + server-side)");
         return eventIndexSearch(client, term, roomId, abortSignal);
     }
 }
