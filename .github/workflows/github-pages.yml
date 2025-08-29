@@ -3,7 +3,7 @@ name: Deploy SevenChat Web to GitHub Pages
 on:
   push:
     branches:
-      - test-code
+      - main
   workflow_dispatch:
 
 permissions:
