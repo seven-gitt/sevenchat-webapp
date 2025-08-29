@@ -31,16 +31,6 @@ async function serverSideSearch(
     roomId?: string,
     abortSignal?: AbortSignal,
 ): Promise<{ response: ISearchResponse; query: ISearchRequestBody }> {
-    console.log(`🌐 Server-side search called with term: "${term}"`);
-    
-    // Remove delay to avoid abort issues
-    // await new Promise(resolve => setTimeout(resolve, 300));
-    
-    if (abortSignal?.aborted) {
-        console.log("⚠️ Search was aborted before starting");
-        throw new Error("Search aborted");
-    }
-    
     const filter: IRoomEventFilter = {
         limit: SEARCH_LIMIT,
     };
@@ -57,15 +47,12 @@ async function serverSideSearch(
     };
 
     // Check if search term looks like a URL pattern
-    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker", "fortraders", "trading", "products")
-    const isSingleToken = /^[a-z0-9]+$/i.test(term);
+    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker")
+    const isSingleToken = /^[-a-z0-9]+$/i.test(term);
     const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(term)) ||
                        term.includes('.') || 
                        term.includes('://') || 
                        term.includes('/') ||
-                       term.includes('?') ||
-                       term.includes('&') ||
-                       term.includes('=') ||
                        isSingleToken;
 
     let response;
@@ -87,82 +74,65 @@ async function serverSideSearch(
     if (isUrlSearch || isSingleToken) {
         console.log(`Server-side enhanced search detected for term: "${term}"`);
         
-        // Simple and effective search strategies
-        const searchStrategies = [
-            { term: term, description: "exact match" } // Always try exact match first
-        ];
-        
-        // For single tokens, try common patterns
-        if (isSingleToken) {
-            // Common subdomains
-            const commonSubdomains = ['app', 'api', 'docs', 'www', 'beta', 'staging', 'dev', 'test', 'admin', 'cdn', 'static', 'assets', 'media', 'blog', 'shop', 'store', 'support', 'help', 'forum', 'community'];
-            if (commonSubdomains.includes(term.toLowerCase())) {
-                searchStrategies.push(
-                    { term: `${term}.com`, description: "common subdomain" },
-                    { term: `${term}.example.com`, description: "common subdomain example" }
-                );
-            }
-            
-            // Common paths
-            const commonPaths = ['trading', 'products', 'questions', 'docs', 'api', 'rest', 'v1', 'v2', 'user', 'users', 'profile', 'settings', 'admin', 'dashboard', 'login', 'register', 'search', 'help', 'about', 'contact', 'blog', 'news', 'article', 'post', 'category', 'tag', 'archive', 'download', 'upload', 'file', 'image', 'video', 'audio', 'document', 'pdf', 'zip', 'rar'];
-            if (commonPaths.includes(term.toLowerCase())) {
-                searchStrategies.push(
-                    { term: `/${term}`, description: "common path" },
-                    { term: `https://example.com/${term}`, description: "common path with domain" }
-                );
-            }
-            
-            // Common query parameters
-            const commonQueryParams = ['affiliateCode', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'category', 'brand', 'model', 'color', 'storage', 'price_min', 'price_max', 'k', 'q', 'query', 'search', 'ref', 'rh', 'qid', 'rnid', 'include', 'format', 'date', 'time', 'sort', 'order', 'limit', 'offset', 'page', 'size', 'filter', 'type', 'status', 'id', 'user', 'author', 'tag', 'lang', 'locale', 'currency', 'country', 'region', 'city'];
-            if (commonQueryParams.includes(term.toLowerCase())) {
-                searchStrategies.push(
-                    { term: `?${term}=`, description: "common query param" },
-                    { term: `https://example.com/?${term}=`, description: "common query with domain" }
-                );
-            }
-            
-            // Generic expansions for any single token
-            searchStrategies.push(
-                { term: `${term}.com`, description: "generic domain" },
-                { term: `https://${term}.com`, description: "generic https domain" },
-                { term: `/${term}`, description: "generic path" },
-                { term: `?${term}=`, description: "generic query" }
-            );
-        }
-        
-        // For URL-like terms, extract components
-        if (term.includes('.') || term.includes('/') || term.includes('?')) {
-            // Extract domain part
-            const domainMatch = term.match(/(?:https?:\/\/)?([^\/\s?#]+)/);
-            if (domainMatch) {
-                searchStrategies.push({ term: domainMatch[1], description: "domain part" });
-            }
-            
-            // Extract path part
-            const pathMatch = term.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/);
-            if (pathMatch && pathMatch[1]) {
-                searchStrategies.push({ term: pathMatch[1], description: "path part" });
-                
-                // Extract path segments
-                const segments = pathMatch[1].split('/').filter(segment => segment.length > 0);
-                segments.forEach(segment => {
-                    searchStrategies.push({ term: segment, description: "path segment" });
-                });
-            }
-            
-            // Extract query parameters
-            const queryMatches = term.matchAll(/[?&]([^=]+)=([^&\s]+)/g);
-            for (const match of queryMatches) {
-                searchStrategies.push(
-                    { term: match[1], description: "query param name" },
-                    { term: match[2], description: "query param value" }
+        // Try multiple search strategies for URLs or domain-like keywords
+        const base = term;
+        const withoutProtocol = term.replace(/^https?:\/\//, '');
+        const domainOnly = term.match(/(?:https?:\/\/)?([^\/\s?#]+)/)?.[1] || term;
+        const pathOnly = term.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/)?.[1] || term;
+        const queryParam = term.match(/[?&]([^=]+)=([^&\s]+)/)?.[2] || term;
+        const fragment = term.match(/#([^\s]+)/)?.[1] || term;
+
+        // Enhanced domain expansions for single tokens
+        const domainExpansions: string[] = isSingleToken
+            ? [
+                  `${base}.com`,
+                  `${base}.vn`,
+                  `${base}.net`,
+                  `${base}.org`,
+                  `${base}.io`,
+                  `${base}.app`,
+                  `www.${base}.com`,
+                  `app.${base}.com`,
+                  `https://${base}.com`,
+                  `http://${base}.com`,
+                  `https://app.${base}.com`,
+                  `https://www.${base}.com`,
+              ]
+            : [];
+
+        // Additional strategies for complex URLs
+        const additionalStrategies = [];
+        if (term.includes('.')) {
+            // Extract subdomain and main domain parts
+            const domainParts = term.replace(/^https?:\/\//, '').split('.');
+            if (domainParts.length >= 2) {
+                const mainDomain = domainParts.slice(-2).join('.');
+                const subdomain = domainParts[0];
+                additionalStrategies.push(
+                    { term: mainDomain, description: "main domain" },
+                    { term: subdomain, description: "subdomain" },
+                    { term: `${subdomain}.${mainDomain}`, description: "subdomain.main" }
                 );
             }
         }
 
-        // Try each strategy without retry to avoid abort issues
+        const searchStrategies = [
+            { term: base, description: "exact" },
+            { term: withoutProtocol, description: "without protocol" },
+            { term: domainOnly, description: "domain only" },
+            { term: pathOnly, description: "path only" },
+            { term: queryParam, description: "query parameter" },
+            { term: fragment, description: "fragment" },
+            ...domainExpansions.map((t) => ({ term: t, description: "keyword domain expansion" })),
+            ...additionalStrategies,
+        ];
+
+        let bestResponse = null;
+        let bestQuery: ISearchRequestBody | null = null;
+        let bestCount = 0;
+
         for (const strategy of searchStrategies) {
-            if (strategy.term) {
+            if (strategy.term && strategy.term !== term) {
                 try {
                     const body: ISearchRequestBody = {
                         search_categories: {
@@ -179,7 +149,7 @@ async function serverSideSearch(
                         },
                     };
 
-                    const strategyResponse = await client.search({ body: body });
+                    const strategyResponse = await client.search({ body: body }, abortSignal);
                     
                     // Check if we got meaningful results
                     const results = strategyResponse.search_categories?.room_events?.results;
@@ -188,20 +158,16 @@ async function serverSideSearch(
                         response = strategyResponse;
                         query = body;
                         break;
-                    } else {
-                        console.log(`Server-side ${strategy.description} search returned 0 results`);
                     }
                 } catch (error) {
                     console.log(`Server-side ${strategy.description} search failed:`, error);
-                    // Continue to next strategy instead of retrying
                 }
             }
         }
     }
 
     // If no URL-specific results or not a URL search, use original term
-    if (!response) {
-        console.log("🔄 Using original search term for server-side search");
+    if (!response || !query) {
         const body: ISearchRequestBody = {
             search_categories: {
                 room_events: {
@@ -217,60 +183,10 @@ async function serverSideSearch(
             },
         };
 
-        try {
-                // Remove abort check to avoid issues
-    // if (abortSignal?.aborted) {
-    //     console.log("⚠️ Search was aborted before starting");
-    //     throw new Error("Search aborted");
-    // }
-            
-            response = await client.search({ body: body });
-            query = body;
-            console.log(`🌐 Server-side search completed with ${response.search_categories?.room_events?.results?.length || 0} results`);
-        } catch (error) {
-            console.error("❌ Server-side search failed:", error);
-            // Return empty results instead of throwing
-            response = {
-                search_categories: {
-                    room_events: {
-                        results: [],
-                        highlights: [],
-                        count: 0
-                    }
-                }
-            } as ISearchResponse;
-            query = body;
-        }
+        response = await client.search({ body: body }, abortSignal);
+        query = body;
     }
 
-    // Ensure we always return a valid response
-    if (!response) {
-        console.log("⚠️ No search results found, returning empty response");
-        response = {
-            search_categories: {
-                room_events: {
-                    results: [],
-                    highlights: [],
-                    count: 0
-                }
-            }
-        } as ISearchResponse;
-        query = {
-            search_categories: {
-                room_events: {
-                    search_term: term,
-                    filter: filter,
-                    order_by: SearchOrderBy.Recent,
-                    event_context: {
-                        before_limit: 1,
-                        after_limit: 1,
-                        include_profile: true,
-                    },
-                },
-            },
-        };
-    }
-    
     return { response, query };
 }
 
@@ -310,51 +226,16 @@ async function combinedSearch(
     searchTerm: string,
     abortSignal?: AbortSignal,
 ): Promise<ISearchResults> {
-    console.log(`🔄 combinedSearch called with term: "${searchTerm}"`);
-    
     // Create two promises, one for the local search, one for the
     // server-side search.
     const serverSidePromise = serverSideSearch(client, searchTerm, undefined, abortSignal);
-    
-    // Wrap local search in try-catch to handle EventIndex not available
-    let localPromise: Promise<{ response: IResultRoomEvents; query: ISearchArgs }>;
-    try {
-        localPromise = localSearch(searchTerm);
-    } catch (error) {
-        console.log("⚠️ Local search not available, using server-side only");
-        localPromise = Promise.resolve({
-            response: { results: [], highlights: [], count: 0 },
-            query: { 
-                search_term: searchTerm,
-                before_limit: 1,
-                after_limit: 1,
-                limit: SEARCH_LIMIT,
-                order_by_recency: true
-            }
-        });
-    }
+    const localPromise = localSearch(searchTerm);
 
     // Wait for both promises to resolve.
     await Promise.all([serverSidePromise, localPromise]);
 
     // Get both search results.
-    let localResult;
-    try {
-        localResult = await localPromise;
-    } catch (error) {
-        console.log("⚠️ Local search failed, using server-side only");
-        localResult = {
-            response: { results: [], highlights: [], count: 0 },
-            query: { 
-                search_term: searchTerm,
-                before_limit: 1,
-                after_limit: 1,
-                limit: SEARCH_LIMIT,
-                order_by_recency: true
-            }
-        };
-    }
-    
+    const localResult = await localPromise;
     const serverSideResult = await serverSidePromise;
 
     const serverQuery = serverSideResult.query;
@@ -408,15 +289,6 @@ async function localSearch(
     processResult = true,
 ): Promise<{ response: IResultRoomEvents; query: ISearchArgs }> {
     const eventIndex = EventIndexPeg.get();
-    
-    // Debug logging
-    console.log(`🔍 Local search called with term: "${searchTerm}"`);
-    console.log(`📊 EventIndex available: ${eventIndex !== null}`);
-    
-    if (!eventIndex) {
-        console.log("❌ EventIndex is null - falling back to server-side search only");
-        throw new Error("EventIndex not available");
-    }
 
     const searchArgs: ISearchArgs = {
         search_term: searchTerm,
@@ -441,15 +313,12 @@ async function localSearch(
     };
 
     // Check if search term looks like a URL pattern
-    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker", "fortraders", "trading", "products")
+    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker", "fortraders")
     const isSingleToken = /^[a-z0-9]+$/i.test(searchTerm);
     const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(searchTerm)) ||
                        searchTerm.includes('.') || 
                        searchTerm.includes('://') || 
                        searchTerm.includes('/') ||
-                       searchTerm.includes('?') ||
-                       searchTerm.includes('&') ||
-                       searchTerm.includes('=') ||
                        isSingleToken;
     
     let localResult;
@@ -508,27 +377,6 @@ async function localSearch(
             }
         }
         
-        // Strategy 4.1: Try path segment search (for individual path segments)
-        if (!localResult || localResult.count === 0) {
-            const pathMatch = searchTerm.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/);
-            if (pathMatch && pathMatch[1]) {
-                const segments = pathMatch[1].split('/').filter(segment => segment.length > 0);
-                for (const segment of segments) {
-                    const segmentArgs = { ...searchArgs, search_term: segment };
-                    try {
-                        const segmentResult = await eventIndex!.search(segmentArgs);
-                        if (segmentResult && segmentResult.count && segmentResult.count > 0) {
-                            localResult = segmentResult;
-                            console.log(`Path segment search returned ${segmentResult.count} results for segment: ${segment}`);
-                            break;
-                        }
-                    } catch (error) {
-                        console.log("Path segment search failed:", error);
-                    }
-                }
-            }
-        }
-        
         // Strategy 5: Try query parameter search
         if (!localResult || localResult.count === 0) {
             const queryMatch = searchTerm.match(/[?&]([^=]+)=([^&\s]+)/);
@@ -539,20 +387,6 @@ async function localSearch(
                     console.log(`Query parameter search returned ${localResult?.count || 0} results`);
                 } catch (error) {
                     console.log("Query parameter search failed:", error);
-                }
-            }
-        }
-        
-        // Strategy 5.1: Try query parameter name search
-        if (!localResult || localResult.count === 0) {
-            const queryNameMatch = searchTerm.match(/[?&]([^=]+)=/);
-            if (queryNameMatch) {
-                const queryNameArgs = { ...searchArgs, search_term: queryNameMatch[1] };
-                try {
-                    localResult = await eventIndex!.search(queryNameArgs);
-                    console.log(`Query parameter name search returned ${localResult?.count || 0} results`);
-                } catch (error) {
-                    console.log("Query parameter name search failed:", error);
                 }
             }
         }
@@ -617,118 +451,6 @@ async function localSearch(
                 }
             }
         }
-        
-        // Strategy 8.1: Try generic and common patterns for single tokens
-        if ((!localResult || localResult.count === 0) && isSingleToken) {
-            // Generic expansions for any single token
-            const genericExpansions = [
-                // Generic subdomain patterns
-                `${searchTerm}.com`,
-                `${searchTerm}.net`,
-                `${searchTerm}.org`,
-                `${searchTerm}.io`,
-                `https://${searchTerm}.com`,
-                `http://${searchTerm}.com`,
-                
-                // Generic path patterns
-                `/${searchTerm}`,
-                `/${searchTerm}/`,
-                `https://example.com/${searchTerm}`,
-                `https://www.example.com/${searchTerm}`,
-                
-                // Generic query parameter patterns
-                `?${searchTerm}=`,
-                `&${searchTerm}=`,
-                `https://example.com/?${searchTerm}=`,
-                `https://www.example.com/?${searchTerm}=`
-            ];
-            
-            for (const exp of genericExpansions) {
-                const args = { ...searchArgs, search_term: exp };
-                try {
-                    const r = await eventIndex!.search(args);
-                    if (r && r.count && r.count > 0) {
-                        localResult = r;
-                        console.log(`Generic expansion search returned ${r.count} results for ${exp}`);
-                        break;
-                    }
-                } catch (error) {
-                    console.log("Generic expansion search failed:", error);
-                }
-            }
-            
-            // Common subdomain patterns for better matching
-            const commonSubdomains = ['app', 'api', 'docs', 'www', 'beta', 'staging', 'dev', 'test', 'admin', 'cdn', 'static', 'assets', 'media', 'blog', 'shop', 'store', 'support', 'help', 'forum', 'community'];
-            if (commonSubdomains.includes(searchTerm.toLowerCase())) {
-                const subdomainExpansions = [
-                    `${searchTerm}.example.com`,
-                    `https://${searchTerm}.example.com`,
-                    `https://${searchTerm}.com`,
-                    `https://www.${searchTerm}.com`
-                ];
-                for (const exp of subdomainExpansions) {
-                    const args = { ...searchArgs, search_term: exp };
-                    try {
-                        const r = await eventIndex!.search(args);
-                        if (r && r.count && r.count > 0) {
-                            localResult = r;
-                            console.log(`Common subdomain expansion search returned ${r.count} results for ${exp}`);
-                            break;
-                        }
-                    } catch (error) {
-                        console.log("Common subdomain expansion search failed:", error);
-                    }
-                }
-            }
-            
-            // Common path patterns for better matching
-            const commonPaths = ['trading', 'products', 'questions', 'docs', 'api', 'rest', 'v1', 'v2', 'user', 'users', 'profile', 'settings', 'admin', 'dashboard', 'login', 'register', 'search', 'help', 'about', 'contact', 'blog', 'news', 'article', 'post', 'category', 'tag', 'archive', 'download', 'upload', 'file', 'image', 'video', 'audio', 'document', 'pdf', 'zip', 'rar'];
-            if (commonPaths.includes(searchTerm.toLowerCase())) {
-                const pathExpansions = [
-                    `https://example.com/${searchTerm}`,
-                    `https://www.example.com/${searchTerm}`,
-                    `https://api.example.com/${searchTerm}`,
-                    `https://app.example.com/${searchTerm}`
-                ];
-                for (const exp of pathExpansions) {
-                    const args = { ...searchArgs, search_term: exp };
-                    try {
-                        const r = await eventIndex!.search(args);
-                        if (r && r.count && r.count > 0) {
-                            localResult = r;
-                            console.log(`Common path expansion search returned ${r.count} results for ${exp}`);
-                            break;
-                        }
-                    } catch (error) {
-                        console.log("Common path expansion search failed:", error);
-                    }
-                }
-            }
-            
-            // Common query parameter patterns for better matching
-            const commonQueryParams = ['affiliateCode', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'category', 'brand', 'model', 'color', 'storage', 'price_min', 'price_max', 'k', 'q', 'query', 'search', 'ref', 'rh', 'qid', 'rnid', 'include', 'format', 'date', 'time', 'sort', 'order', 'limit', 'offset', 'page', 'size', 'filter', 'type', 'status', 'id', 'user', 'author', 'tag', 'lang', 'locale', 'currency', 'country', 'region', 'city'];
-            if (commonQueryParams.includes(searchTerm.toLowerCase())) {
-                const queryExpansions = [
-                    `https://example.com/?${searchTerm}=`,
-                    `https://www.example.com/?${searchTerm}=`,
-                    `https://shop.example.com/?${searchTerm}=`,
-                    `https://api.example.com/?${searchTerm}=`
-                ];
-                for (const exp of queryExpansions) {
-                    const args = { ...searchArgs, search_term: exp };
-                    try {
-                        const r = await eventIndex!.search(args);
-                        if (r && r.count && r.count > 0) {
-                            localResult = r;
-                            console.log(`Common query parameter expansion search returned ${r.count} results for ${exp}`);
-                            break;
-                        }
-                    } catch (error) {
-                        console.log("Common query parameter expansion search failed:", error);
-                    }
-                }
-            }
-        }
 
         // Strategy 9: Try subdomain extraction for complex URLs
         if (!localResult || localResult.count === 0) {
@@ -766,88 +488,17 @@ async function localSearch(
                 }
             }
         }
-        
-        // Strategy 10: Try exact match for single tokens that might be exact matches in URLs
-        if ((!localResult || localResult.count === 0) && isSingleToken) {
-            // For single tokens, try to find exact matches in URLs
-            // This helps with cases like "laptop", "trading", "products", etc.
-            try {
-                const exactArgs = { ...searchArgs, search_term: searchTerm };
-                const r = await eventIndex!.search(exactArgs);
-                if (r && r.count && r.count > 0) {
-                    localResult = r;
-                    console.log(`Exact single token search returned ${r.count} results for "${searchTerm}"`);
-                }
-            } catch (error) {
-                console.log("Exact single token search failed:", error);
-            }
-        }
-        
-        // Strategy 11: Try partial matching for any token (fallback for complex cases)
-        if (!localResult || localResult.count === 0) {
-            // Try partial matching by splitting the search term into smaller parts
-            const words = searchTerm.split(/[\s\-_\.]+/).filter(word => word.length > 1);
-            for (const word of words) {
-                if (word !== searchTerm) { // Skip if it's the same as original
-                    const partialArgs = { ...searchArgs, search_term: word };
-                    try {
-                        const r = await eventIndex!.search(partialArgs);
-                        if (r && r.count && r.count > 0) {
-                            localResult = r;
-                            console.log(`Partial matching search returned ${r.count} results for "${word}"`);
-                            break;
-                        }
-                    } catch (error) {
-                        console.log("Partial matching search failed:", error);
-                    }
-                }
-            }
-        }
-        
-        // Strategy 12: Try case-insensitive variations
-        if (!localResult || localResult.count === 0) {
-            const variations = [
-                searchTerm.toLowerCase(),
-                searchTerm.toUpperCase(),
-                searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase(),
-            ];
-            
-            for (const variation of variations) {
-                if (variation !== searchTerm) {
-                    const variationArgs = { ...searchArgs, search_term: variation };
-                    try {
-                        const r = await eventIndex!.search(variationArgs);
-                        if (r && r.count && r.count > 0) {
-                            localResult = r;
-                            console.log(`Case variation search returned ${r.count} results for "${variation}"`);
-                            break;
-                        }
-                    } catch (error) {
-                        console.log("Case variation search failed:", error);
-                    }
-                }
-            }
-        }
     }
     
     // Fallback to normal search if no enhanced results
     if (!localResult) {
-        console.log("🔄 Falling back to normal search");
-        try {
-            localResult = await eventIndex!.search(searchArgs);
-            console.log(`📈 Normal search returned: ${localResult?.count || 0} results`);
-        } catch (error) {
-            console.error("❌ Normal search failed:", error);
-            throw error;
-        }
+        console.log("Falling back to normal search");
+        localResult = await eventIndex!.search(searchArgs);
     }
     
     if (!localResult) {
-        console.error("❌ No search results returned");
         throw new Error("Local search failed");
     }
-    
-    console.log(`✅ Final search result: ${localResult.count} results found`);
 
     searchArgs.next_batch = localResult.next_batch;
 
@@ -1276,26 +927,21 @@ async function eventIndexSearch(
     roomId?: string,
     abortSignal?: AbortSignal,
 ): Promise<ISearchResults> {
-    console.log(`🔍 eventIndexSearch called with term: "${term}", roomId: ${roomId || 'all'}`);
-    
     let searchPromise: Promise<ISearchResults>;
 
     if (roomId !== undefined) {
         if (await client.getCrypto()?.isEncryptionEnabledInRoom(roomId)) {
             // The search is for a single encrypted room, use our local
             // search method.
-            console.log("🔐 Using local search for encrypted room");
             searchPromise = localSearchProcess(client, term, roomId);
         } else {
             // The search is for a single non-encrypted room, use the
             // server-side search.
-            console.log("🌐 Using server-side search for non-encrypted room");
             searchPromise = serverSideSearchProcess(client, term, roomId, abortSignal);
         }
     } else {
         // Search across all rooms, combine a server side search and a
         // local search.
-        console.log("🔍 Using combined search across all rooms");
         searchPromise = combinedSearch(client, term, abortSignal);
     }
 
@@ -1344,22 +990,11 @@ export default function eventSearch(
     roomId?: string,
     abortSignal?: AbortSignal,
 ): Promise<ISearchResults> {
-    console.log(`🚀 eventSearch called with term: "${term}", roomId: ${roomId || 'all'}`);
-    
-    // Add a small delay to prevent too rapid aborting
-    if (abortSignal?.aborted) {
-        console.log("⚠️ Search was aborted before starting");
-        return Promise.reject(new Error("Search aborted"));
-    }
-    
     const eventIndex = EventIndexPeg.get();
-    console.log(`📊 EventIndex available: ${eventIndex !== null}`);
 
     if (eventIndex === null) {
-        console.log("🌐 Using server-side search only (no EventIndex)");
         return serverSideSearchProcess(client, term, roomId, abortSignal);
     } else {
-        console.log("🔍 Using combined search (EventIndex + server-side)");
         return eventIndexSearch(client, term, roomId, abortSignal);
     }
 }

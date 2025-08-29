@@ -1698,14 +1698,8 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
     private onSearch = (term: string, scope = SearchScope.Room): void => {
         const roomId = scope === SearchScope.Room ? this.getRoomId() : undefined;
         debuglog("sending search request");
-        
-        // Don't abort previous search to avoid issues
-        // if (this.state.search?.abortController) {
-        //     console.log("🔄 Aborting previous search");
-        //     this.state.search.abortController.abort();
-        // }
-        
-        const promise = eventSearch(this.context.client!, term, roomId);
+        const abortController = new AbortController();
+        const promise = eventSearch(this.context.client!, term, roomId, abortController.signal);
 
         this.setState({
             timelineRenderingType: TimelineRenderingType.Search,
@@ -1717,7 +1711,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                 term,
                 scope,
                 promise,
-                abortController: undefined, // Remove abort controller
+                abortController,
             },
         });
     };
