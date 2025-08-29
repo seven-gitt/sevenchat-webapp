@@ -33,8 +33,8 @@ async function serverSideSearch(
 ): Promise<{ response: ISearchResponse; query: ISearchRequestBody }> {
     console.log(`🌐 Server-side search called with term: "${term}"`);
     
-    // Add a small delay to prevent too rapid aborting
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Add a longer delay to prevent too rapid aborting
+    await new Promise(resolve => setTimeout(resolve, 300));
     
     if (abortSignal?.aborted) {
         console.log("⚠️ Search was aborted during delay");
@@ -87,169 +87,123 @@ async function serverSideSearch(
     if (isUrlSearch || isSingleToken) {
         console.log(`Server-side enhanced search detected for term: "${term}"`);
         
-        // Try multiple search strategies for URLs or domain-like keywords
-        const base = term;
-        const withoutProtocol = term.replace(/^https?:\/\//, '');
-        const domainOnly = term.match(/(?:https?:\/\/)?([^\/\s?#]+)/)?.[1] || term;
-        const pathOnly = term.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/)?.[1] || term;
-        const queryParam = term.match(/[?&]([^=]+)=([^&\s]+)/)?.[2] || term;
-        const fragment = term.match(/#([^\s]+)/)?.[1] || term;
+        // Simple and effective search strategies
+        const searchStrategies = [];
         
-        // Extract query parameter names and values
-        const queryParams = [];
-        const queryMatches = term.matchAll(/[?&]([^=]+)=([^&\s]+)/g);
-        for (const match of queryMatches) {
-            queryParams.push(match[1]); // parameter name
-            queryParams.push(match[2]); // parameter value
-        }
-        
-        // Extract path segments
-        const pathSegments = [];
-        const pathMatch = term.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/);
-        if (pathMatch && pathMatch[1]) {
-            const segments = pathMatch[1].split('/').filter(segment => segment.length > 0);
-            pathSegments.push(...segments);
-        }
-
-        // Enhanced domain expansions for single tokens
-        const domainExpansions: string[] = isSingleToken
-            ? [
-                  `${base}.com`,
-                  `${base}.vn`,
-                  `${base}.net`,
-                  `${base}.org`,
-                  `${base}.io`,
-                  `${base}.app`,
-                  `www.${base}.com`,
-                  `app.${base}.com`,
-                  `https://${base}.com`,
-                  `http://${base}.com`,
-                  `https://app.${base}.com`,
-                  `https://www.${base}.com`,
-              ]
-            : [];
-
-        // Additional strategies for complex URLs
-        const additionalStrategies = [];
-        if (term.includes('.')) {
-            // Extract subdomain and main domain parts
-            const domainParts = term.replace(/^https?:\/\//, '').split('.');
-            if (domainParts.length >= 2) {
-                const mainDomain = domainParts.slice(-2).join('.');
-                const subdomain = domainParts[0];
-                additionalStrategies.push(
-                    { term: mainDomain, description: "main domain" },
-                    { term: subdomain, description: "subdomain" },
-                    { term: `${subdomain}.${mainDomain}`, description: "subdomain.main" }
-                );
-            }
-        }
-        
-        // Additional strategies for single tokens that might be subdomains, paths, or query params
+        // For single tokens, try common patterns
         if (isSingleToken) {
-            // Generic subdomain patterns - any single token could be a subdomain
-            additionalStrategies.push(
-                { term: `${term}.com`, description: "generic subdomain expansion" },
-                { term: `${term}.net`, description: "generic subdomain .net" },
-                { term: `${term}.org`, description: "generic subdomain .org" },
-                { term: `${term}.io`, description: "generic subdomain .io" },
-                { term: `https://${term}.com`, description: "generic subdomain with https" },
-                { term: `http://${term}.com`, description: "generic subdomain with http" }
-            );
-            
-            // Generic path patterns - any single token could be a path segment
-            additionalStrategies.push(
-                { term: `/${term}`, description: "generic path segment" },
-                { term: `/${term}/`, description: "generic path segment with slash" },
-                { term: `https://example.com/${term}`, description: "generic path with domain" },
-                { term: `https://www.example.com/${term}`, description: "generic path with www domain" }
-            );
-            
-            // Generic query parameter patterns - any single token could be a query param
-            additionalStrategies.push(
-                { term: `?${term}=`, description: "generic query parameter" },
-                { term: `&${term}=`, description: "generic query parameter with ampersand" },
-                { term: `https://example.com/?${term}=`, description: "generic query with domain" }
-            );
-            
-            // Common subdomain patterns for better matching
+            // Common subdomains
             const commonSubdomains = ['app', 'api', 'docs', 'www', 'beta', 'staging', 'dev', 'test', 'admin', 'cdn', 'static', 'assets', 'media', 'blog', 'shop', 'store', 'support', 'help', 'forum', 'community'];
             if (commonSubdomains.includes(term.toLowerCase())) {
-                additionalStrategies.push(
-                    { term: `${term}.example.com`, description: "common subdomain expansion" },
-                    { term: `https://${term}.example.com`, description: "common subdomain with https" }
+                searchStrategies.push(
+                    { term: `${term}.com`, description: "common subdomain" },
+                    { term: `${term}.example.com`, description: "common subdomain example" }
                 );
             }
             
-            // Common path patterns for better matching
+            // Common paths
             const commonPaths = ['trading', 'products', 'questions', 'docs', 'api', 'rest', 'v1', 'v2', 'user', 'users', 'profile', 'settings', 'admin', 'dashboard', 'login', 'register', 'search', 'help', 'about', 'contact', 'blog', 'news', 'article', 'post', 'category', 'tag', 'archive', 'download', 'upload', 'file', 'image', 'video', 'audio', 'document', 'pdf', 'zip', 'rar'];
             if (commonPaths.includes(term.toLowerCase())) {
-                additionalStrategies.push(
-                    { term: `https://example.com/${term}`, description: "common path with domain" },
-                    { term: `https://www.example.com/${term}`, description: "common path with www domain" }
+                searchStrategies.push(
+                    { term: `/${term}`, description: "common path" },
+                    { term: `https://example.com/${term}`, description: "common path with domain" }
                 );
             }
             
-            // Common query parameter patterns for better matching
+            // Common query parameters
             const commonQueryParams = ['affiliateCode', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'category', 'brand', 'model', 'color', 'storage', 'price_min', 'price_max', 'k', 'q', 'query', 'search', 'ref', 'rh', 'qid', 'rnid', 'include', 'format', 'date', 'time', 'sort', 'order', 'limit', 'offset', 'page', 'size', 'filter', 'type', 'status', 'id', 'user', 'author', 'tag', 'lang', 'locale', 'currency', 'country', 'region', 'city'];
             if (commonQueryParams.includes(term.toLowerCase())) {
-                additionalStrategies.push(
-                    { term: `https://example.com/?${term}=`, description: "common query parameter with domain" },
-                    { term: `https://www.example.com/?${term}=`, description: "common query parameter with www domain" }
+                searchStrategies.push(
+                    { term: `?${term}=`, description: "common query param" },
+                    { term: `https://example.com/?${term}=`, description: "common query with domain" }
+                );
+            }
+            
+            // Generic expansions for any single token
+            searchStrategies.push(
+                { term: `${term}.com`, description: "generic domain" },
+                { term: `https://${term}.com`, description: "generic https domain" },
+                { term: `/${term}`, description: "generic path" },
+                { term: `?${term}=`, description: "generic query" }
+            );
+        }
+        
+        // For URL-like terms, extract components
+        if (term.includes('.') || term.includes('/') || term.includes('?')) {
+            // Extract domain part
+            const domainMatch = term.match(/(?:https?:\/\/)?([^\/\s?#]+)/);
+            if (domainMatch) {
+                searchStrategies.push({ term: domainMatch[1], description: "domain part" });
+            }
+            
+            // Extract path part
+            const pathMatch = term.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/);
+            if (pathMatch && pathMatch[1]) {
+                searchStrategies.push({ term: pathMatch[1], description: "path part" });
+                
+                // Extract path segments
+                const segments = pathMatch[1].split('/').filter(segment => segment.length > 0);
+                segments.forEach(segment => {
+                    searchStrategies.push({ term: segment, description: "path segment" });
+                });
+            }
+            
+            // Extract query parameters
+            const queryMatches = term.matchAll(/[?&]([^=]+)=([^&\s]+)/g);
+            for (const match of queryMatches) {
+                searchStrategies.push(
+                    { term: match[1], description: "query param name" },
+                    { term: match[2], description: "query param value" }
                 );
             }
         }
 
-        const searchStrategies = [
-            { term: base, description: "exact" },
-            { term: withoutProtocol, description: "without protocol" },
-            { term: domainOnly, description: "domain only" },
-            { term: pathOnly, description: "path only" },
-            { term: queryParam, description: "query parameter" },
-            { term: fragment, description: "fragment" },
-            ...domainExpansions.map((t) => ({ term: t, description: "keyword domain expansion" })),
-            ...additionalStrategies,
-            // Add query parameter names and values
-            ...queryParams.map((param) => ({ term: param, description: "query parameter name/value" })),
-            // Add path segments
-            ...pathSegments.map((segment) => ({ term: segment, description: "path segment" })),
-        ];
-
-        let bestResponse = null;
-        let bestQuery: ISearchRequestBody | null = null;
-        let bestCount = 0;
-
+        // Try each strategy with retry logic
         for (const strategy of searchStrategies) {
             if (strategy.term && strategy.term !== term) {
-                try {
-                    const body: ISearchRequestBody = {
-                        search_categories: {
-                            room_events: {
-                                search_term: strategy.term,
-                                filter: filter,
-                                order_by: SearchOrderBy.Recent,
-                                event_context: {
-                                    before_limit: 1,
-                                    after_limit: 1,
-                                    include_profile: true,
+                let retryCount = 0;
+                const maxRetries = 2;
+                
+                while (retryCount <= maxRetries) {
+                    try {
+                        const body: ISearchRequestBody = {
+                            search_categories: {
+                                room_events: {
+                                    search_term: strategy.term,
+                                    filter: filter,
+                                    order_by: SearchOrderBy.Recent,
+                                    event_context: {
+                                        before_limit: 1,
+                                        after_limit: 1,
+                                        include_profile: true,
+                                    },
                                 },
                             },
-                        },
-                    };
+                        };
 
-                    const strategyResponse = await client.search({ body: body }, abortSignal);
-                    
-                    // Check if we got meaningful results
-                    const results = strategyResponse.search_categories?.room_events?.results;
-                    if (results && results.length > 0) {
-                        console.log(`Server-side ${strategy.description} search returned ${results.length} results`);
-                        response = strategyResponse;
-                        query = body;
-                        break;
+                        const strategyResponse = await client.search({ body: body }, abortSignal);
+                        
+                        // Check if we got meaningful results
+                        const results = strategyResponse.search_categories?.room_events?.results;
+                        if (results && results.length > 0) {
+                            console.log(`Server-side ${strategy.description} search returned ${results.length} results`);
+                            response = strategyResponse;
+                            query = body;
+                            break;
+                        }
+                        break; // No results, try next strategy
+                    } catch (error) {
+                        retryCount++;
+                        if (retryCount > maxRetries) {
+                            console.log(`Server-side ${strategy.description} search failed after ${maxRetries} retries:`, error);
+                            break;
+                        }
+                        console.log(`Server-side ${strategy.description} search failed, retrying (${retryCount}/${maxRetries})`);
+                        await new Promise(resolve => setTimeout(resolve, 200)); // Wait before retry
                     }
-                } catch (error) {
-                    console.log(`Server-side ${strategy.description} search failed:`, error);
                 }
+                
+                if (response) break; // Found results, stop trying other strategies
             }
         }
     }
