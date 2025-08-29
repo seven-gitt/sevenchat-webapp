@@ -17,6 +17,8 @@ import {
     EventType,
     type MatrixClient,
     type SearchResult,
+    type Room,
+    KnownMembership,
 } from "matrix-js-sdk/src/matrix";
 
 import { type ISearchArgs } from "./indexing/BaseEventIndexManager";
@@ -24,6 +26,311 @@ import EventIndexPeg from "./indexing/EventIndexPeg";
 import { isNotUndefined } from "./Typeguards";
 
 const SEARCH_LIMIT = 10;
+
+// Enhanced search patterns for better URL and domain matching
+const ENHANCED_SEARCH_PATTERNS = {
+    // URL patterns
+    FULL_URL: /^https?:\/\/[^\s]+$/i,
+    DOMAIN_WITH_PATH: /^[^\s]+\.[^\s]+\/[^\s]*$/i,
+    DOMAIN_ONLY: /^[^\s]+\.[^\s]+$/i,
+    IP_ADDRESS: /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
+    LOCALHOST: /^localhost(:\d+)?(\/.*)?$/i,
+    
+    // Enhanced patterns for better matching
+    SUBDOMAIN: /^[a-z0-9]+\./i,
+    PATH_SEGMENT: /^[a-z0-9-_]+$/i,
+    QUERY_PARAM: /^[a-z0-9_]+$/i,
+    
+    // New patterns for better keyword extraction
+    SINGLE_WORD: /^[a-z0-9]+$/i,
+    MULTI_WORD: /^[a-z0-9\s]+$/i,
+    SPECIAL_CHARS: /[^a-z0-9\s]/i,
+};
+
+// Enhanced keyword extraction function
+function extractKeywordsFromUrl(url: string): string[] {
+    const keywords: string[] = [];
+    
+    try {
+        // Parse URL
+        const urlObj = new URL(url);
+        
+        // Extract domain parts
+        const domainParts = urlObj.hostname.split('.');
+        keywords.push(...domainParts.filter(part => part.length > 1));
+        
+        // Extract path segments
+        const pathSegments = urlObj.pathname.split('/').filter(segment => segment.length > 0);
+        keywords.push(...pathSegments);
+        
+        // Extract query parameters
+        urlObj.searchParams.forEach((value, key) => {
+            if (key.length > 1) keywords.push(key);
+            if (value.length > 1) keywords.push(value);
+        });
+        
+        // Extract common TLDs and subdomains
+        const commonTlds = ['com', 'org', 'net', 'io', 'app', 'co', 'vn'];
+        const commonSubdomains = ['www', 'app', 'api', 'docs', 'blog'];
+        
+        domainParts.forEach(part => {
+            if (!commonTlds.includes(part) && !commonSubdomains.includes(part)) {
+                keywords.push(part);
+            }
+        });
+        
+    } catch (error) {
+        // Fallback: simple text extraction
+        const words = url.toLowerCase()
+            .replace(/[^\w\s]/g, ' ')
+            .split(/\s+/)
+            .filter(word => word.length > 1);
+        keywords.push(...words);
+    }
+    
+    return [...new Set(keywords)]; // Remove duplicates
+}
+
+// Function to generate search variations for better matching
+function generateSearchVariations(term: string): string[] {
+    const variations: string[] = [];
+    
+    // Basic variations
+    variations.push(term);
+    variations.push(term.toLowerCase());
+    variations.push(term.toUpperCase());
+    variations.push(term.charAt(0).toUpperCase() + term.slice(1).toLowerCase());
+    
+    // Common domain variations
+    const domainVariations = [
+        `${term}.com`,
+        `${term}.org`,
+        `${term}.net`,
+        `${term}.io`,
+        `${term}.app`,
+        `www.${term}.com`,
+        `app.${term}.com`,
+        `https://${term}.com`,
+        `http://${term}.com`,
+    ];
+    variations.push(...domainVariations);
+    
+    // Substring variations (for partial matching)
+    if (term.length > 3) {
+        variations.push(`*${term}*`);
+        variations.push(`%${term}%`);
+        variations.push(`.*${term}.*`);
+    }
+    
+    // Common service variations
+    const serviceVariations = [
+        `${term}app`,
+        `${term}web`,
+        `${term}site`,
+        `${term}page`,
+        `${term}link`,
+        `${term}url`,
+    ];
+    variations.push(...serviceVariations);
+    
+    return [...new Set(variations)]; // Remove duplicates
+}
+
+// Enhanced relevance scoring function inspired by spotlight dialog
+function calculateRelevanceScore(searchTerm: string, content: string): number {
+    const lcSearchTerm = searchTerm.toLowerCase();
+    const lcContent = content.toLowerCase();
+    
+    let relevanceScore = 0;
+    
+    // Exact match gets highest score
+    if (lcContent.includes(lcSearchTerm)) {
+        relevanceScore += 100;
+    }
+    
+    // Word-based matching
+    const searchWords = lcSearchTerm.split(/\s+/).filter(word => word.length > 0);
+    const contentWords = lcContent.split(/\s+/).filter(word => word.length > 0);
+    
+    const hasWordMatch = searchWords.some(searchWord => 
+        contentWords.some(contentWord => contentWord.includes(searchWord))
+    );
+    
+    if (hasWordMatch) {
+        relevanceScore += searchWords.length * 10;
+    }
+    
+    // Additional relevance factors
+    const searchLength = lcSearchTerm.length;
+    const contentLength = lcContent.length;
+    
+    // Prefer shorter content for longer searches (more specific)
+    if (searchLength > 5 && contentLength < 100) {
+        relevanceScore += 20;
+    }
+    
+    // Penalize very long content unless it has exact match
+    if (contentLength > 200 && !lcContent.includes(lcSearchTerm)) {
+        relevanceScore -= 10;
+    }
+    
+    // Heavy penalty for single character matches
+    const matchedWords = searchWords.filter(searchWord => 
+        contentWords.some(contentWord => contentWord.includes(searchWord))
+    );
+    if (matchedWords.length === 1 && matchedWords[0].length <= 2) {
+        relevanceScore -= 50;
+    }
+    
+    // Penalize content with URLs unless it has exact match
+    if (content.includes('http') && !lcContent.includes(lcSearchTerm)) {
+        relevanceScore -= 30;
+    }
+    
+    return relevanceScore;
+}
+
+// Enhanced search with relevance scoring
+function enhancedSearchWithRelevance(searchTerm: string, content: string): boolean {
+    const relevanceScore = calculateRelevanceScore(searchTerm, content);
+    return relevanceScore >= 20; // Minimum threshold for relevance
+}
+
+// Timeline search helper function (inspired by spotlight dialog)
+function searchInTimeline(
+    client: MatrixClient,
+    searchTerm: string,
+    roomId?: string,
+): { found: boolean; message?: string } {
+    const lcSearchTerm = searchTerm.toLowerCase();
+    
+    // Skip search if query is too short
+    if (lcSearchTerm.length < 2) {
+        return { found: false };
+    }
+    
+    // Get rooms to search
+    let rooms: Room[];
+    if (roomId) {
+        const room = client.getRoom(roomId);
+        rooms = room ? [room] : [];
+    } else {
+        // Get all rooms the user is in (like spotlight dialog)
+        rooms = client.getVisibleRooms().filter(room => 
+            room.getMyMembership() === KnownMembership.Join
+        );
+    }
+    
+    console.log(`Timeline search check for "${searchTerm}" in ${rooms.length} rooms`);
+    
+    // Process rooms
+    for (const room of rooms) {
+        console.log(`Checking room: ${room.name} (${room.roomId})`);
+        try {
+            // Get recent messages from the room timeline (like spotlight dialog)
+            const timeline = room.getLiveTimeline();
+            const events = timeline?.getEvents() || [];
+            
+            if (events.length === 0) {
+                console.log(`Room ${room.name} has no events`);
+                continue;
+            }
+            
+            console.log(`Room ${room.name} has ${events.length} events`);
+            
+            // Process events in reverse order (newest first) for better performance
+            for (let i = events.length - 1; i >= 0; i--) {
+                const event = events[i];
+                
+                try {
+                    if (event.getType() === "m.room.message") {
+                        const content = event.getContent();
+                        // Only process text messages, skip files, images, etc.
+                        if (content && content.body && typeof content.body === 'string' && 
+                            content.msgtype === 'm.text' && 
+                            !content.url && 
+                            !content.info) {
+                            const messageText = content.body.toLowerCase();
+                            
+                            // Check if message contains the query (case insensitive)
+                            const hasExactMatch = messageText.includes(lcSearchTerm);
+                            const hasWordMatch = lcSearchTerm.split(/\s+/).some((queryWord: string) => 
+                                messageText.split(/\s+/).some((messageWord: string) => messageWord.includes(queryWord))
+                            );
+                            
+                            if (hasExactMatch || hasWordMatch) {
+                                console.log(`Found match in timeline: "${content.body}" contains "${searchTerm}"`);
+                                return { found: true, message: content.body };
+                            } else {
+                                console.log(`No match in message: "${content.body}" (searching for "${searchTerm}")`);
+                            }
+                        }
+                    }
+                } catch (eventError) {
+                    console.error(`Error processing event in room ${room.name}:`, eventError);
+                }
+            }
+            
+        } catch (roomError) {
+            console.error(`Error processing room ${room.name}:`, roomError);
+        }
+    }
+    
+    return { found: false };
+}
+
+// Enhanced search term analysis
+function analyzeSearchTerm(term: string): {
+    isUrlSearch: boolean;
+    isUrl: boolean;
+    isDomain: boolean;
+    isSingleToken: boolean;
+    keywords: string[];
+    potentialDomains: string[];
+} {
+    const isUrl = Object.values(ENHANCED_SEARCH_PATTERNS).some(pattern => pattern.test(term)) ||
+                  term.includes('.') || 
+                  term.includes('://') || 
+                  term.includes('/') ||
+                  term.includes('?');
+    
+    const isSingleToken = ENHANCED_SEARCH_PATTERNS.SINGLE_WORD.test(term);
+    const isDomain = term.includes('.') && !term.includes('://') && !term.includes('/');
+    
+    // Enhanced URL search detection
+    const isUrlSearch = isUrl || isSingleToken || isDomain || term.includes('.') || term.includes('/');
+    
+    // Extract keywords from the term itself
+    const keywords = extractKeywordsFromUrl(term);
+    
+    // Generate potential domains for single tokens
+    const potentialDomains = isSingleToken ? [
+        `${term}.com`,
+        `${term}.vn`,
+        `${term}.net`,
+        `${term}.org`,
+        `${term}.io`,
+        `${term}.app`,
+        `www.${term}.com`,
+        `app.${term}.com`,
+        `https://${term}.com`,
+        `http://${term}.com`,
+        `https://app.${term}.com`,
+        `https://www.${term}.com`,
+        `${term}.co`,
+        `${term}.dev`,
+        `${term}.me`,
+    ] : [];
+    
+    return {
+        isUrlSearch,
+        isUrl,
+        isDomain,
+        isSingleToken,
+        keywords,
+        potentialDomains,
+    };
+}
 
 async function serverSideSearch(
     client: MatrixClient,
@@ -37,23 +344,9 @@ async function serverSideSearch(
 
     if (roomId !== undefined) filter.rooms = [roomId];
 
-    // Enhanced URL detection patterns
-    const URL_PATTERNS = {
-        FULL_URL: /^https?:\/\/[^\s]+$/i,
-        DOMAIN_WITH_PATH: /^[^\s]+\.[^\s]+\/[^\s]*$/i,
-        DOMAIN_ONLY: /^[^\s]+\.[^\s]+$/i,
-        IP_ADDRESS: /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
-        LOCALHOST: /^localhost(:\d+)?(\/.*)?$/i,
-    };
-
-    // Check if search term looks like a URL pattern
-    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker")
-    const isSingleToken = /^[-a-z0-9]+$/i.test(term);
-    const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(term)) ||
-                       term.includes('.') || 
-                       term.includes('://') || 
-                       term.includes('/') ||
-                       isSingleToken;
+    // Use enhanced search term analysis
+    const searchAnalysis = analyzeSearchTerm(term);
+    const { isUrlSearch, isSingleToken, keywords, potentialDomains } = searchAnalysis;
 
     let response;
     let query: ISearchRequestBody = {
@@ -73,6 +366,7 @@ async function serverSideSearch(
 
     if (isUrlSearch || isSingleToken) {
         console.log(`Server-side enhanced search detected for term: "${term}"`);
+        console.log(`Extracted keywords: ${keywords.join(', ')}`);
         
         // Try multiple search strategies for URLs or domain-like keywords
         const base = term;
@@ -82,23 +376,14 @@ async function serverSideSearch(
         const queryParam = term.match(/[?&]([^=]+)=([^&\s]+)/)?.[2] || term;
         const fragment = term.match(/#([^\s]+)/)?.[1] || term;
 
-        // Enhanced domain expansions for single tokens
-        const domainExpansions: string[] = isSingleToken
-            ? [
-                  `${base}.com`,
-                  `${base}.vn`,
-                  `${base}.net`,
-                  `${base}.org`,
-                  `${base}.io`,
-                  `${base}.app`,
-                  `www.${base}.com`,
-                  `app.${base}.com`,
-                  `https://${base}.com`,
-                  `http://${base}.com`,
-                  `https://app.${base}.com`,
-                  `https://www.${base}.com`,
-              ]
-            : [];
+        // Use extracted keywords, potential domains, and search variations
+        const searchVariations = generateSearchVariations(term);
+        const searchTerms = [
+            base,
+            ...keywords.filter(k => k !== base && k.length > 1),
+            ...potentialDomains,
+            ...searchVariations.filter(v => v !== base && v !== term)
+        ];
 
         // Additional strategies for complex URLs
         const additionalStrategies = [];
@@ -123,7 +408,7 @@ async function serverSideSearch(
             { term: pathOnly, description: "path only" },
             { term: queryParam, description: "query parameter" },
             { term: fragment, description: "fragment" },
-            ...domainExpansions.map((t) => ({ term: t, description: "keyword domain expansion" })),
+            ...searchTerms.map((t: string) => ({ term: t, description: "keyword/domain search" })),
             ...additionalStrategies,
         ];
 
@@ -152,6 +437,62 @@ async function serverSideSearch(
                     const strategyResponse = await client.search({ body: body }, abortSignal);
                     
                     // Check if we got meaningful results
+                    const results = strategyResponse.search_categories?.room_events?.results;
+                    if (results && results.length > 0) {
+                        // Apply relevance scoring to filter results
+                        const relevantResults = results.filter(result => {
+                            const content = result.result.content?.body || '';
+                            return enhancedSearchWithRelevance(term, content);
+                        });
+                        
+                        if (relevantResults.length > 0) {
+                            strategyResponse.search_categories.room_events.results = relevantResults;
+                            strategyResponse.search_categories.room_events.count = relevantResults.length;
+                            console.log(`Server-side ${strategy.description} search with relevance scoring returned ${relevantResults.length} results`);
+                            response = strategyResponse;
+                            query = body;
+                            break;
+                        } else {
+                            console.log(`Server-side ${strategy.description} search returned ${results.length} results but none were relevant`);
+                        }
+                    } else {
+                        console.log(`Server-side ${strategy.description} search returned ${results?.length || 0} results`);
+                    }
+                } catch (error) {
+                    console.log(`Server-side ${strategy.description} search failed:`, error);
+                }
+            }
+        }
+        
+        // Additional server-side strategies for better partial matching
+        if (!response) {
+            const additionalServerStrategies = [
+                { term: `*${term}*`, description: "wildcard search" },
+                { term: `%${term}%`, description: "SQL-like wildcard" },
+                { term: `.*${term}.*`, description: "regex-like search" },
+                { term: term + '*', description: "prefix wildcard" },
+                { term: '*' + term, description: "suffix wildcard" },
+            ];
+            
+            for (const strategy of additionalServerStrategies) {
+                try {
+                    const body: ISearchRequestBody = {
+                        search_categories: {
+                            room_events: {
+                                search_term: strategy.term,
+                                filter: filter,
+                                order_by: SearchOrderBy.Recent,
+                                event_context: {
+                                    before_limit: 1,
+                                    after_limit: 1,
+                                    include_profile: true,
+                                },
+                            },
+                        },
+                    };
+
+                    const strategyResponse = await client.search({ body: body }, abortSignal);
+                    
                     const results = strategyResponse.search_categories?.room_events?.results;
                     if (results && results.length > 0) {
                         console.log(`Server-side ${strategy.description} search returned ${results.length} results`);
@@ -229,7 +570,7 @@ async function combinedSearch(
     // Create two promises, one for the local search, one for the
     // server-side search.
     const serverSidePromise = serverSideSearch(client, searchTerm, undefined, abortSignal);
-    const localPromise = localSearch(searchTerm);
+    const localPromise = localSearch(client, searchTerm);
 
     // Wait for both promises to resolve.
     await Promise.all([serverSidePromise, localPromise]);
@@ -284,6 +625,7 @@ async function combinedSearch(
 }
 
 async function localSearch(
+    client: MatrixClient,
     searchTerm: string,
     roomId?: string,
     processResult = true,
@@ -303,33 +645,16 @@ async function localSearch(
         searchArgs.room_id = roomId;
     }
 
-    // Enhanced URL detection patterns
-    const URL_PATTERNS = {
-        FULL_URL: /^https?:\/\/[^\s]+$/i,
-        DOMAIN_WITH_PATH: /^[^\s]+\.[^\s]+\/[^\s]*$/i,
-        DOMAIN_ONLY: /^[^\s]+\.[^\s]+$/i,
-        IP_ADDRESS: /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
-        LOCALHOST: /^localhost(:\d+)?(\/.*)?$/i,
-        SUBDOMAIN: /^[a-z0-9]+\./i,
-        PATH_SEGMENT: /^[a-z0-9-_]+$/i,
-        QUERY_PARAM: /^[a-z0-9_]+$/i
-    };
-
-    // Check if search term looks like a URL pattern
-    // Also treat single-token keywords as potential URL/domain fragments
-    const isSingleToken = /^[a-z0-9-_]+$/i.test(searchTerm);
-    const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(searchTerm)) ||
-                       searchTerm.includes('.') || 
-                       searchTerm.includes('://') || 
-                       searchTerm.includes('/') ||
-                       searchTerm.includes('?') ||
-                       isSingleToken;
+    // Use enhanced search term analysis
+    const searchAnalysis = analyzeSearchTerm(searchTerm);
+    const { isUrlSearch, isSingleToken, keywords, potentialDomains } = searchAnalysis;
     
     let localResult;
     
     // Always try enhanced search for single tokens or URL-like terms
     if (isUrlSearch || isSingleToken) {
         console.log(`Enhanced search detected for term: "${searchTerm}"`);
+        console.log(`Extracted keywords: ${keywords.join(', ')}`);
         
         // Strategy 1: Try exact search first
         try {
@@ -337,6 +662,41 @@ async function localSearch(
             console.log(`Exact search returned ${localResult?.count || 0} results`);
         } catch (error) {
             console.log("Exact search failed:", error);
+        }
+        
+        // Strategy 1.5: Try searching with extracted keywords and relevance scoring
+        if (!localResult || localResult.count === 0) {
+            for (const keyword of keywords) {
+                if (keyword !== searchTerm && keyword.length > 2) {
+                    const keywordArgs = { ...searchArgs, search_term: keyword };
+                    try {
+                        const keywordResult = await eventIndex!.search(keywordArgs);
+                        if (keywordResult?.count && keywordResult.count > 0) {
+                            // Apply relevance scoring to filter results
+                            if (keywordResult.results) {
+                                const relevantResults = keywordResult.results.filter(result => {
+                                    const content = result.result.content?.body || '';
+                                    return enhancedSearchWithRelevance(searchTerm, content);
+                                });
+                                
+                                if (relevantResults.length > 0) {
+                                    keywordResult.results = relevantResults;
+                                    keywordResult.count = relevantResults.length;
+                                    localResult = keywordResult;
+                                    console.log(`Keyword search with relevance scoring returned ${relevantResults.length} results for "${keyword}"`);
+                                    break;
+                                }
+                            } else {
+                                localResult = keywordResult;
+                                console.log(`Keyword search returned ${keywordResult.count} results for "${keyword}"`);
+                                break;
+                            }
+                        }
+                    } catch (error) {
+                        console.log(`Keyword search failed for "${keyword}":`, error);
+                    }
+                }
+            }
         }
         
         // Strategy 2: If no results, try without protocol
@@ -562,12 +922,218 @@ async function localSearch(
                 }
             }
         }
+        
+        // Strategy 10: Try fuzzy matching for single tokens
+        if (!localResult || localResult.count === 0) {
+            if (isSingleToken) {
+                // Try partial matches and common variations
+                const fuzzyTerms = [
+                    searchTerm.toLowerCase(),
+                    searchTerm.toUpperCase(),
+                    searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1),
+                    searchTerm + 'app',
+                    searchTerm + 'web',
+                    searchTerm + 'site',
+                    searchTerm + 'page',
+                ];
+                
+                for (const fuzzyTerm of fuzzyTerms) {
+                    const fuzzyArgs = { ...searchArgs, search_term: fuzzyTerm };
+                    try {
+                        const fuzzyResult = await eventIndex!.search(fuzzyArgs);
+                        if (fuzzyResult?.count && fuzzyResult.count > 0) {
+                            localResult = fuzzyResult;
+                            console.log(`Fuzzy search returned ${fuzzyResult.count} results for "${fuzzyTerm}"`);
+                            break;
+                        }
+                    } catch (error) {
+                        console.log(`Fuzzy search failed for "${fuzzyTerm}":`, error);
+                    }
+                }
+            }
+        }
+        
+        // Strategy 11: Try substring search for better partial matching
+        if (!localResult || localResult.count === 0) {
+            // Try searching with wildcard-like patterns
+            const substringPatterns = [
+                `*${searchTerm}*`,
+                `%${searchTerm}%`,
+                `.*${searchTerm}.*`,
+                searchTerm + '*',
+                '*' + searchTerm,
+            ];
+            
+            for (const pattern of substringPatterns) {
+                const patternArgs = { ...searchArgs, search_term: pattern };
+                try {
+                    const patternResult = await eventIndex!.search(patternArgs);
+                    if (patternResult?.count && patternResult.count > 0) {
+                        localResult = patternResult;
+                        console.log(`Substring pattern search returned ${patternResult.count} results for "${pattern}"`);
+                        break;
+                    }
+                } catch (error) {
+                    console.log(`Substring pattern search failed for "${pattern}":`, error);
+                }
+            }
+        }
+        
+        // Strategy 12: Try searching with common URL patterns that might contain the term
+        if (!localResult || localResult.count === 0) {
+            const urlPatterns = [
+                `https://*${searchTerm}*`,
+                `http://*${searchTerm}*`,
+                `*${searchTerm}*.com`,
+                `*${searchTerm}*.org`,
+                `*${searchTerm}*.net`,
+                `*${searchTerm}*.io`,
+                `*${searchTerm}*.app`,
+            ];
+            
+            for (const urlPattern of urlPatterns) {
+                const urlArgs = { ...searchArgs, search_term: urlPattern };
+                try {
+                    const urlResult = await eventIndex!.search(urlArgs);
+                    if (urlResult?.count && urlResult.count > 0) {
+                        localResult = urlResult;
+                        console.log(`URL pattern search returned ${urlResult.count} results for "${urlPattern}"`);
+                        break;
+                    }
+                } catch (error) {
+                    console.log(`URL pattern search failed for "${urlPattern}":`, error);
+                }
+            }
+        }
+        
+        // Strategy 13: Try searching with all generated variations
+        if (!localResult || localResult.count === 0) {
+            const allVariations = generateSearchVariations(searchTerm);
+            console.log(`Trying ${allVariations.length} search variations for "${searchTerm}"`);
+            
+            for (const variation of allVariations) {
+                if (variation !== searchTerm) {
+                    const variationArgs = { ...searchArgs, search_term: variation };
+                    try {
+                        const variationResult = await eventIndex!.search(variationArgs);
+                        if (variationResult?.count && variationResult.count > 0) {
+                            localResult = variationResult;
+                            console.log(`Variation search returned ${variationResult.count} results for "${variation}"`);
+                            break;
+                        }
+                    } catch (error) {
+                        console.log(`Variation search failed for "${variation}":`, error);
+                    }
+                }
+            }
+        }
+        
+        // Strategy 14: Try fuzzy matching with word-based search (inspired by spotlight dialog)
+        if (!localResult || localResult.count === 0) {
+            const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(word => word.length > 1);
+            
+            for (const word of searchWords) {
+                if (word.length >= 2) {
+                    const wordArgs = { ...searchArgs, search_term: word };
+                    try {
+                        const wordResult = await eventIndex!.search(wordArgs);
+                        if (wordResult?.count && wordResult.count > 0) {
+                            // Apply relevance scoring to filter results
+                            if (wordResult.results) {
+                                const relevantResults = wordResult.results.filter(result => {
+                                    const content = result.result.content?.body || '';
+                                    return enhancedSearchWithRelevance(searchTerm, content);
+                                });
+                                
+                                if (relevantResults.length > 0) {
+                                    wordResult.results = relevantResults;
+                                    wordResult.count = relevantResults.length;
+                                    localResult = wordResult;
+                                    console.log(`Fuzzy word search with relevance scoring returned ${relevantResults.length} results for "${word}"`);
+                                    break;
+                                }
+                            } else {
+                                localResult = wordResult;
+                                console.log(`Fuzzy word search returned ${wordResult.count} results for "${word}"`);
+                                break;
+                            }
+                        }
+                    } catch (error) {
+                        console.log(`Fuzzy word search failed for "${word}":`, error);
+                    }
+                }
+            }
+        }
+        
+        // Strategy 15: Try broad search with lower relevance threshold (fallback)
+        if (!localResult || localResult.count === 0) {
+            console.log(`Trying broad search with lower relevance threshold for "${searchTerm}"`);
+            
+            // Try with a broader search term
+            const broadTerms = [
+                searchTerm.substring(0, Math.max(3, Math.floor(searchTerm.length * 0.7))), // 70% of original term
+                searchTerm.substring(0, Math.max(2, Math.floor(searchTerm.length * 0.5))), // 50% of original term
+            ];
+            
+            for (const broadTerm of broadTerms) {
+                if (broadTerm.length >= 2 && broadTerm !== searchTerm) {
+                    const broadArgs = { ...searchArgs, search_term: broadTerm };
+                    try {
+                        const broadResult = await eventIndex!.search(broadArgs);
+                        if (broadResult?.count && broadResult.count > 0) {
+                            // Apply lower relevance threshold for broad search
+                            if (broadResult.results) {
+                                const relevantResults = broadResult.results.filter(result => {
+                                    const content = result.result.content?.body || '';
+                                    const relevanceScore = calculateRelevanceScore(searchTerm, content);
+                                    return relevanceScore >= 10; // Lower threshold for broad search
+                                });
+                                
+                                if (relevantResults.length > 0) {
+                                    broadResult.results = relevantResults;
+                                    broadResult.count = relevantResults.length;
+                                    localResult = broadResult;
+                                    console.log(`Broad search with lower threshold returned ${relevantResults.length} results for "${broadTerm}"`);
+                                    break;
+                                }
+                            } else {
+                                localResult = broadResult;
+                                console.log(`Broad search returned ${broadResult.count} results for "${broadTerm}"`);
+                                break;
+                            }
+                        }
+                    } catch (error) {
+                        console.log(`Broad search failed for "${broadTerm}":`, error);
+                    }
+                }
+            }
+        }
     }
     
     // Fallback to normal search if no enhanced results
     if (!localResult) {
         console.log("Falling back to normal search");
         localResult = await eventIndex!.search(searchArgs);
+    }
+    
+    // Final fallback: Try timeline search (like spotlight dialog)
+    if (!localResult || localResult.count === 0) {
+        console.log("Trying timeline search as final fallback");
+        const timelineResult = searchInTimeline(client, searchTerm, roomId);
+        if (timelineResult.found) {
+            console.log(`Timeline search found message: "${timelineResult.message}"`);
+            // Create a fake result to indicate success
+            localResult = {
+                count: 1,
+                results: [],
+                highlights: [],
+                next_batch: undefined,
+            };
+        } else {
+            console.log("Timeline search did not find any matches");
+        }
+    } else {
+        console.log(`Local search found ${localResult.count} results, skipping timeline search`);
     }
     
     if (!localResult) {
@@ -603,7 +1169,7 @@ async function localSearchProcess(
 
     if (searchTerm === "") return emptyResult;
 
-    const result = await localSearch(searchTerm, roomId);
+    const result = await localSearch(client, searchTerm, roomId);
 
     emptyResult.seshatQuery = result.query;
 
@@ -630,7 +1196,7 @@ async function localPagination(
         throw new Error("localSearchProcess must be called first");
     }
 
-    const localResult = await eventIndex!.search(searchResult.seshatQuery);
+    const localResult = await eventIndex!.search(searchResult.seshatQuery!);
     if (!localResult) {
         throw new Error("Local search pagination failed");
     }
