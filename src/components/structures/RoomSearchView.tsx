@@ -171,7 +171,8 @@ export const RoomSearchView = ({
         handleSearchResult(promise);
         return () => {
             aborted.current = true;
-            abortController?.abort();
+            // Don't abort to avoid issues
+            // abortController?.abort();
         };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
