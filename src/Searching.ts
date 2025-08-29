@@ -47,12 +47,15 @@ async function serverSideSearch(
     };
 
     // Check if search term looks like a URL pattern
-    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker")
-    const isSingleToken = /^[-a-z0-9]+$/i.test(term);
+    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker", "fortraders", "trading", "products")
+    const isSingleToken = /^[a-z0-9]+$/i.test(term);
     const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(term)) ||
                        term.includes('.') || 
                        term.includes('://') || 
                        term.includes('/') ||
+                       term.includes('?') ||
+                       term.includes('&') ||
+                       term.includes('=') ||
                        isSingleToken;
 
     let response;
@@ -81,6 +84,22 @@ async function serverSideSearch(
         const pathOnly = term.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/)?.[1] || term;
         const queryParam = term.match(/[?&]([^=]+)=([^&\s]+)/)?.[2] || term;
         const fragment = term.match(/#([^\s]+)/)?.[1] || term;
+        
+        // Extract query parameter names and values
+        const queryParams = [];
+        const queryMatches = term.matchAll(/[?&]([^=]+)=([^&\s]+)/g);
+        for (const match of queryMatches) {
+            queryParams.push(match[1]); // parameter name
+            queryParams.push(match[2]); // parameter value
+        }
+        
+        // Extract path segments
+        const pathSegments = [];
+        const pathMatch = term.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/);
+        if (pathMatch && pathMatch[1]) {
+            const segments = pathMatch[1].split('/').filter(segment => segment.length > 0);
+            pathSegments.push(...segments);
+        }
 
         // Enhanced domain expansions for single tokens
         const domainExpansions: string[] = isSingleToken
@@ -115,6 +134,61 @@ async function serverSideSearch(
                 );
             }
         }
+        
+        // Additional strategies for single tokens that might be subdomains, paths, or query params
+        if (isSingleToken) {
+            // Generic subdomain patterns - any single token could be a subdomain
+            additionalStrategies.push(
+                { term: `${term}.com`, description: "generic subdomain expansion" },
+                { term: `${term}.net`, description: "generic subdomain .net" },
+                { term: `${term}.org`, description: "generic subdomain .org" },
+                { term: `${term}.io`, description: "generic subdomain .io" },
+                { term: `https://${term}.com`, description: "generic subdomain with https" },
+                { term: `http://${term}.com`, description: "generic subdomain with http" }
+            );
+            
+            // Generic path patterns - any single token could be a path segment
+            additionalStrategies.push(
+                { term: `/${term}`, description: "generic path segment" },
+                { term: `/${term}/`, description: "generic path segment with slash" },
+                { term: `https://example.com/${term}`, description: "generic path with domain" },
+                { term: `https://www.example.com/${term}`, description: "generic path with www domain" }
+            );
+            
+            // Generic query parameter patterns - any single token could be a query param
+            additionalStrategies.push(
+                { term: `?${term}=`, description: "generic query parameter" },
+                { term: `&${term}=`, description: "generic query parameter with ampersand" },
+                { term: `https://example.com/?${term}=`, description: "generic query with domain" }
+            );
+            
+            // Common subdomain patterns for better matching
+            const commonSubdomains = ['app', 'api', 'docs', 'www', 'beta', 'staging', 'dev', 'test', 'admin', 'cdn', 'static', 'assets', 'media', 'blog', 'shop', 'store', 'support', 'help', 'forum', 'community'];
+            if (commonSubdomains.includes(term.toLowerCase())) {
+                additionalStrategies.push(
+                    { term: `${term}.example.com`, description: "common subdomain expansion" },
+                    { term: `https://${term}.example.com`, description: "common subdomain with https" }
+                );
+            }
+            
+            // Common path patterns for better matching
+            const commonPaths = ['trading', 'products', 'questions', 'docs', 'api', 'rest', 'v1', 'v2', 'user', 'users', 'profile', 'settings', 'admin', 'dashboard', 'login', 'register', 'search', 'help', 'about', 'contact', 'blog', 'news', 'article', 'post', 'category', 'tag', 'archive', 'download', 'upload', 'file', 'image', 'video', 'audio', 'document', 'pdf', 'zip', 'rar'];
+            if (commonPaths.includes(term.toLowerCase())) {
+                additionalStrategies.push(
+                    { term: `https://example.com/${term}`, description: "common path with domain" },
+                    { term: `https://www.example.com/${term}`, description: "common path with www domain" }
+                );
+            }
+            
+            // Common query parameter patterns for better matching
+            const commonQueryParams = ['affiliateCode', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'category', 'brand', 'model', 'color', 'storage', 'price_min', 'price_max', 'k', 'q', 'query', 'search', 'ref', 'rh', 'qid', 'rnid', 'include', 'format', 'date', 'time', 'sort', 'order', 'limit', 'offset', 'page', 'size', 'filter', 'type', 'status', 'id', 'user', 'author', 'tag', 'lang', 'locale', 'currency', 'country', 'region', 'city'];
+            if (commonQueryParams.includes(term.toLowerCase())) {
+                additionalStrategies.push(
+                    { term: `https://example.com/?${term}=`, description: "common query parameter with domain" },
+                    { term: `https://www.example.com/?${term}=`, description: "common query parameter with www domain" }
+                );
+            }
+        }
 
         const searchStrategies = [
             { term: base, description: "exact" },
@@ -125,6 +199,10 @@ async function serverSideSearch(
             { term: fragment, description: "fragment" },
             ...domainExpansions.map((t) => ({ term: t, description: "keyword domain expansion" })),
             ...additionalStrategies,
+            // Add query parameter names and values
+            ...queryParams.map((param) => ({ term: param, description: "query parameter name/value" })),
+            // Add path segments
+            ...pathSegments.map((segment) => ({ term: segment, description: "path segment" })),
         ];
 
         let bestResponse = null;
@@ -313,12 +391,15 @@ async function localSearch(
     };
 
     // Check if search term looks like a URL pattern
-    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker", "fortraders")
+    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker", "fortraders", "trading", "products")
     const isSingleToken = /^[a-z0-9]+$/i.test(searchTerm);
     const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(searchTerm)) ||
                        searchTerm.includes('.') || 
                        searchTerm.includes('://') || 
                        searchTerm.includes('/') ||
+                       searchTerm.includes('?') ||
+                       searchTerm.includes('&') ||
+                       searchTerm.includes('=') ||
                        isSingleToken;
     
     let localResult;
@@ -377,6 +458,27 @@ async function localSearch(
             }
         }
         
+        // Strategy 4.1: Try path segment search (for individual path segments)
+        if (!localResult || localResult.count === 0) {
+            const pathMatch = searchTerm.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/);
+            if (pathMatch && pathMatch[1]) {
+                const segments = pathMatch[1].split('/').filter(segment => segment.length > 0);
+                for (const segment of segments) {
+                    const segmentArgs = { ...searchArgs, search_term: segment };
+                    try {
+                        const segmentResult = await eventIndex!.search(segmentArgs);
+                        if (segmentResult && segmentResult.count && segmentResult.count > 0) {
+                            localResult = segmentResult;
+                            console.log(`Path segment search returned ${segmentResult.count} results for segment: ${segment}`);
+                            break;
+                        }
+                    } catch (error) {
+                        console.log("Path segment search failed:", error);
+                    }
+                }
+            }
+        }
+        
         // Strategy 5: Try query parameter search
         if (!localResult || localResult.count === 0) {
             const queryMatch = searchTerm.match(/[?&]([^=]+)=([^&\s]+)/);
@@ -387,6 +489,20 @@ async function localSearch(
                     console.log(`Query parameter search returned ${localResult?.count || 0} results`);
                 } catch (error) {
                     console.log("Query parameter search failed:", error);
+                }
+            }
+        }
+        
+        // Strategy 5.1: Try query parameter name search
+        if (!localResult || localResult.count === 0) {
+            const queryNameMatch = searchTerm.match(/[?&]([^=]+)=/);
+            if (queryNameMatch) {
+                const queryNameArgs = { ...searchArgs, search_term: queryNameMatch[1] };
+                try {
+                    localResult = await eventIndex!.search(queryNameArgs);
+                    console.log(`Query parameter name search returned ${localResult?.count || 0} results`);
+                } catch (error) {
+                    console.log("Query parameter name search failed:", error);
                 }
             }
         }
@@ -451,6 +567,118 @@ async function localSearch(
                 }
             }
         }
+        
+        // Strategy 8.1: Try generic and common patterns for single tokens
+        if ((!localResult || localResult.count === 0) && isSingleToken) {
+            // Generic expansions for any single token
+            const genericExpansions = [
+                // Generic subdomain patterns
+                `${searchTerm}.com`,
+                `${searchTerm}.net`,
+                `${searchTerm}.org`,
+                `${searchTerm}.io`,
+                `https://${searchTerm}.com`,
+                `http://${searchTerm}.com`,
+                
+                // Generic path patterns
+                `/${searchTerm}`,
+                `/${searchTerm}/`,
+                `https://example.com/${searchTerm}`,
+                `https://www.example.com/${searchTerm}`,
+                
+                // Generic query parameter patterns
+                `?${searchTerm}=`,
+                `&${searchTerm}=`,
+                `https://example.com/?${searchTerm}=`,
+                `https://www.example.com/?${searchTerm}=`
+            ];
+            
+            for (const exp of genericExpansions) {
+                const args = { ...searchArgs, search_term: exp };
+                try {
+                    const r = await eventIndex!.search(args);
+                    if (r && r.count && r.count > 0) {
+                        localResult = r;
+                        console.log(`Generic expansion search returned ${r.count} results for ${exp}`);
+                        break;
+                    }
+                } catch (error) {
+                    console.log("Generic expansion search failed:", error);
+                }
+            }
+            
+            // Common subdomain patterns for better matching
+            const commonSubdomains = ['app', 'api', 'docs', 'www', 'beta', 'staging', 'dev', 'test', 'admin', 'cdn', 'static', 'assets', 'media', 'blog', 'shop', 'store', 'support', 'help', 'forum', 'community'];
+            if (commonSubdomains.includes(searchTerm.toLowerCase())) {
+                const subdomainExpansions = [
+                    `${searchTerm}.example.com`,
+                    `https://${searchTerm}.example.com`,
+                    `https://${searchTerm}.com`,
+                    `https://www.${searchTerm}.com`
+                ];
+                for (const exp of subdomainExpansions) {
+                    const args = { ...searchArgs, search_term: exp };
+                    try {
+                        const r = await eventIndex!.search(args);
+                        if (r && r.count && r.count > 0) {
+                            localResult = r;
+                            console.log(`Common subdomain expansion search returned ${r.count} results for ${exp}`);
+                            break;
+                        }
+                    } catch (error) {
+                        console.log("Common subdomain expansion search failed:", error);
+                    }
+                }
+            }
+            
+            // Common path patterns for better matching
+            const commonPaths = ['trading', 'products', 'questions', 'docs', 'api', 'rest', 'v1', 'v2', 'user', 'users', 'profile', 'settings', 'admin', 'dashboard', 'login', 'register', 'search', 'help', 'about', 'contact', 'blog', 'news', 'article', 'post', 'category', 'tag', 'archive', 'download', 'upload', 'file', 'image', 'video', 'audio', 'document', 'pdf', 'zip', 'rar'];
+            if (commonPaths.includes(searchTerm.toLowerCase())) {
+                const pathExpansions = [
+                    `https://example.com/${searchTerm}`,
+                    `https://www.example.com/${searchTerm}`,
+                    `https://api.example.com/${searchTerm}`,
+                    `https://app.example.com/${searchTerm}`
+                ];
+                for (const exp of pathExpansions) {
+                    const args = { ...searchArgs, search_term: exp };
+                    try {
+                        const r = await eventIndex!.search(args);
+                        if (r && r.count && r.count > 0) {
+                            localResult = r;
+                            console.log(`Common path expansion search returned ${r.count} results for ${exp}`);
+                            break;
+                        }
+                    } catch (error) {
+                        console.log("Common path expansion search failed:", error);
+                    }
+                }
+            }
+            
+            // Common query parameter patterns for better matching
+            const commonQueryParams = ['affiliateCode', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'category', 'brand', 'model', 'color', 'storage', 'price_min', 'price_max', 'k', 'q', 'query', 'search', 'ref', 'rh', 'qid', 'rnid', 'include', 'format', 'date', 'time', 'sort', 'order', 'limit', 'offset', 'page', 'size', 'filter', 'type', 'status', 'id', 'user', 'author', 'tag', 'lang', 'locale', 'currency', 'country', 'region', 'city'];
+            if (commonQueryParams.includes(searchTerm.toLowerCase())) {
+                const queryExpansions = [
+                    `https://example.com/?${searchTerm}=`,
+                    `https://www.example.com/?${searchTerm}=`,
+                    `https://shop.example.com/?${searchTerm}=`,
+                    `https://api.example.com/?${searchTerm}=`
+                ];
+                for (const exp of queryExpansions) {
+                    const args = { ...searchArgs, search_term: exp };
+                    try {
+                        const r = await eventIndex!.search(args);
+                        if (r && r.count && r.count > 0) {
+                            localResult = r;
+                            console.log(`Common query parameter expansion search returned ${r.count} results for ${exp}`);
+                            break;
+                        }
+                    } catch (error) {
+                        console.log("Common query parameter expansion search failed:", error);
+                    }
+                }
+            }
+        }
 
         // Strategy 9: Try subdomain extraction for complex URLs
         if (!localResult || localResult.count === 0) {
@@ -484,6 +712,68 @@ async function localSearch(
                         } catch (error) {
                             console.log("Subdomain extraction search failed:", error);
                         }
+                    }
+                }
+            }
+        }
+        
+        // Strategy 10: Try exact match for single tokens that might be exact matches in URLs
+        if ((!localResult || localResult.count === 0) && isSingleToken) {
+            // For single tokens, try to find exact matches in URLs
+            // This helps with cases like "laptop", "trading", "products", etc.
+            try {
+                const exactArgs = { ...searchArgs, search_term: searchTerm };
+                const r = await eventIndex!.search(exactArgs);
+                if (r && r.count && r.count > 0) {
+                    localResult = r;
+                    console.log(`Exact single token search returned ${r.count} results for "${searchTerm}"`);
+                }
+            } catch (error) {
+                console.log("Exact single token search failed:", error);
+            }
+        }
+        
+        // Strategy 11: Try partial matching for any token (fallback for complex cases)
+        if (!localResult || localResult.count === 0) {
+            // Try partial matching by splitting the search term into smaller parts
+            const words = searchTerm.split(/[\s\-_\.]+/).filter(word => word.length > 1);
+            for (const word of words) {
+                if (word !== searchTerm) { // Skip if it's the same as original
+                    const partialArgs = { ...searchArgs, search_term: word };
+                    try {
+                        const r = await eventIndex!.search(partialArgs);
+                        if (r && r.count && r.count > 0) {
+                            localResult = r;
+                            console.log(`Partial matching search returned ${r.count} results for "${word}"`);
+                            break;
+                        }
+                    } catch (error) {
+                        console.log("Partial matching search failed:", error);
+                    }
+                }
+            }
+        }
+        
+        // Strategy 12: Try case-insensitive variations
+        if (!localResult || localResult.count === 0) {
+            const variations = [
+                searchTerm.toLowerCase(),
+                searchTerm.toUpperCase(),
+                searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase(),
+            ];
+            
+            for (const variation of variations) {
+                if (variation !== searchTerm) {
+                    const variationArgs = { ...searchArgs, search_term: variation };
+                    try {
+                        const r = await eventIndex!.search(variationArgs);
+                        if (r && r.count && r.count > 0) {
+                            localResult = r;
+                            console.log(`Case variation search returned ${r.count} results for "${variation}"`);
+                            break;
+                        }
+                    } catch (error) {
+                        console.log("Case variation search failed:", error);
                     }
                 }
             }
