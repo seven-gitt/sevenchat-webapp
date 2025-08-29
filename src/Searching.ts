@@ -33,11 +33,11 @@ async function serverSideSearch(
 ): Promise<{ response: ISearchResponse; query: ISearchRequestBody }> {
     console.log(`🌐 Server-side search called with term: "${term}"`);
     
-    // Add a longer delay to prevent too rapid aborting
-    await new Promise(resolve => setTimeout(resolve, 300));
+    // Remove delay to avoid abort issues
+    // await new Promise(resolve => setTimeout(resolve, 300));
     
     if (abortSignal?.aborted) {
-        console.log("⚠️ Search was aborted during delay");
+        console.log("⚠️ Search was aborted before starting");
         throw new Error("Search aborted");
     }
     
@@ -88,7 +88,9 @@ async function serverSideSearch(
         console.log(`Server-side enhanced search detected for term: "${term}"`);
         
         // Simple and effective search strategies
-        const searchStrategies = [];
+        const searchStrategies = [
+            { term: term, description: "exact match" } // Always try exact match first
+        ];
         
         // For single tokens, try common patterns
         if (isSingleToken) {
@@ -158,58 +160,47 @@ async function serverSideSearch(
             }
         }
 
-        // Try each strategy with retry logic
+        // Try each strategy without retry to avoid abort issues
         for (const strategy of searchStrategies) {
-            if (strategy.term && strategy.term !== term) {
-                let retryCount = 0;
-                const maxRetries = 2;
-                
-                while (retryCount <= maxRetries) {
-                    try {
-                        const body: ISearchRequestBody = {
-                            search_categories: {
-                                room_events: {
-                                    search_term: strategy.term,
-                                    filter: filter,
-                                    order_by: SearchOrderBy.Recent,
-                                    event_context: {
-                                        before_limit: 1,
-                                        after_limit: 1,
-                                        include_profile: true,
-                                    },
+            if (strategy.term) {
+                try {
+                    const body: ISearchRequestBody = {
+                        search_categories: {
+                            room_events: {
+                                search_term: strategy.term,
+                                filter: filter,
+                                order_by: SearchOrderBy.Recent,
+                                event_context: {
+                                    before_limit: 1,
+                                    after_limit: 1,
+                                    include_profile: true,
                                 },
                             },
-                        };
+                        },
+                    };
 
-                        const strategyResponse = await client.search({ body: body }, abortSignal);
-                        
-                        // Check if we got meaningful results
-                        const results = strategyResponse.search_categories?.room_events?.results;
-                        if (results && results.length > 0) {
-                            console.log(`Server-side ${strategy.description} search returned ${results.length} results`);
-                            response = strategyResponse;
-                            query = body;
-                            break;
-                        }
-                        break; // No results, try next strategy
-                    } catch (error) {
-                        retryCount++;
-                        if (retryCount > maxRetries) {
-                            console.log(`Server-side ${strategy.description} search failed after ${maxRetries} retries:`, error);
-                            break;
-                        }
-                        console.log(`Server-side ${strategy.description} search failed, retrying (${retryCount}/${maxRetries})`);
-                        await new Promise(resolve => setTimeout(resolve, 200)); // Wait before retry
+                    const strategyResponse = await client.search({ body: body }, abortSignal);
+                    
+                    // Check if we got meaningful results
+                    const results = strategyResponse.search_categories?.room_events?.results;
+                    if (results && results.length > 0) {
+                        console.log(`Server-side ${strategy.description} search returned ${results.length} results`);
+                        response = strategyResponse;
+                        query = body;
+                        break;
+                    } else {
+                        console.log(`Server-side ${strategy.description} search returned 0 results`);
                     }
+                } catch (error) {
+                    console.log(`Server-side ${strategy.description} search failed:`, error);
+                    // Continue to next strategy instead of retrying
                 }
-                
-                if (response) break; // Found results, stop trying other strategies
             }
         }
     }
 
     // If no URL-specific results or not a URL search, use original term
-    if (!response || !query) {
+    if (!response) {
         console.log("🔄 Using original search term for server-side search");
         const body: ISearchRequestBody = {
             search_categories: {
@@ -227,7 +218,7 @@ async function serverSideSearch(
         };
 
         try {
-            // Add a small delay to prevent too rapid aborting
+            // Check if search was aborted
             if (abortSignal?.aborted) {
                 console.log("⚠️ Search was aborted before starting");
                 throw new Error("Search aborted");
@@ -239,13 +230,52 @@ async function serverSideSearch(
         } catch (error) {
             if (error instanceof Error && error.name === 'AbortError') {
                 console.log("⚠️ Server-side search was aborted");
+                // Return empty results instead of throwing
+                response = {
+                    search_categories: {
+                        room_events: {
+                            results: [],
+                            highlights: [],
+                            count: 0
+                        }
+                    }
+                } as ISearchResponse;
+                query = body;
             } else {
                 console.error("❌ Server-side search failed:", error);
+                throw error;
             }
-            throw error;
         }
     }
 
+    // Ensure we always return a valid response
+    if (!response) {
+        console.log("⚠️ No search results found, returning empty response");
+        response = {
+            search_categories: {
+                room_events: {
+                    results: [],
+                    highlights: [],
+                    count: 0
+                }
+            }
+        } as ISearchResponse;
+        query = {
+            search_categories: {
+                room_events: {
+                    search_term: term,
+                    filter: filter,
+                    order_by: SearchOrderBy.Recent,
+                    event_context: {
+                        before_limit: 1,
+                        after_limit: 1,
+                        include_profile: true,
+                    },
+                },
+            },
+        };
+    }
+    
     return { response, query };
 }
 
