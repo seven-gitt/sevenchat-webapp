@@ -310,15 +310,19 @@ async function localSearch(
         DOMAIN_ONLY: /^[^\s]+\.[^\s]+$/i,
         IP_ADDRESS: /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
         LOCALHOST: /^localhost(:\d+)?(\/.*)?$/i,
+        SUBDOMAIN: /^[a-z0-9]+\./i,
+        PATH_SEGMENT: /^[a-z0-9-_]+$/i,
+        QUERY_PARAM: /^[a-z0-9_]+$/i
     };
 
     // Check if search term looks like a URL pattern
-    // Also treat single-token keywords as potential URL/domain fragments (e.g. "imagecolorpicker", "fortraders")
-    const isSingleToken = /^[a-z0-9]+$/i.test(searchTerm);
+    // Also treat single-token keywords as potential URL/domain fragments
+    const isSingleToken = /^[a-z0-9-_]+$/i.test(searchTerm);
     const isUrlSearch = Object.values(URL_PATTERNS).some(pattern => pattern.test(searchTerm)) ||
                        searchTerm.includes('.') || 
                        searchTerm.includes('://') || 
                        searchTerm.includes('/') ||
+                       searchTerm.includes('?') ||
                        isSingleToken;
     
     let localResult;
@@ -349,10 +353,12 @@ async function localSearch(
             }
         }
         
-        // Strategy 3: Try domain-only search
+        // Strategy 3: Try domain-only and subdomain searches
         if (!localResult || localResult.count === 0) {
+            // First try domain-only search
             const domainMatch = searchTerm.match(/(?:https?:\/\/)?([^\/\s?#]+)/);
             if (domainMatch && domainMatch[1]) {
+                // Try exact domain match
                 const domainArgs = { ...searchArgs, search_term: domainMatch[1] };
                 try {
                     localResult = await eventIndex!.search(domainArgs);
@@ -360,33 +366,101 @@ async function localSearch(
                 } catch (error) {
                     console.log("Domain-only search failed:", error);
                 }
+
+                // Try each subdomain segment separately
+                if (!localResult || localResult.count === 0) {
+                    const domainParts = domainMatch[1].split('.');
+                    for (const part of domainParts) {
+                        if (part !== 'com' && part !== 'org' && part !== 'net' && part !== 'io' && part !== 'www') {
+                            const subdomainArgs = { ...searchArgs, search_term: part };
+                            try {
+                                const subResult = await eventIndex!.search(subdomainArgs);
+                                if (subResult?.count && subResult.count > 0) {
+                                    localResult = subResult;
+                                    console.log(`Subdomain search returned ${subResult.count} results for "${part}"`);
+                                    break;
+                                }
+                            } catch (error) {
+                                console.log(`Subdomain search failed for "${part}":`, error);
+                            }
+                        }
+                    }
+                }
             }
         }
         
-        // Strategy 4: Try path-only search (for URLs with paths)
+        // Strategy 4: Try path and individual path segments search
         if (!localResult || localResult.count === 0) {
+            // First try the full path
             const pathMatch = searchTerm.match(/(?:https?:\/\/[^\/]+)?(\/[^\s?#]*)/);
             if (pathMatch && pathMatch[1]) {
                 const pathArgs = { ...searchArgs, search_term: pathMatch[1] };
                 try {
                     localResult = await eventIndex!.search(pathArgs);
-                    console.log(`Path-only search returned ${localResult?.count || 0} results`);
+                    console.log(`Full path search returned ${localResult?.count || 0} results`);
                 } catch (error) {
-                    console.log("Path-only search failed:", error);
+                    console.log("Full path search failed:", error);
+                }
+
+                // If no results, try individual path segments
+                if (!localResult?.count || localResult.count === 0) {
+                    const pathSegments = pathMatch[1].split('/').filter(s => s.length > 0);
+                    for (const segment of pathSegments) {
+                        if (segment && !/^(v\d+|api|rest|docs?|www)$/i.test(segment)) {
+                            const segmentArgs = { ...searchArgs, search_term: segment };
+                            try {
+                                const segResult = await eventIndex!.search(segmentArgs);
+                                if (segResult?.count && segResult.count > 0) {
+                                    localResult = segResult;
+                                    console.log(`Path segment search returned ${segResult.count} results for "${segment}"`);
+                                    break;
+                                }
+                            } catch (error) {
+                                console.log(`Path segment search failed for "${segment}":`, error);
+                            }
+                        }
+                    }
                 }
             }
         }
         
         // Strategy 5: Try query parameter search
         if (!localResult || localResult.count === 0) {
-            const queryMatch = searchTerm.match(/[?&]([^=]+)=([^&\s]+)/);
-            if (queryMatch) {
-                const queryArgs = { ...searchArgs, search_term: queryMatch[2] };
-                try {
-                    localResult = await eventIndex!.search(queryArgs);
-                    console.log(`Query parameter search returned ${localResult?.count || 0} results`);
-                } catch (error) {
-                    console.log("Query parameter search failed:", error);
+            // Try searching for query parameter names and values
+            const queryParams = searchTerm.includes('?') ? 
+                new URLSearchParams(searchTerm.split('?')[1]) : 
+                new URLSearchParams(searchTerm);
+
+            for (const [key, value] of queryParams.entries()) {
+                // Skip common technical parameters
+                if (!/^(v\d+|format|version|api|type|callback|jsonp)$/i.test(key)) {
+                    // Try the parameter name
+                    const keyArgs = { ...searchArgs, search_term: key };
+                    try {
+                        const keyResult = await eventIndex!.search(keyArgs);
+                        if (keyResult?.count && keyResult.count > 0) {
+                            localResult = keyResult;
+                            console.log(`Query parameter key search returned ${keyResult.count} results for "${key}"`);
+                            break;
+                        }
+                    } catch (error) {
+                        console.log(`Query parameter key search failed for "${key}":`, error);
+                    }
+
+                    // Try the parameter value if it's meaningful
+                    if (value && value.length > 2 && !/^(true|false|null|undefined|\d+)$/i.test(value)) {
+                        const valueArgs = { ...searchArgs, search_term: value };
+                        try {
+                            const valueResult = await eventIndex!.search(valueArgs);
+                            if (valueResult?.count && valueResult.count > 0) {
+                                localResult = valueResult;
+                                console.log(`Query parameter value search returned ${valueResult.count} results for "${value}"`);
+                                break;
+                            }
+                        } catch (error) {
+                            console.log(`Query parameter value search failed for "${value}":`, error);
+                        }
+                    }
                 }
             }
         }
