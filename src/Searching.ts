@@ -134,6 +134,66 @@ function generateSearchVariations(term: string): string[] {
     return [...new Set(variations)]; // Remove duplicates
 }
 
+// Enhanced relevance scoring function inspired by spotlight dialog
+function calculateRelevanceScore(searchTerm: string, content: string): number {
+    const lcSearchTerm = searchTerm.toLowerCase();
+    const lcContent = content.toLowerCase();
+    
+    let relevanceScore = 0;
+    
+    // Exact match gets highest score
+    if (lcContent.includes(lcSearchTerm)) {
+        relevanceScore += 100;
+    }
+    
+    // Word-based matching
+    const searchWords = lcSearchTerm.split(/\s+/).filter(word => word.length > 0);
+    const contentWords = lcContent.split(/\s+/).filter(word => word.length > 0);
+    
+    const hasWordMatch = searchWords.some(searchWord => 
+        contentWords.some(contentWord => contentWord.includes(searchWord))
+    );
+    
+    if (hasWordMatch) {
+        relevanceScore += searchWords.length * 10;
+    }
+    
+    // Additional relevance factors
+    const searchLength = lcSearchTerm.length;
+    const contentLength = lcContent.length;
+    
+    // Prefer shorter content for longer searches (more specific)
+    if (searchLength > 5 && contentLength < 100) {
+        relevanceScore += 20;
+    }
+    
+    // Penalize very long content unless it has exact match
+    if (contentLength > 200 && !lcContent.includes(lcSearchTerm)) {
+        relevanceScore -= 10;
+    }
+    
+    // Heavy penalty for single character matches
+    const matchedWords = searchWords.filter(searchWord => 
+        contentWords.some(contentWord => contentWord.includes(searchWord))
+    );
+    if (matchedWords.length === 1 && matchedWords[0].length <= 2) {
+        relevanceScore -= 50;
+    }
+    
+    // Penalize content with URLs unless it has exact match
+    if (content.includes('http') && !lcContent.includes(lcSearchTerm)) {
+        relevanceScore -= 30;
+    }
+    
+    return relevanceScore;
+}
+
+// Enhanced search with relevance scoring
+function enhancedSearchWithRelevance(searchTerm: string, content: string): boolean {
+    const relevanceScore = calculateRelevanceScore(searchTerm, content);
+    return relevanceScore >= 20; // Minimum threshold for relevance
+}
+
 // Enhanced search term analysis
 function analyzeSearchTerm(term: string): {
     isUrlSearch: boolean;
@@ -294,10 +354,24 @@ async function serverSideSearch(
                     // Check if we got meaningful results
                     const results = strategyResponse.search_categories?.room_events?.results;
                     if (results && results.length > 0) {
-                        console.log(`Server-side ${strategy.description} search returned ${results.length} results`);
-                        response = strategyResponse;
-                        query = body;
-                        break;
+                        // Apply relevance scoring to filter results
+                        const relevantResults = results.filter(result => {
+                            const content = result.result.content?.body || '';
+                            return enhancedSearchWithRelevance(term, content);
+                        });
+                        
+                        if (relevantResults.length > 0) {
+                            strategyResponse.search_categories.room_events.results = relevantResults;
+                            strategyResponse.search_categories.room_events.count = relevantResults.length;
+                            console.log(`Server-side ${strategy.description} search with relevance scoring returned ${relevantResults.length} results`);
+                            response = strategyResponse;
+                            query = body;
+                            break;
+                        } else {
+                            console.log(`Server-side ${strategy.description} search returned ${results.length} results but none were relevant`);
+                        }
+                    } else {
+                        console.log(`Server-side ${strategy.description} search returned ${results?.length || 0} results`);
                     }
                 } catch (error) {
                     console.log(`Server-side ${strategy.description} search failed:`, error);
@@ -504,7 +578,7 @@ async function localSearch(
             console.log("Exact search failed:", error);
         }
         
-        // Strategy 1.5: Try searching with extracted keywords
+        // Strategy 1.5: Try searching with extracted keywords and relevance scoring
         if (!localResult || localResult.count === 0) {
             for (const keyword of keywords) {
                 if (keyword !== searchTerm && keyword.length > 2) {
@@ -512,9 +586,25 @@ async function localSearch(
                     try {
                         const keywordResult = await eventIndex!.search(keywordArgs);
                         if (keywordResult?.count && keywordResult.count > 0) {
-                            localResult = keywordResult;
-                            console.log(`Keyword search returned ${keywordResult.count} results for "${keyword}"`);
-                            break;
+                            // Apply relevance scoring to filter results
+                            if (keywordResult.results) {
+                                const relevantResults = keywordResult.results.filter(result => {
+                                    const content = result.result.content?.body || '';
+                                    return enhancedSearchWithRelevance(searchTerm, content);
+                                });
+                                
+                                if (relevantResults.length > 0) {
+                                    keywordResult.results = relevantResults;
+                                    keywordResult.count = relevantResults.length;
+                                    localResult = keywordResult;
+                                    console.log(`Keyword search with relevance scoring returned ${relevantResults.length} results for "${keyword}"`);
+                                    break;
+                                }
+                            } else {
+                                localResult = keywordResult;
+                                console.log(`Keyword search returned ${keywordResult.count} results for "${keyword}"`);
+                                break;
+                            }
                         }
                     } catch (error) {
                         console.log(`Keyword search failed for "${keyword}":`, error);
@@ -847,6 +937,87 @@ async function localSearch(
                         }
                     } catch (error) {
                         console.log(`Variation search failed for "${variation}":`, error);
+                    }
+                }
+            }
+        }
+        
+        // Strategy 14: Try fuzzy matching with word-based search (inspired by spotlight dialog)
+        if (!localResult || localResult.count === 0) {
+            const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(word => word.length > 1);
+            
+            for (const word of searchWords) {
+                if (word.length >= 2) {
+                    const wordArgs = { ...searchArgs, search_term: word };
+                    try {
+                        const wordResult = await eventIndex!.search(wordArgs);
+                        if (wordResult?.count && wordResult.count > 0) {
+                            // Apply relevance scoring to filter results
+                            if (wordResult.results) {
+                                const relevantResults = wordResult.results.filter(result => {
+                                    const content = result.result.content?.body || '';
+                                    return enhancedSearchWithRelevance(searchTerm, content);
+                                });
+                                
+                                if (relevantResults.length > 0) {
+                                    wordResult.results = relevantResults;
+                                    wordResult.count = relevantResults.length;
+                                    localResult = wordResult;
+                                    console.log(`Fuzzy word search with relevance scoring returned ${relevantResults.length} results for "${word}"`);
+                                    break;
+                                }
+                            } else {
+                                localResult = wordResult;
+                                console.log(`Fuzzy word search returned ${wordResult.count} results for "${word}"`);
+                                break;
+                            }
+                        }
+                    } catch (error) {
+                        console.log(`Fuzzy word search failed for "${word}":`, error);
+                    }
+                }
+            }
+        }
+        
+        // Strategy 15: Try broad search with lower relevance threshold (fallback)
+        if (!localResult || localResult.count === 0) {
+            console.log(`Trying broad search with lower relevance threshold for "${searchTerm}"`);
+            
+            // Try with a broader search term
+            const broadTerms = [
+                searchTerm.substring(0, Math.max(3, Math.floor(searchTerm.length * 0.7))), // 70% of original term
+                searchTerm.substring(0, Math.max(2, Math.floor(searchTerm.length * 0.5))), // 50% of original term
+            ];
+            
+            for (const broadTerm of broadTerms) {
+                if (broadTerm.length >= 2 && broadTerm !== searchTerm) {
+                    const broadArgs = { ...searchArgs, search_term: broadTerm };
+                    try {
+                        const broadResult = await eventIndex!.search(broadArgs);
+                        if (broadResult?.count && broadResult.count > 0) {
+                            // Apply lower relevance threshold for broad search
+                            if (broadResult.results) {
+                                const relevantResults = broadResult.results.filter(result => {
+                                    const content = result.result.content?.body || '';
+                                    const relevanceScore = calculateRelevanceScore(searchTerm, content);
+                                    return relevanceScore >= 10; // Lower threshold for broad search
+                                });
+                                
+                                if (relevantResults.length > 0) {
+                                    broadResult.results = relevantResults;
+                                    broadResult.count = relevantResults.length;
+                                    localResult = broadResult;
+                                    console.log(`Broad search with lower threshold returned ${relevantResults.length} results for "${broadTerm}"`);
+                                    break;
+                                }
+                            } else {
+                                localResult = broadResult;
+                                console.log(`Broad search returned ${broadResult.count} results for "${broadTerm}"`);
+                                break;
+                            }
+                        }
+                    } catch (error) {
+                        console.log(`Broad search failed for "${broadTerm}":`, error);
                     }
                 }
             }
