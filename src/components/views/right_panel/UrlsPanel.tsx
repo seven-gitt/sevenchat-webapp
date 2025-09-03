@@ -9,13 +9,51 @@ interface Props {
     onClose: () => void;
 }
 
-const URL_REGEX = /https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/gi;
+// Regex để nhận diện URL có protocol
+const URL_WITH_PROTOCOL_REGEX = /https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/gi;
+// Regex để nhận diện domain pattern (ví dụ: example.com, sub.example.com)
+// Chỉ nhận diện domain có ít nhất 2 phần và phần cuối có ít nhất 2 ký tự
+const DOMAIN_REGEX = /\b(?:[\w-]+\.)+[\w-]{2,}\b(?:\/[\w\-._~:/?#[\]@!$&'()*+,;=%]*)?/gi;
 
-function extractUrlsFromEvent(ev: MatrixEvent): string[] {
+interface UrlInfo {
+    original: string;
+    processed: string;
+}
+
+function extractUrlsFromEvent(ev: MatrixEvent): UrlInfo[] {
     if (ev.getType() !== "m.room.message") return [];
     const content = ev.getContent();
     if (typeof content.body !== "string") return [];
-    return content.body.match(URL_REGEX) || [];
+    
+    const urls: UrlInfo[] = [];
+    
+    // Tìm URL có protocol
+    const protocolMatches = content.body.match(URL_WITH_PROTOCOL_REGEX) || [];
+    protocolMatches.forEach(url => {
+        urls.push({ original: url, processed: url });
+    });
+    
+    // Tìm domain patterns và loại bỏ những cái đã có protocol
+    const domainMatches = content.body.match(DOMAIN_REGEX) || [];
+    const protocolDomains = new Set(protocolMatches.map(url => {
+        try {
+            return new URL(url).hostname;
+        } catch {
+            return url;
+        }
+    }));
+    
+    // Thêm domain không có protocol
+    domainMatches.forEach(domain => {
+        if (!protocolDomains.has(domain)) {
+            // Kiểm tra xem có phải là domain hợp lệ không
+            if (domain.includes('.') && !domain.startsWith('.')) {
+                urls.push({ original: domain, processed: 'https://' + domain });
+            }
+        }
+    });
+    
+    return urls;
 }
 
 const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
@@ -101,10 +139,10 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
                 <div style={{padding: 16}}>
                     <ul style={{listStyle: 'none', padding: 0, margin: 0}}>
                         {filteredUrlEvents.map(({ev, urls}, idx) => (
-                            urls.map((url, i) => (
+                            urls.map((urlInfo, i) => (
                                 <li key={ev.getId() + '-' + i} style={{marginBottom: 16, borderBottom: '1px solid #eee', paddingBottom: 8}}>
                                     <div>
-                                        <a href={url} target="_blank" rel="noopener noreferrer" style={{color: '#1976d2', wordBreak: 'break-all'}}>{url}</a>
+                                        <a href={urlInfo.processed} target="_blank" rel="noopener noreferrer" style={{color: '#1976d2', wordBreak: 'break-all'}}>{urlInfo.original}</a>
                                     </div>
                                     <div style={{fontSize: 12, color: '#888', marginTop: 2}}>
                                         {ev.getSender() || "(unknown)"} &bull; {new Date(ev.getTs()).toLocaleString()}
