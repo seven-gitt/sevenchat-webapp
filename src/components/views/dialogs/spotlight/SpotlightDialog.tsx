@@ -825,15 +825,7 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
                             {filterToLabel(Filter.PublicSpaces)}
                         </Option>
                     )}
-                    {filter !== Filter.PublicRooms && (
-                        <Option
-                            id="mx_SpotlightDialog_button_explorePublicRooms"
-                            className="mx_SpotlightDialog_explorePublicRooms"
-                            onClick={() => setFilter(Filter.PublicRooms)}
-                        >
-                            {filterToLabel(Filter.PublicRooms)}
-                        </Option>
-                    )}
+                    {/* Hide Explore Public Rooms option */}
                     {filter !== Filter.People && (
                         <Option
                             id="mx_SpotlightDialog_button_startChat"

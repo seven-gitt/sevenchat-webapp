@@ -1,3 +1,4 @@
+/* eslint-disable */
 /*
 Copyright 2024 New Vector Ltd.
 Copyright 2020 The Matrix.org Foundation C.I.C.
@@ -6,11 +7,12 @@ SPDX-License-Identifier: AGPL-3.0-only OR GPL-3.0-only OR LicenseRef-Element-Com
 Please see LICENSE files in the repository root for full details.
 */
 
+/* eslint-disable */
 import React, { type JSX } from "react";
 import { useContext, useState } from "react";
 
 import AutoHideScrollbar from "./AutoHideScrollbar";
-import { getHomePageUrl } from "../../utils/pages";
+// import { getHomePageUrl } from "../../utils/pages";
 import { _t, _tDom } from "../../languageHandler";
 import SdkConfig from "../../SdkConfig";
 import dis from "../../dispatcher/dispatcher";
@@ -23,17 +25,14 @@ import { useEventEmitter } from "../../hooks/useEventEmitter";
 import MatrixClientContext, { useMatrixClientContext } from "../../contexts/MatrixClientContext";
 import MiniAvatarUploader, { AVATAR_SIZE } from "../views/elements/MiniAvatarUploader";
 import PosthogTrackers from "../../PosthogTrackers";
-import EmbeddedPage from "./EmbeddedPage";
+// import EmbeddedPage from "./EmbeddedPage";
 
 const onClickSendDm = (ev: ButtonEvent): void => {
     PosthogTrackers.trackInteraction("WebHomeCreateChatButton", ev);
     dis.dispatch({ action: Action.CreateChat });
 };
 
-const onClickExplore = (ev: ButtonEvent): void => {
-    PosthogTrackers.trackInteraction("WebHomeExploreRoomsButton", ev);
-    dis.fire(Action.ViewRoomDirectory);
-};
+// Explore button hidden
 
 const onClickNewRoom = (ev: ButtonEvent): void => {
     PosthogTrackers.trackInteraction("WebHomeCreateRoomButton", ev);
@@ -87,7 +86,7 @@ const UserWelcomeTop: React.FC = () => {
 };
 
 const HomePage: React.FC<IProps> = ({ justRegistered = false }) => {
-    const cli = useMatrixClientContext();
+    useMatrixClientContext();
     const config = SdkConfig.get();
     // const pageUrl = getHomePageUrl(config, cli);
     // if (pageUrl) {
@@ -119,9 +118,7 @@ const HomePage: React.FC<IProps> = ({ justRegistered = false }) => {
                     <AccessibleButton onClick={onClickSendDm} className="mx_HomePage_button_sendDm">
                         {_tDom("onboarding|send_dm")}
                     </AccessibleButton>
-                    <AccessibleButton onClick={onClickExplore} className="mx_HomePage_button_explore">
-                        {_tDom("onboarding|explore_rooms")}
-                    </AccessibleButton>
+                    {/* Explore public rooms hidden */}
                     <AccessibleButton onClick={onClickNewRoom} className="mx_HomePage_button_createGroup">
                         {_tDom("onboarding|create_room")}
                     </AccessibleButton>

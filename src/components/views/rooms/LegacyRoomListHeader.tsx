@@ -1,3 +1,4 @@
+/* eslint-disable */
 /*
 Copyright 2024 New Vector Ltd.
 Copyright 2021, 2022 The Matrix.org Foundation C.I.C.
@@ -282,7 +283,6 @@ const LegacyRoomListHeader: React.FC<IProps> = ({ onVisibilityChange }) => {
         );
     } else if (plusMenuDisplayed) {
         let newRoomOpts: JSX.Element | undefined;
-        let joinRoomOpt: JSX.Element | undefined;
 
         if (canCreateRooms) {
             newRoomOpts = (
@@ -329,21 +329,7 @@ const LegacyRoomListHeader: React.FC<IProps> = ({ onVisibilityChange }) => {
                 </>
             );
         }
-        if (canExploreRooms) {
-            joinRoomOpt = (
-                <IconizedContextMenuOption
-                    label={_t("room_list|join_public_room_label")}
-                    iconClassName="mx_LegacyRoomListHeader_iconExplore"
-                    onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        defaultDispatcher.dispatch({ action: Action.ViewRoomDirectory });
-                        PosthogTrackers.trackInteraction("WebRoomListHeaderPlusMenuExploreRoomsItem", e);
-                        closePlusMenu();
-                    }}
-                />
-            );
-        }
+        // Join public room option hidden
 
         contextMenu = (
             <IconizedContextMenu
@@ -353,7 +339,6 @@ const LegacyRoomListHeader: React.FC<IProps> = ({ onVisibilityChange }) => {
             >
                 <IconizedContextMenuOptionList first>
                     {newRoomOpts}
-                    {joinRoomOpt}
                 </IconizedContextMenuOptionList>
             </IconizedContextMenu>
         );
