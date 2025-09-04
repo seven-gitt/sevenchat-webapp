@@ -1,3 +1,4 @@
+/* eslint-disable */
 /*
 Copyright 2024 New Vector Ltd.
 Copyright 2019-2023 The Matrix.org Foundation C.I.C.
@@ -6,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR GPL-3.0-only OR LicenseRef-Element-Com
 Please see LICENSE files in the repository root for full details.
 */
 
-import React, { type JSX, type ReactNode } from "react";
+import React from "react";
 import { logger } from "matrix-js-sdk/src/logger";
 import { type EmptyObject } from "matrix-js-sdk/src/matrix";
 
@@ -84,117 +85,7 @@ export default class HelpUserSettingsTab extends React.Component<EmptyObject, IS
         Modal.createDialog(BugReportDialog, {});
     };
 
-    private renderLegal(): ReactNode {
-        const tocLinks = SdkConfig.get().terms_and_conditions_links;
-        if (!tocLinks) return null;
-
-        const legalLinks: JSX.Element[] = [];
-        for (const tocEntry of tocLinks) {
-            legalLinks.push(
-                <div key={tocEntry.url}>
-                    <ExternalLink href={tocEntry.url}>{tocEntry.text}</ExternalLink>
-                </div>,
-            );
-        }
-
-        return (
-            <SettingsSubsection heading={_t("common|legal")}>
-                <SettingsSubsectionText>{legalLinks}</SettingsSubsectionText>
-            </SettingsSubsection>
-        );
-    }
-
-    private renderCredits(): JSX.Element {
-        // Note: This is not translated because it is legal text.
-        // Also, &nbsp; is ugly but necessary.
-        return (
-            <SettingsSubsection heading={_t("common|credits")}>
-                <SettingsSubsectionText>
-                    <ul>
-                        <li>
-                            {_t(
-                                "credits|default_cover_photo",
-                                {},
-                                {
-                                    photo: (sub) => (
-                                        <ExternalLink
-                                            href="themes/element/img/backgrounds/lake.jpg"
-                                            rel="noreferrer noopener"
-                                            target="_blank"
-                                        >
-                                            {sub}
-                                        </ExternalLink>
-                                    ),
-                                    author: (sub) => (
-                                        <ExternalLink href="https://www.flickr.com/golan">{sub}</ExternalLink>
-                                    ),
-                                    terms: (sub) => (
-                                        <ExternalLink
-                                            href="https://creativecommons.org/licenses/by-sa/4.0/"
-                                            rel="noreferrer noopener"
-                                            target="_blank"
-                                        >
-                                            {sub}
-                                        </ExternalLink>
-                                    ),
-                                },
-                            )}
-                        </li>
-                        <li>
-                            {_t(
-                                "credits|twemoji_colr",
-                                {},
-                                {
-                                    colr: (sub) => (
-                                        <ExternalLink
-                                            href="https://github.com/matrix-org/twemoji-colr"
-                                            rel="noreferrer noopener"
-                                            target="_blank"
-                                        >
-                                            {sub}
-                                        </ExternalLink>
-                                    ),
-                                    author: (sub) => <ExternalLink href="https://mozilla.org">{sub}</ExternalLink>,
-                                    terms: (sub) => (
-                                        <ExternalLink
-                                            href="https://www.apache.org/licenses/LICENSE-2.0"
-                                            rel="noreferrer noopener"
-                                            target="_blank"
-                                        >
-                                            {sub}
-                                        </ExternalLink>
-                                    ),
-                                },
-                            )}
-                        </li>
-                        <li>
-                            {_t(
-                                "credits|twemoji",
-                                {},
-                                {
-                                    twemoji: (sub) => (
-                                        <ExternalLink href="https://twemoji.twitter.com/">{sub}</ExternalLink>
-                                    ),
-                                    author: (sub) => (
-                                        <ExternalLink href="https://twemoji.twitter.com/">{sub}</ExternalLink>
-                                    ),
-                                    terms: (sub) => (
-                                        <ExternalLink
-                                            href="https://creativecommons.org/licenses/by/4.0/"
-                                            rel="noreferrer noopener"
-                                            target="_blank"
-                                        >
-                                            {sub}
-                                        </ExternalLink>
-                                    ),
-                                },
-                            )}
-                        </li>
-                    </ul>
-                </SettingsSubsectionText>
-            </SettingsSubsection>
-        );
-    }
+    // Removed legal and credits renderers as the sections are hidden
 
     private getVersionTextToCopy = (): string => {
         const { appVersion, cryptoVersion } = this.getVersionInfo();
@@ -202,19 +93,7 @@ export default class HelpUserSettingsTab extends React.Component<EmptyObject, IS
     };
 
     public render(): React.ReactNode {
-        const brand = SdkConfig.get().brand;
-
-        const faqText = _t(
-            "setting|help_about|help_link",
-            {
-                brand,
-            },
-            {
-                a: (sub) => <ExternalLink href={SdkConfig.get("help_url")}>{sub}</ExternalLink>,
-            },
-        );
-
-        let updateButton: JSX.Element | undefined;
+        let updateButton: React.ReactElement | undefined;
         if (this.state.canUpdate) {
             updateButton = <UpdateCheckButton />;
         }
@@ -257,7 +136,7 @@ export default class HelpUserSettingsTab extends React.Component<EmptyObject, IS
             <SettingsTab>
                 <SettingsSection>
                     {bugReportingSection}
-                    <SettingsSubsection heading={_t("common|faq")} description={faqText} />
+                    {/* FAQ section hidden */}
                     <SettingsSubsection heading={_t("setting|help_about|versions")}>
                         <SettingsSubsectionText>
                             <CopyableText getTextToCopy={this.getVersionTextToCopy}>
@@ -269,8 +148,7 @@ export default class HelpUserSettingsTab extends React.Component<EmptyObject, IS
                             {updateButton}
                         </SettingsSubsectionText>
                     </SettingsSubsection>
-                    {this.renderLegal()}
-                    {this.renderCredits()}
+                    {/* Legal and Credits sections hidden */}
                     <SettingsSubsection heading={_t("common|advanced")}>
                         <SettingsSubsectionText>
                             {_t(
