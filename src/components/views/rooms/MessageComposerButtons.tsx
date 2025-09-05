@@ -44,12 +44,11 @@ import { filterBoolean } from "../../../utils/arrays";
 import { useSettingValue } from "../../../hooks/useSettings";
 import AccessibleButton, { type ButtonEvent } from "../elements/AccessibleButton";
 import { useScopedRoomContext } from "../../../contexts/ScopedRoomContext";
-import ContextMenu, { aboveLeftOf, useContextMenu, ChevronFace } from "../../structures/ContextMenu";
-import RoomContext from "../../../contexts/RoomContext";
+import ContextMenu, { aboveLeftOf, useContextMenu } from "../../structures/ContextMenu";
 import { useTheme } from "../../../hooks/useTheme";
 import { type ImageInfo } from "matrix-js-sdk/src/types";
 import stickerRepository, { type Sticker } from "../../../utils/StickerRepository";
-import { createThumbnail } from "../../../utils/image-media";
+import { gifOptimizer } from "../../../utils/GifOptimizer";
 
 interface IProps {
     addContent: (content: string) => boolean;
@@ -191,10 +190,13 @@ function GifButton({
     const [error, setError] = useState("");
     const [uploadError, setUploadError] = useState("");
     const [recentGifs, setRecentGifs] = useState<string[]>([]);
+    const [searchCache, setSearchCache] = useState<Map<string, any[]>>(new Map());
+    const [uploadingGif, setUploadingGif] = useState<string | null>(null);
 
-    // Khi menuDisplayed hoặc search thay đổi, nếu search rỗng thì load recentGifs và setGifs ngay lập tức
+    // Debounced search effect với caching
     useEffect(() => {
         if (!menuDisplayed) return;
+        
         if (search.trim() === "") {
             const stored = localStorage.getItem("recentGifs");
             let recents: string[] = [];
@@ -207,42 +209,75 @@ function GifButton({
             setGifs(recents.map((url) => ({ id: url, media_formats: { gif: { url } } })));
             setLoading(false);
             setError("");
+            
+            // Preload recent GIFs for faster display
+            if (recents.length > 0) {
+                gifOptimizer.preloadGifs(recents.slice(0, 5));
+            }
             return;
         }
-        // Nếu có keyword thì fetch GIFs
-        setLoading(true);
-        setError("");
-        setUploadError("");
-        const key = "AIzaSyAMs-zGFu1BFxDdc6p9f1K84snQadw9uGw";
-        const q = search.trim();
-        fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(q)}&key=${key}&limit=100&media_filter=gif`)
-            .then((res) => res.json())
-            .then((data) => {
-                setGifs(data.results || []);
-                setLoading(false);
-            })
-            .catch(() => {
-                setError("Không thể tải GIF. Vui lòng thử lại.");
-                setLoading(false);
-            });
-    }, [menuDisplayed, search]);
+
+        // Kiểm tra cache trước
+        const cached = searchCache.get(search.trim());
+        if (cached) {
+            setGifs(cached);
+            setLoading(false);
+            setError("");
+            return;
+        }
+
+        // Debounce search requests
+        const timeoutId = setTimeout(() => {
+            setLoading(true);
+            setError("");
+            setUploadError("");
+            
+            const key = "AIzaSyAMs-zGFu1BFxDdc6p9f1K84snQadw9uGw";
+            const q = search.trim();
+            
+            // Giảm limit để tăng tốc độ
+            fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(q)}&key=${key}&limit=20&media_filter=gif`)
+                .then((res) => res.json())
+                .then((data) => {
+                    const results = data.results || [];
+                    setGifs(results);
+                    // Cache kết quả
+                    setSearchCache(prev => new Map(prev).set(q, results));
+                    setLoading(false);
+                })
+                .catch(() => {
+                    setError("Không thể tải GIF. Vui lòng thử lại.");
+                    setLoading(false);
+                });
+        }, 300); // 300ms debounce
+
+        return () => clearTimeout(timeoutId);
+    }, [menuDisplayed, search, searchCache]);
 
     async function handleGifClick(gifUrl: string) {
         setUploadError("");
-        if (!room) return;
+        if (!room || uploadingGif === gifUrl) return;
+        
+        setUploadingGif(gifUrl);
         try {
-            const res = await fetch(gifUrl);
-            const blob = await res.blob();
-            // Lấy tên file từ url hoặc random
-            const fileName = gifUrl.split("/").pop()?.split("?")[0] || `tenor.gif`;
-            const file = new File([blob], fileName, { type: blob.type || "image/gif" });
-            await ContentMessages.sharedInstance().sendContentToRoom(
-                file,
-                room.roomId,
-                relation,
-                matrixClient,
-                undefined, // replyToEvent nếu cần, có thể truyền thêm
-            );
+            // Sử dụng GifOptimizer để tối ưu hóa
+            const optimizedUrl = gifOptimizer.getOptimizedUrl(gifUrl, 'small');
+            
+            const res = await fetch(optimizedUrl);
+            if (!res.ok) {
+                // Fallback to original URL
+                const fallbackRes = await fetch(gifUrl);
+                const blob = await fallbackRes.blob();
+                // Compress GIF nếu quá lớn
+                const compressedBlob = await gifOptimizer.compressGif(blob, 500);
+                await uploadGifFile(compressedBlob, gifUrl);
+            } else {
+                const blob = await res.blob();
+                // Compress GIF nếu quá lớn
+                const compressedBlob = await gifOptimizer.compressGif(blob, 500);
+                await uploadGifFile(compressedBlob, gifUrl);
+            }
+            
             // Lưu vào recentGifs (localStorage)
             let updated = [gifUrl, ...recentGifs.filter((url) => url !== gifUrl)];
             if (updated.length > 20) updated = updated.slice(0, 20);
@@ -252,7 +287,22 @@ function GifButton({
             overflowMenuCloser?.();
         } catch (e) {
             setUploadError("Không tải lên được GIF. Vui lòng thử lại.");
+        } finally {
+            setUploadingGif(null);
         }
+    }
+
+    async function uploadGifFile(blob: Blob, originalUrl: string) {
+        const fileName = originalUrl.split("/").pop()?.split("?")[0] || `tenor.gif`;
+        const file = new File([blob], fileName, { type: blob.type || "image/gif" });
+        
+        await ContentMessages.sharedInstance().sendContentToRoom(
+            file,
+            room!.roomId,
+            relation,
+            matrixClient,
+            undefined,
+        );
     }
 
     function handleRemoveRecentGif(gifUrl: string) {
@@ -321,25 +371,55 @@ function GifButton({
                         <div style={gridStyle}>
                             {gifs.map((gif, idx) => {
                                 const gifUrl = gif.media_formats?.gif?.url || gif.media[0]?.gif?.url;
-                                // Nếu là recentGifs (search rỗng), hiển thị nút X
                                 const isRecent = search.trim() === "" && recentGifs.includes(gifUrl);
+                                const isUploading = uploadingGif === gifUrl;
+                                
+                                // Sử dụng GifOptimizer cho preview nhanh hơn
+                                const previewUrl = gifOptimizer.getOptimizedUrl(
+                                    gif.media_formats?.tinygif?.url || 
+                                    gif.media_formats?.nanogif?.url || 
+                                    gifUrl, 
+                                    'tiny'
+                                );
+                                
                                 return (
                                     <div key={gif.id || idx} style={{ position: "relative" }}>
                                         <img
-                                            src={gifUrl}
+                                            src={previewUrl}
                                             alt={gif.content_description || "gif"}
                                             style={{
                                                 width: 70,
                                                 height: 70,
                                                 objectFit: "cover",
                                                 borderRadius: 6,
-                                                cursor: "pointer",
+                                                cursor: isUploading ? "not-allowed" : "pointer",
                                                 background: isDark ? "#222" : "#eee",
+                                                opacity: isUploading ? 0.6 : 1,
+                                                transition: "opacity 0.2s",
                                             }}
-                                            onClick={() => handleGifClick(gifUrl)}
+                                            onClick={() => !isUploading && handleGifClick(gifUrl)}
                                             loading="lazy"
                                         />
-                                        {isRecent && (
+                                        {isUploading && (
+                                            <div style={{
+                                                position: "absolute",
+                                                top: "50%",
+                                                left: "50%",
+                                                transform: "translate(-50%, -50%)",
+                                                background: "rgba(0,0,0,0.7)",
+                                                color: "white",
+                                                borderRadius: "50%",
+                                                width: 24,
+                                                height: 24,
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                fontSize: 12,
+                                            }}>
+                                                ⏳
+                                            </div>
+                                        )}
+                                        {isRecent && !isUploading && (
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
