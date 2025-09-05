@@ -18,7 +18,7 @@ import RolesRoomSettingsTab from "../settings/tabs/room/RolesRoomSettingsTab";
 import GeneralRoomSettingsTab from "../settings/tabs/room/GeneralRoomSettingsTab";
 import SecurityRoomSettingsTab from "../settings/tabs/room/SecurityRoomSettingsTab";
 import NotificationSettingsTab from "../settings/tabs/room/NotificationSettingsTab";
-import BridgeSettingsTab from "../settings/tabs/room/BridgeSettingsTab";
+// import BridgeSettingsTab from "../settings/tabs/room/BridgeSettingsTab";
 import { MatrixClientPeg } from "../../../MatrixClientPeg";
 import dis from "../../../dispatcher/dispatcher";
 import SettingsStore from "../../../settings/SettingsStore";
@@ -187,17 +187,18 @@ class RoomSettingsDialog extends React.Component<IProps, IState> {
             ),
         );
 
-        if (SettingsStore.getValue("feature_bridge_state")) {
-            tabs.push(
-                new Tab(
-                    RoomSettingsTab.Bridges,
-                    _td("room_settings|bridges|title"),
-                    "mx_RoomSettingsDialog_bridgesIcon",
-                    <BridgeSettingsTab room={this.state.room} />,
-                    "RoomSettingsBridges",
-                ),
-            );
-        }
+        // Hide Bridge tab
+        // if (SettingsStore.getValue("feature_bridge_state")) {
+        //     tabs.push(
+        //         new Tab(
+        //             RoomSettingsTab.Bridges,
+        //             _td("room_settings|bridges|title"),
+        //             "mx_RoomSettingsDialog_bridgesIcon",
+        //             <BridgeSettingsTab room={this.state.room} />,
+        //             "RoomSettingsBridges",
+        //         ),
+        //     );
+        // }
 
         tabs.push(
             new Tab(
