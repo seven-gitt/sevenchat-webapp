@@ -7,7 +7,7 @@
 
 import React, { type JSX } from "react";
 import { Button } from "@vector-im/compound-web";
-import ExploreIcon from "@vector-im/compound-design-tokens/assets/web/icons/explore";
+import UserProfileIcon from "@vector-im/compound-design-tokens/assets/web/icons/user-profile";
 import SearchIcon from "@vector-im/compound-design-tokens/assets/web/icons/search";
 import DialPadIcon from "@vector-im/compound-design-tokens/assets/web/icons/dial-pad";
 
@@ -23,6 +23,7 @@ import defaultDispatcher from "../../../../dispatcher/dispatcher";
 import { Flex } from "../../../utils/Flex";
 import { useTypedEventEmitterState } from "../../../../hooks/useEventEmitter";
 import LegacyCallHandler, { LegacyCallHandlerEvent } from "../../../../LegacyCallHandler";
+import { Filter } from "../../dialogs/spotlight/Filter";
 
 type RoomListSearchProps = {
     /**
@@ -77,11 +78,14 @@ export function RoomListSearch({ activeSpace }: RoomListSearchProps): JSX.Elemen
                     className="mx_RoomListSearch_button"
                     kind="secondary"
                     size="sm"
-                    Icon={ExploreIcon}
+                    Icon={UserProfileIcon}
                     iconOnly={true}
                     aria-label={_t("action|explore_rooms")}
                     onClick={(ev) => {
-                        defaultDispatcher.fire(Action.ViewRoomDirectory);
+                        defaultDispatcher.dispatch({
+                            action: Action.OpenSpotlight,
+                            initialFilter: Filter.People,
+                        });
                         PosthogTrackers.trackInteraction("WebLeftPanelExploreRoomsButton", ev);
                     }}
                 />

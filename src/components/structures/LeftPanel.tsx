@@ -17,6 +17,7 @@ import LegacyCallHandler, { LegacyCallHandlerEvent } from "../../LegacyCallHandl
 import { HEADER_HEIGHT } from "../views/rooms/RoomSublist";
 import { Action } from "../../dispatcher/actions";
 import RoomSearch from "./RoomSearch";
+import { Filter } from "../views/dialogs/spotlight/Filter";
 import type ResizeNotifier from "../../utils/ResizeNotifier";
 import SpaceStore from "../../stores/spaces/SpaceStore";
 import { MetaSpace, type SpaceKey, UPDATE_SELECTED_SPACE } from "../../stores/spaces";
@@ -120,7 +121,10 @@ export default class LeftPanel extends React.Component<IProps, IState> {
     };
 
     private onExplore = (ev: ButtonEvent): void => {
-        dis.fire(Action.ViewRoomDirectory);
+        dis.dispatch({
+            action: Action.OpenSpotlight,
+            initialFilter: Filter.People,
+        });
         PosthogTrackers.trackInteraction("WebLeftPanelExploreRoomsButton", ev);
     };
 

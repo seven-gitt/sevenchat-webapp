@@ -55,7 +55,7 @@
         "exit_fullscreeen": "Thoát toàn màn hình",
         "expand": "Mở rộng",
         "explore_public_rooms": "Khám phá các phòng chung",
-        "explore_rooms": "Khám phá các phòng",
+        "explore_rooms": "Danh bạ",
         "export": "Xuất",
         "forward": "Chuyển tiếp",
         "go": "Đi",
@@ -1361,7 +1361,7 @@
     },
     "onboarding": {
         "create_room": "Tạo một cuộc trò chuyện nhóm",
-        "explore_rooms": "Khám phá các phòng chung",
+        "explore_rooms": "Danh bạ",
         "has_avatar_label": "Tuyệt vời, điều đó sẽ giúp mọi người biết đó là bạn",
         "intro_byline": "Sở hữu các cuộc trò chuyện của bạn.",
         "intro_welcome": "Chào mừng bạn đến với %(appName)s",
