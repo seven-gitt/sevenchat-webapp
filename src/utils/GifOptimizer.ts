@@ -4,6 +4,8 @@ Copyright 2024 New Vector Ltd.
 SPDX-License-Identifier: AGPL-3.0-only OR GPL-3.0-only OR LicenseRef-Element-Commercial
 */
 
+import { blobIsAnimated } from "./Image";
+
 /**
  * Utility class for optimizing GIF performance
  */
@@ -86,15 +88,29 @@ export class GifOptimizer {
     }
 
     /**
-     * Compress GIF blob if possible
+     * Compress image blob if possible (but preserve GIF animation)
      */
     async compressGif(blob: Blob, maxSizeKB: number = 500): Promise<Blob> {
         if (blob.size <= maxSizeKB * 1024) {
             return blob;
         }
 
+        // Don't compress animated GIFs as it will break animation
+        if (blob.type === 'image/gif') {
+            try {
+                const isAnimated = await blobIsAnimated(blob.type, blob);
+                if (isAnimated) {
+                    console.log('Skipping compression for animated GIF to preserve animation');
+                    return blob;
+                }
+            } catch (error) {
+                console.warn('Could not check if GIF is animated, skipping compression:', error);
+                return blob;
+            }
+        }
+
         try {
-            // Create a canvas to compress the GIF
+            // Create a canvas to compress the image
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             if (!ctx) return blob;
@@ -121,10 +137,11 @@ export class GifOptimizer {
                     ctx.drawImage(img, 0, 0, width, height);
                     
                     // Convert to blob with reduced quality
+                    // Use JPEG for better compression for static images
                     canvas.toBlob((compressedBlob) => {
                         URL.revokeObjectURL(objectUrl);
                         resolve(compressedBlob || blob);
-                    }, 'image/jpeg', 0.8); // Use JPEG for better compression
+                    }, 'image/jpeg', 0.8);
                 };
                 
                 img.onerror = () => {
@@ -135,7 +152,7 @@ export class GifOptimizer {
                 img.src = objectUrl;
             });
         } catch (error) {
-            console.warn('Failed to compress GIF:', error);
+            console.warn('Failed to compress image:', error);
             return blob;
         }
     }

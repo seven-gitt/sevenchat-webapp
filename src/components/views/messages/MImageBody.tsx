@@ -132,10 +132,10 @@ export class MImageBodyInner extends React.Component<IProps, IState> {
     };
 
     private get shouldAutoplay(): boolean {
-        return !(
-            !this.state.contentUrl ||
-            !this.props.mediaVisible ||
-            !this.state.isAnimated ||
+        return (
+            this.state.contentUrl &&
+            this.props.mediaVisible &&
+            this.state.isAnimated &&
             SettingsStore.getValue("autoplayGifs")
         );
     }

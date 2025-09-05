@@ -25,12 +25,21 @@ function extractUrlsFromEvent(ev: MatrixEvent): UrlInfo[] {
     const content = ev.getContent();
     if (typeof content.body !== "string") return [];
     
+    // Kiểm tra xem tin nhắn có phải là media message không
+    const msgtype = content.msgtype;
+    if (msgtype === "m.image" || msgtype === "m.video" || msgtype === "m.audio" || msgtype === "m.file") {
+        return []; // Không extract URL từ media messages
+    }
+    
     const urls: UrlInfo[] = [];
     
     // Tìm URL có protocol
     const protocolMatches = content.body.match(URL_WITH_PROTOCOL_REGEX) || [];
     protocolMatches.forEach(url => {
-        urls.push({ original: url, processed: url });
+        // Lọc bỏ các URL của file media
+        if (!isMediaUrl(url)) {
+            urls.push({ original: url, processed: url });
+        }
     });
     
     // Tìm domain patterns và loại bỏ những cái đã có protocol
@@ -48,12 +57,71 @@ function extractUrlsFromEvent(ev: MatrixEvent): UrlInfo[] {
         if (!protocolDomains.has(domain)) {
             // Kiểm tra xem có phải là domain hợp lệ không
             if (domain.includes('.') && !domain.startsWith('.')) {
-                urls.push({ original: domain, processed: 'https://' + domain });
+                const fullUrl = 'https://' + domain;
+                if (!isMediaUrl(fullUrl)) {
+                    urls.push({ original: domain, processed: fullUrl });
+                }
             }
         }
     });
     
     return urls;
+}
+
+// Hàm kiểm tra xem URL có phải là file media không
+function isMediaUrl(url: string): boolean {
+    try {
+        const urlObj = new URL(url);
+        const pathname = urlObj.pathname.toLowerCase();
+        const hostname = urlObj.hostname.toLowerCase();
+        
+        // Kiểm tra extension của file
+        const mediaExtensions = [
+            '.gif', '.jpg', '.jpeg', '.png', '.webp', '.svg', '.bmp', '.ico', // Images
+            '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv', // Videos
+            '.mp3', '.wav', '.ogg', '.aac', '.flac', '.m4a', // Audio
+            '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', // Documents
+            '.zip', '.rar', '.7z', '.tar', '.gz' // Archives
+        ];
+        
+        // Kiểm tra extension
+        if (mediaExtensions.some(ext => pathname.endsWith(ext))) {
+            return true;
+        }
+        
+        // Kiểm tra các domain chuyên về media
+        const mediaDomains = [
+            'media.tenor.com',
+            'c.tenor.com',
+            'media.giphy.com',
+            'i.giphy.com',
+            'cdn.discordapp.com',
+            'media.discordapp.net',
+            'i.imgur.com',
+            'imgur.com',
+            'gyazo.com',
+            'prnt.sc',
+            'prntscr.com'
+        ];
+        
+        if (mediaDomains.some(domain => hostname.includes(domain))) {
+            return true;
+        }
+        
+        // Kiểm tra các pattern đặc biệt
+        if (pathname.includes('/media/') || 
+            pathname.includes('/image/') || 
+            pathname.includes('/video/') ||
+            pathname.includes('/file/') ||
+            pathname.includes('/attachment/')) {
+            return true;
+        }
+        
+        return false;
+    } catch {
+        // Nếu không parse được URL, coi như không phải media
+        return false;
+    }
 }
 
 const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {

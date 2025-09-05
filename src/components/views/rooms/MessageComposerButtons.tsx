@@ -260,23 +260,32 @@ function GifButton({
         
         setUploadingGif(gifUrl);
         try {
-            // Sử dụng GifOptimizer để tối ưu hóa
-            const optimizedUrl = gifOptimizer.getOptimizedUrl(gifUrl, 'small');
-            
-            const res = await fetch(optimizedUrl);
+            // Luôn sử dụng full GIF URL để đảm bảo animation được bảo toàn
+            const res = await fetch(gifUrl);
             if (!res.ok) {
-                // Fallback to original URL
-                const fallbackRes = await fetch(gifUrl);
-                const blob = await fallbackRes.blob();
-                // Compress GIF nếu quá lớn
-                const compressedBlob = await gifOptimizer.compressGif(blob, 500);
-                await uploadGifFile(compressedBlob, gifUrl);
-            } else {
-                const blob = await res.blob();
-                // Compress GIF nếu quá lớn
-                const compressedBlob = await gifOptimizer.compressGif(blob, 500);
-                await uploadGifFile(compressedBlob, gifUrl);
+                throw new Error(`Failed to fetch GIF: ${res.statusText}`);
             }
+            
+            const blob = await res.blob();
+            
+            // Chỉ compress nếu không phải animated GIF
+            let finalBlob = blob;
+            if (blob.type === 'image/gif') {
+                try {
+                    const isAnimated = await gifOptimizer.getGifMetadata(gifUrl);
+                    if (!isAnimated?.isAnimated) {
+                        // Chỉ compress static GIF
+                        finalBlob = await gifOptimizer.compressGif(blob, 500);
+                    }
+                } catch (error) {
+                    console.warn('Could not check GIF animation, using original:', error);
+                }
+            } else {
+                // Compress non-GIF images
+                finalBlob = await gifOptimizer.compressGif(blob, 500);
+            }
+            
+            await uploadGifFile(finalBlob, gifUrl);
             
             // Lưu vào recentGifs (localStorage)
             let updated = [gifUrl, ...recentGifs.filter((url) => url !== gifUrl)];
