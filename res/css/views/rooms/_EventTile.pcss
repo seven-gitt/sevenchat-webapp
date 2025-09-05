@@ -215,6 +215,9 @@ $left-gutter: 64px;
             .mx_EventTile_line {
                 background-color: $event-highlight-bg-color;
             }
+            
+            /* Flash animation for reply navigation */
+            animation: simple-flash 3s ease-out;
         }
 
         &:focus-visible:focus-within,
@@ -1478,5 +1481,24 @@ $left-gutter: 64px;
 @media only screen and (max-width: 480px) {
     .mx_EventTile_content {
         margin-right: 0;
+    }
+}
+
+/* Flash animation for reply navigation */
+@keyframes simple-flash {
+    0% {
+        background-color: rgba(0, 123, 255, 0.3);
+    }
+    30% {
+        background-color: rgba(0, 123, 255, 0.25);
+    }
+    60% {
+        background-color: rgba(0, 123, 255, 0.15);
+    }
+    80% {
+        background-color: rgba(0, 123, 255, 0.08);
+    }
+    100% {
+        background-color: transparent;
     }
 }

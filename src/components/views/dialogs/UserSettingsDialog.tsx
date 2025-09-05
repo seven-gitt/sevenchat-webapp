@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR GPL-3.0-only OR LicenseRef-Element-Com
 Please see LICENSE files in the repository root for full details.
 */
 
-import { ClientEvent, type MatrixEvent } from "matrix-js-sdk/src/matrix";
+// import { ClientEvent, type MatrixEvent } from "matrix-js-sdk/src/matrix";
 import { Toast } from "@vector-im/compound-web";
 import React, { type JSX, useState } from "react";
 import UserProfileIcon from "@vector-im/compound-design-tokens/assets/web/icons/user-profile";
@@ -16,19 +16,16 @@ import VisibilityOnIcon from "@vector-im/compound-design-tokens/assets/web/icons
 import NotificationsIcon from "@vector-im/compound-design-tokens/assets/web/icons/notifications";
 import PreferencesIcon from "@vector-im/compound-design-tokens/assets/web/icons/preferences";
 import KeyboardIcon from "@vector-im/compound-design-tokens/assets/web/icons/keyboard";
-import KeyIcon from "@vector-im/compound-design-tokens/assets/web/icons/key";
 import SidebarIcon from "@vector-im/compound-design-tokens/assets/web/icons/sidebar";
 import MicOnIcon from "@vector-im/compound-design-tokens/assets/web/icons/mic-on";
 import LockIcon from "@vector-im/compound-design-tokens/assets/web/icons/lock";
-import LabsIcon from "@vector-im/compound-design-tokens/assets/web/icons/labs";
 import BlockIcon from "@vector-im/compound-design-tokens/assets/web/icons/block";
 import HelpIcon from "@vector-im/compound-design-tokens/assets/web/icons/help";
 
 import TabbedView, { Tab, useActiveTabWithDefault } from "../../structures/TabbedView";
 import { _t, _td } from "../../../languageHandler";
 import AccountUserSettingsTab from "../settings/tabs/user/AccountUserSettingsTab";
-import SettingsStore from "../../../settings/SettingsStore";
-import LabsUserSettingsTab, { showLabsFlags } from "../settings/tabs/user/LabsUserSettingsTab";
+// import SettingsStore from "../../../settings/SettingsStore";
 import AppearanceUserSettingsTab from "../settings/tabs/user/AppearanceUserSettingsTab";
 import SecurityUserSettingsTab from "../settings/tabs/user/SecurityUserSettingsTab";
 import NotificationUserSettingsTab from "../settings/tabs/user/NotificationUserSettingsTab";
@@ -45,9 +42,9 @@ import { UserTab } from "./UserTab";
 import { type NonEmptyArray } from "../../../@types/common";
 import { SDKContext, type SdkContextClass } from "../../../contexts/SDKContext";
 import { useSettingValue } from "../../../hooks/useSettings";
-import { NoChange, useEventEmitterAsyncState, type AsyncStateCallbackResult } from "../../../hooks/useEventEmitter";
+// import { NoChange, useEventEmitterAsyncState, type AsyncStateCallbackResult } from "../../../hooks/useEventEmitter";
 import { ToastContext, useActiveToast } from "../../../contexts/ToastContext";
-import { EncryptionUserSettingsTab, type State } from "../settings/tabs/user/EncryptionUserSettingsTab";
+// import { EncryptionUserSettingsTab, type State } from "../settings/tabs/user/EncryptionUserSettingsTab";
 
 interface IProps {
     initialTabId?: UserTab;
@@ -56,7 +53,7 @@ interface IProps {
      * The initial state of the Encryption tab.
      * If undefined, the default state is used ("loading").
      */
-    initialEncryptionState?: State;
+    // initialEncryptionState?: State;
     sdkContext: SdkContextClass;
     onFinished(): void;
 }
@@ -100,27 +97,27 @@ export default function UserSettingsDialog(props: IProps): JSX.Element {
     const mjolnirEnabled = useSettingValue("feature_mjolnir");
     // store these props in state as changing tabs back and forth should clear them
     const [showMsc4108QrCode, setShowMsc4108QrCode] = useState(props.showMsc4108QrCode);
-    const [initialEncryptionState, setInitialEncryptionState] = useState(props.initialEncryptionState);
+    // const [initialEncryptionState, setInitialEncryptionState] = useState(props.initialEncryptionState);
 
     // If the user doesn't have Recovery set up (no default Secret Storage key),
     // we show an indicator on the Encryption tab.
-    const showSetupRecoveryIndicator = useEventEmitterAsyncState(
-        props.sdkContext.client,
-        ClientEvent.AccountData,
-        async (event?: MatrixEvent): AsyncStateCallbackResult<boolean> => {
-            if (event === undefined || event.getType() === "m.secret_storage.default_key") {
-                const client = props.sdkContext.client;
-                if (!client) {
-                    return false;
-                }
+    // const showSetupRecoveryIndicator = useEventEmitterAsyncState(
+    //     props.sdkContext.client,
+    //     ClientEvent.AccountData,
+    //     async (event?: MatrixEvent): AsyncStateCallbackResult<boolean> => {
+    //         if (event === undefined || event.getType() === "m.secret_storage.default_key") {
+    //             const client = props.sdkContext.client;
+    //             if (!client) {
+    //                 return false;
+    //             }
 
-                return !(await client.secretStorage.getDefaultKeyId());
-            }
-            return new NoChange();
-        },
-        [],
-        false,
-    );
+    //             return !(await client.secretStorage.getDefaultKeyId());
+    //         }
+    //         return new NoChange();
+    //     },
+    //     [],
+    //     false,
+    // );
 
     const getTabs = (): NonEmptyArray<Tab<UserTab>> => {
         const tabs: Tab<UserTab>[] = [];
@@ -211,22 +208,24 @@ export default function UserSettingsDialog(props: IProps): JSX.Element {
             ),
         );
 
-        tabs.push(
-            new Tab(
-                UserTab.Encryption,
-                _td("settings|encryption|title"),
-                <KeyIcon />,
-                <EncryptionUserSettingsTab initialState={initialEncryptionState} />,
-                "UserSettingsEncryption",
-                showSetupRecoveryIndicator ? "mx_SettingsDialog_tabLabelsAlert" : undefined,
-            ),
-        );
+        // Hide Encryption tab
+        // tabs.push(
+        //     new Tab(
+        //         UserTab.Encryption,
+        //         _td("settings|encryption|title"),
+        //         <KeyIcon />,
+        //         <EncryptionUserSettingsTab initialState={initialEncryptionState} />,
+        //         "UserSettingsEncryption",
+        //         showSetupRecoveryIndicator ? "mx_SettingsDialog_tabLabelsAlert" : undefined,
+        //     ),
+        // );
 
-        if (showLabsFlags() || SettingsStore.getFeatureSettingNames().some((k) => SettingsStore.getBetaInfo(k))) {
-            tabs.push(
-                new Tab(UserTab.Labs, _td("common|labs"), <LabsIcon />, <LabsUserSettingsTab />, "UserSettingsLabs"),
-            );
-        }
+        // Hide Labs tab (Experimental features)
+        // if (showLabsFlags() || SettingsStore.getFeatureSettingNames().some((k) => SettingsStore.getBetaInfo(k))) {
+        //     tabs.push(
+        //         new Tab(UserTab.Labs, _td("common|labs"), <LabsIcon />, <LabsUserSettingsTab />, "UserSettingsLabs"),
+        //     );
+        // }
         if (mjolnirEnabled) {
             tabs.push(
                 new Tab(
@@ -256,7 +255,7 @@ export default function UserSettingsDialog(props: IProps): JSX.Element {
         _setActiveTabId(tabId);
         // Clear these so switching away from the tab and back to it will not show the QR code again
         setShowMsc4108QrCode(false);
-        setInitialEncryptionState(undefined);
+        // setInitialEncryptionState(undefined);
     };
 
     const [activeToast, toastRack] = useActiveToast();

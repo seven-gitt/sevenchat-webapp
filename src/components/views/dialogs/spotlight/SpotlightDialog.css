@@ -88,12 +88,21 @@
 
 /* Simple flash highlight for messages in timeline */
 .mx_EventTile_highlight {
-    animation: simple-flash 1s ease-out;
+    animation: simple-flash 3s ease-out;
 }
 
 @keyframes simple-flash {
     0% {
-        background-color: rgba(0, 123, 255, 0.2);
+        background-color: rgba(0, 123, 255, 0.3);
+    }
+    30% {
+        background-color: rgba(0, 123, 255, 0.25);
+    }
+    60% {
+        background-color: rgba(0, 123, 255, 0.15);
+    }
+    80% {
+        background-color: rgba(0, 123, 255, 0.08);
     }
     100% {
         background-color: transparent;
