@@ -252,7 +252,7 @@ export default function RoomHeader({
         });
     };
 
-    // Ctrl/Cmd + F opens Spotlight in "Search messages"
+    // Ctrl/Cmd + F focuses room message search
     useEffect(() => {
         const onKeyDown = (ev: KeyboardEvent): void => {
             const target = ev.target as HTMLElement | null;
@@ -262,9 +262,8 @@ export default function RoomHeader({
             if ((ev.ctrlKey || ev.metaKey) && (ev.key === "f" || ev.key === "F")) {
                 ev.preventDefault();
                 ev.stopPropagation();
-                defaultDispatcher.dispatch<OpenSpotlightPayload>({
-                    action: Action.OpenSpotlight,
-                    initialFilter: Filter.PublicSpaces,
+                defaultDispatcher.dispatch({
+                    action: Action.FocusMessageSearch,
                 });
             }
         };
@@ -372,14 +371,13 @@ export default function RoomHeader({
 
                     {showChatButton && <VideoRoomChatButton room={room} />}
 
-                    {/* Search messages in Spotlight */}
+                    {/* Search messages in room info panel */}
                     <Tooltip label={_t("action|search")}>
                         <IconButton
                             onClick={(evt) => {
                                 evt.stopPropagation();
-                                defaultDispatcher.dispatch<OpenSpotlightPayload>({
-                                    action: Action.OpenSpotlight,
-                                    initialFilter: Filter.PublicSpaces,
+                                defaultDispatcher.dispatch({
+                                    action: Action.FocusMessageSearch,
                                 });
                             }}
                             aria-label={_t("action|search")}

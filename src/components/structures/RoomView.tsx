@@ -132,7 +132,7 @@ import RoomSearchAuxPanel from "../views/rooms/RoomSearchAuxPanel";
 import { PinnedMessageBanner } from "../views/rooms/PinnedMessageBanner";
 import { ScopedRoomContextProvider, useScopedRoomContext } from "../../contexts/ScopedRoomContext";
 import { DeclineAndBlockInviteDialog } from "../views/dialogs/DeclineAndBlockInviteDialog";
-import { type FocusMessageSearchPayload } from "../../dispatcher/payloads/FocusMessageSearchPayload.ts";
+import { type FocusMessageSearchPayload } from "../../dispatcher/payloads/FocusMessageSearchPayload";
 
 const DEBUG = false;
 const PREVENT_MULTIPLE_JITSI_WITHIN = 30_000;
@@ -185,6 +185,9 @@ export interface IRoomState {
      * The state of an ongoing search if there is one.
      */
     search?: SearchInfo;
+    // State cho việc lọc theo người gửi
+    searchSenders?: Array<[string, {member: any, name: string}]>;
+    selectedSender?: string;
     callState?: CallState;
     canPeek: boolean;
     canSelfRedact: boolean;
@@ -1720,7 +1723,27 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
         this.onSearch(this.state.search?.term ?? "", scope);
     };
 
+    private onSenderChange = (senderId: string): void => {
+        this.setState({ selectedSender: senderId });
+    };
+
     private onSearchUpdate = (inProgress: boolean, searchResults: ISearchResults | null, error: Error | null): void => {
+        // Lấy danh sách người gửi từ kết quả tìm kiếm
+        let searchSenders: Array<[string, {member: any, name: string}]> = [];
+        if (searchResults?.results && this.state.room) {
+            const map = new Map<string, {member: any, name: string}>();
+            for (const result of searchResults.results) {
+                const ev = result.context.getEvent();
+                const sender = ev.getSender();
+                const room = this.context.client?.getRoom(ev.getRoomId());
+                if (sender && !map.has(sender)) {
+                    const member = room?.getMember?.(sender);
+                    map.set(sender, {member, name: member?.name || sender});
+                }
+            }
+            searchSenders = Array.from(map.entries());
+        }
+
         this.setState({
             search: {
                 ...this.state.search!,
@@ -1728,6 +1751,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                 error: error ?? undefined,
                 inProgress,
             },
+            searchSenders,
         });
     };
 
@@ -2345,6 +2369,9 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                         onCancelClick={this.onCancelSearchClick}
                         onSearchScopeChange={this.onSearchScopeChange}
                         isRoomEncrypted={isRoomEncrypted}
+                        senders={this.state.searchSenders}
+                        selectedSender={this.state.selectedSender}
+                        onSenderChange={this.onSenderChange}
                     />
                 );
             }
@@ -2462,6 +2489,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                     resizeNotifier={this.props.resizeNotifier}
                     className={this.messagePanelClassNames}
                     onUpdate={this.onSearchUpdate}
+                    selectedSender={this.state.selectedSender}
                 />
             );
             hideMessagePanel = true;

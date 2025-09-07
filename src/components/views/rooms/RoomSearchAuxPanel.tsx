@@ -22,9 +22,21 @@ interface Props {
     isRoomEncrypted: boolean;
     onSearchScopeChange(scope: SearchScope): void;
     onCancelClick(): void;
+    // Props cho giao diện lọc theo người gửi
+    senders?: Array<[string, {member: any, name: string}]>;
+    selectedSender?: string;
+    onSenderChange?: (senderId: string) => void;
 }
 
-const RoomSearchAuxPanel: React.FC<Props> = ({ searchInfo, isRoomEncrypted, onSearchScopeChange, onCancelClick }) => {
+const RoomSearchAuxPanel: React.FC<Props> = ({ 
+    searchInfo, 
+    isRoomEncrypted, 
+    onSearchScopeChange, 
+    onCancelClick,
+    senders = [],
+    selectedSender = "all",
+    onSenderChange
+}) => {
     const scope = searchInfo?.scope ?? SearchScope.Room;
 
     return (
@@ -49,6 +61,51 @@ const RoomSearchAuxPanel: React.FC<Props> = ({ searchInfo, isRoomEncrypted, onSe
                     </div>
                 </div>
                 <div className="mx_RoomSearchAuxPanel_buttons">
+                    {/* Giao diện lọc theo người gửi */}
+                    {searchInfo?.term && onSenderChange && (
+                        <div style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            marginRight: "12px"
+                        }}>
+                            <span style={{
+                                fontSize: "14px",
+                                color: "var(--cpd-color-text-secondary)",
+                                whiteSpace: "nowrap"
+                            }}>
+                                Lọc theo:
+                            </span>
+                            <select
+                                value={selectedSender}
+                                onChange={(e) => onSenderChange(e.target.value)}
+                                style={{
+                                    padding: "4px 8px",
+                                    border: "1px solid var(--cpd-color-border-interactive)",
+                                    borderRadius: "4px",
+                                    backgroundColor: "var(--cpd-color-bg-canvas)",
+                                    color: "var(--cpd-color-text-primary)",
+                                    fontSize: "13px",
+                                    minWidth: "120px",
+                                    cursor: "pointer"
+                                }}
+                            >
+                                <option value="all">Tất cả</option>
+                                {senders.length > 0 ? (
+                                    senders.map(([senderId, {name}]) => (
+                                        <option key={senderId} value={senderId}>
+                                            {name}
+                                        </option>
+                                    ))
+                                ) : (
+                                    <option value="all" disabled>
+                                        Đang tìm kiếm...
+                                    </option>
+                                )}
+                            </select>
+                        </div>
+                    )}
+                    
                     <Link
                         onClick={() =>
                             onSearchScopeChange(scope === SearchScope.Room ? SearchScope.All : SearchScope.Room)

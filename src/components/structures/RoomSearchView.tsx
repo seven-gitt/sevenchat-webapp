@@ -24,8 +24,7 @@ import { searchPagination, SearchScope } from "../../Searching";
 import type ResizeNotifier from "../../utils/ResizeNotifier";
 import MatrixClientContext from "../../contexts/MatrixClientContext";
 import { RoomPermalinkCreator } from "../../utils/permalinks/Permalinks";
-import { useScopedRoomContext } from "../../contexts/ScopedRoomContext.tsx";
-import MemberAvatar from "../views/avatars/MemberAvatar";
+import { useScopedRoomContext } from "../../contexts/ScopedRoomContext";
 
 const DEBUG = false;
 let debuglog = function (msg: string): void {};
@@ -46,6 +45,8 @@ interface Props {
     className: string;
     onUpdate(inProgress: boolean, results: ISearchResults | null, error: Error | null): void;
     ref?: Ref<ScrollPanel>;
+    // Props cho việc lọc theo người gửi
+    selectedSender?: string;
 }
 
 // XXX: todo: merge overlapping results somehow?
@@ -60,13 +61,12 @@ export const RoomSearchView = ({
     onUpdate,
     inProgress,
     ref,
+    selectedSender = "all",
 }: Props): JSX.Element => {
     const client = useContext(MatrixClientContext);
     const roomContext = useScopedRoomContext("showHiddenEvents");
     const [highlights, setHighlights] = useState<string[] | null>(null);
     const [results, setResults] = useState<ISearchResults | null>(null);
-    // Xóa state selectedSender
-    // const [selectedSender, setSelectedSender] = useState<string>("all");
     const aborted = useRef(false);
     // A map from room ID to permalink creator
     const permalinkCreators = useMemo(() => new Map<string, RoomPermalinkCreator>(), []);
@@ -143,27 +143,11 @@ export const RoomSearchView = ({
         [client, term, onUpdate],
     );
 
-    // Xóa useMemo lấy danh sách người gửi
-    // const senders = useMemo(() => {
-    //     if (!results?.results) return [];
-    //     const map = new Map<string, {member: any, name: string}>();
-    //     for (const result of results.results) {
-    //         const ev = result.context.getEvent();
-    //         const sender = ev.getSender();
-    //         const room = client.getRoom(ev.getRoomId());
-    //         if (sender && !map.has(sender)) {
-    //             const member = room?.getMember?.(sender);
-    //             map.set(sender, {member, name: member?.name || sender});
-    //         }
-    //     }
-    //     return Array.from(map.entries());
-    // }, [results, client]);
-
-    // Xóa useMemo lọc kết quả theo người gửi
-    // const filteredResults = useMemo(() => {
-    //     if (selectedSender === "all" || !results?.results) return results?.results || [];
-    //     return results.results.filter(r => r.context.getEvent().getSender() === selectedSender);
-    // }, [results, selectedSender]);
+    // Lọc kết quả theo người gửi được chọn
+    const filteredResults = useMemo(() => {
+        if (selectedSender === "all" || !results?.results) return results?.results || [];
+        return results.results.filter(r => r.context.getEvent().getSender() === selectedSender);
+    }, [results, selectedSender]);
 
     // Mount & unmount effect
     useEffect(() => {
@@ -181,7 +165,9 @@ export const RoomSearchView = ({
             <div
                 className="mx_RoomView_messagePanel mx_RoomView_messagePanelSearchSpinner"
                 data-testid="messagePanelSearchSpinner"
-            />
+            >
+                <li className="mx_RoomView_scrollheader" />
+            </div>
         );
     }
 
@@ -239,8 +225,8 @@ export const RoomSearchView = ({
     let mergedTimeline: MatrixEvent[] = [];
     let ourEventsIndexes: number[] = [];
 
-    // Sử dụng results?.results thay cho filteredResults
-    const searchResults = results?.results || [];
+    // Sử dụng filteredResults để hiển thị kết quả đã lọc
+    const searchResults = filteredResults;
     for (let i = (searchResults.length || 0) - 1; i >= 0; i--) {
         const result = searchResults[i];
 
@@ -339,10 +325,6 @@ export const RoomSearchView = ({
             resizeNotifier={resizeNotifier}
         >
             <li className="mx_RoomView_scrollheader" />
-            {/* Xóa dropdown lọc người gửi */}
-            {/* <div style={{padding: 16, paddingBottom: 0}}>
-                ...
-            </div> */}
             {ret}
         </ScrollPanel>
     );
