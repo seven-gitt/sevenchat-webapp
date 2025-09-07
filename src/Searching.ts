@@ -25,7 +25,7 @@ import { type ISearchArgs } from "./indexing/BaseEventIndexManager";
 import EventIndexPeg from "./indexing/EventIndexPeg";
 import { isNotUndefined } from "./Typeguards";
 
-const SEARCH_LIMIT = 10;
+const SEARCH_LIMIT = 100; // Tăng giới hạn tìm kiếm để tìm được nhiều kết quả hơn
 
 // Enhanced search patterns for better URL and domain matching
 const ENHANCED_SEARCH_PATTERNS = {
@@ -339,7 +339,7 @@ async function serverSideSearch(
     abortSignal?: AbortSignal,
 ): Promise<{ response: ISearchResponse; query: ISearchRequestBody }> {
     const filter: IRoomEventFilter = {
-        limit: SEARCH_LIMIT,
+        limit: SEARCH_LIMIT, // Sử dụng giới hạn cao hơn cho server search
     };
 
     if (roomId !== undefined) filter.rooms = [roomId];
@@ -412,9 +412,9 @@ async function serverSideSearch(
             ...additionalStrategies,
         ];
 
-        let bestResponse = null;
-        let bestQuery: ISearchRequestBody | null = null;
-        let bestCount = 0;
+        // let bestResponse = null;
+        // let bestQuery: ISearchRequestBody | null = null;
+        // let bestCount = 0;
 
         for (const strategy of searchStrategies) {
             if (strategy.term && strategy.term !== term) {
@@ -631,6 +631,28 @@ async function localSearch(
     processResult = true,
 ): Promise<{ response: IResultRoomEvents; query: ISearchArgs }> {
     const eventIndex = EventIndexPeg.get();
+    
+    // Đảm bảo Seshat đã được khởi tạo
+    if (!eventIndex) {
+        console.log("EventIndex not available, trying to initialize...");
+        const initialized = await EventIndexPeg.init();
+        if (!initialized) {
+            console.log("Failed to initialize EventIndex, falling back to server search only");
+            throw new Error("EventIndex not available");
+        }
+    }
+    
+    // Helper function để lấy EventIndex hiện tại
+    const getCurrentEventIndex = () => EventIndexPeg.get();
+    
+    // Helper function để thực hiện search an toàn
+    const safeSearch = async (args: ISearchArgs) => {
+        const currentEventIndex = getCurrentEventIndex();
+        if (currentEventIndex) {
+            return await currentEventIndex.search(args);
+        }
+        return null;
+    };
 
     const searchArgs: ISearchArgs = {
         search_term: searchTerm,
@@ -638,16 +660,17 @@ async function localSearch(
         after_limit: 1,
         limit: SEARCH_LIMIT,
         order_by_recency: true,
-        room_id: undefined,
+        room_id: undefined, // Tìm kiếm trong tất cả các phòng, không giới hạn theo roomId
     };
 
+    // Chỉ giới hạn theo roomId nếu được yêu cầu cụ thể
     if (roomId !== undefined) {
         searchArgs.room_id = roomId;
     }
 
     // Use enhanced search term analysis
     const searchAnalysis = analyzeSearchTerm(searchTerm);
-    const { isUrlSearch, isSingleToken, keywords, potentialDomains } = searchAnalysis;
+    const { isUrlSearch, isSingleToken, keywords } = searchAnalysis;
     
     let localResult;
     
@@ -658,7 +681,7 @@ async function localSearch(
         
         // Strategy 1: Try exact search first
         try {
-            localResult = await eventIndex!.search(searchArgs);
+            localResult = await safeSearch(searchArgs);
             console.log(`Exact search returned ${localResult?.count || 0} results`);
         } catch (error) {
             console.log("Exact search failed:", error);
@@ -1113,7 +1136,55 @@ async function localSearch(
     // Fallback to normal search if no enhanced results
     if (!localResult) {
         console.log("Falling back to normal search");
-        localResult = await eventIndex!.search(searchArgs);
+        localResult = await safeSearch(searchArgs);
+    }
+    
+    // Nếu vẫn không có kết quả, thử tìm kiếm với các biến thể khác nhau
+    if (!localResult || localResult.count === 0) {
+        console.log("Trying alternative search strategies");
+        
+        // Thử tìm kiếm với từ khóa không phân biệt hoa thường
+        const lowerCaseArgs = { ...searchArgs, search_term: searchTerm.toLowerCase() };
+        try {
+            const lowerResult = await safeSearch(lowerCaseArgs);
+            if (lowerResult && lowerResult.count && lowerResult.count > 0) {
+                localResult = lowerResult;
+                console.log(`Lowercase search found ${lowerResult.count} results`);
+            }
+        } catch (error) {
+            console.log("Lowercase search failed:", error);
+        }
+        
+        // Thử tìm kiếm với từ khóa viết hoa
+        if (!localResult || localResult.count === 0) {
+            const upperCaseArgs = { ...searchArgs, search_term: searchTerm.toUpperCase() };
+            try {
+                const upperResult = await safeSearch(upperCaseArgs);
+                if (upperResult && upperResult.count && upperResult.count > 0) {
+                    localResult = upperResult;
+                    console.log(`Uppercase search found ${upperResult.count} results`);
+                }
+            } catch (error) {
+                console.log("Uppercase search failed:", error);
+            }
+        }
+        
+        // Thử tìm kiếm với từ khóa có dấu và không dấu (cho tiếng Việt)
+        if (!localResult || localResult.count === 0) {
+            const normalizedTerm = searchTerm.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            if (normalizedTerm !== searchTerm) {
+                const normalizedArgs = { ...searchArgs, search_term: normalizedTerm };
+                try {
+                    const normalizedResult = await safeSearch(normalizedArgs);
+                    if (normalizedResult && normalizedResult.count && normalizedResult.count > 0) {
+                        localResult = normalizedResult;
+                        console.log(`Normalized search found ${normalizedResult.count} results`);
+                    }
+                } catch (error) {
+                    console.log("Normalized search failed:", error);
+                }
+            }
+        }
     }
     
     // Final fallback: Try timeline search (like spotlight dialog)
