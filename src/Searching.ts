@@ -25,7 +25,7 @@ import { type ISearchArgs } from "./indexing/BaseEventIndexManager";
 import EventIndexPeg from "./indexing/EventIndexPeg";
 import { isNotUndefined } from "./Typeguards";
 
-const SEARCH_LIMIT = 100; // Tăng giới hạn tìm kiếm để tìm được nhiều kết quả hơn
+const SEARCH_LIMIT = 1000; // Tăng giới hạn tìm kiếm lên 1000 để tìm được nhiều kết quả hơn
 
 // Enhanced search patterns for better URL and domain matching
 const ENHANCED_SEARCH_PATTERNS = {
@@ -277,6 +277,53 @@ function searchInTimeline(
     }
     
     return { found: false };
+}
+
+// Generate related terms for Vietnamese search
+function generateRelatedTerms(term: string): string[] {
+    const relatedTerms: string[] = [];
+    const lowerTerm = term.toLowerCase();
+    
+    // Thêm các biến thể có dấu và không dấu
+    const normalizedTerm = term.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (normalizedTerm !== term) {
+        relatedTerms.push(normalizedTerm);
+        relatedTerms.push(normalizedTerm.toLowerCase());
+        relatedTerms.push(normalizedTerm.toUpperCase());
+    }
+    
+    // Thêm các từ khóa liên quan cho từ "nạp"
+    if (lowerTerm.includes('nạp') || lowerTerm.includes('nap')) {
+        relatedTerms.push('nạp tiền');
+        relatedTerms.push('nap tien');
+        relatedTerms.push('nạp');
+        relatedTerms.push('nap');
+        relatedTerms.push('deposit');
+        relatedTerms.push('recharge');
+        relatedTerms.push('top up');
+        relatedTerms.push('topup');
+    }
+    
+    // Thêm các từ khóa liên quan cho từ "tiền"
+    if (lowerTerm.includes('tiền') || lowerTerm.includes('tien')) {
+        relatedTerms.push('money');
+        relatedTerms.push('cash');
+        relatedTerms.push('fund');
+        relatedTerms.push('balance');
+        relatedTerms.push('số dư');
+        relatedTerms.push('so du');
+    }
+    
+    // Thêm các từ khóa liên quan cho từ "tài khoản"
+    if (lowerTerm.includes('tài khoản') || lowerTerm.includes('tai khoan') || lowerTerm.includes('tk')) {
+        relatedTerms.push('account');
+        relatedTerms.push('wallet');
+        relatedTerms.push('ví');
+        relatedTerms.push('vi');
+    }
+    
+    // Loại bỏ các từ trùng lặp
+    return [...new Set(relatedTerms)].filter(t => t !== term);
 }
 
 // Enhanced search term analysis
@@ -1182,6 +1229,26 @@ async function localSearch(
                     }
                 } catch (error) {
                     console.log("Normalized search failed:", error);
+                }
+            }
+        }
+        
+        // Thử tìm kiếm với các từ khóa liên quan (cho tiếng Việt)
+        if (!localResult || localResult.count === 0) {
+            const relatedTerms = generateRelatedTerms(searchTerm);
+            console.log(`Trying ${relatedTerms.length} related terms for "${searchTerm}"`);
+            
+            for (const relatedTerm of relatedTerms) {
+                const relatedArgs = { ...searchArgs, search_term: relatedTerm };
+                try {
+                    const relatedResult = await safeSearch(relatedArgs);
+                    if (relatedResult && relatedResult.count && relatedResult.count > 0) {
+                        localResult = relatedResult;
+                        console.log(`Related term search found ${relatedResult.count} results for "${relatedTerm}"`);
+                        break;
+                    }
+                } catch (error) {
+                    console.log(`Related term search failed for "${relatedTerm}":`, error);
                 }
             }
         }

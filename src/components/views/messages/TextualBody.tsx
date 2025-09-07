@@ -9,7 +9,7 @@ Please see LICENSE files in the repository root for full details.
 import React, { type JSX, createRef, type SyntheticEvent, type MouseEvent } from "react";
 import { MsgType } from "matrix-js-sdk/src/matrix";
 
-import EventContentBody from "./EventContentBody.tsx";
+import EventContentBody from "./EventContentBody";
 import { formatDate } from "../../../DateUtils";
 import Modal from "../../../Modal";
 import dis from "../../../dispatcher/dispatcher";
@@ -260,6 +260,39 @@ export default class TextualBody extends React.Component<IBodyProps, IState> {
         });
     };
 
+    private onHighlightLinkClick = (ev: SyntheticEvent): void => {
+        ev.preventDefault();
+        
+        // Navigate to the room and highlight the specific message
+        dis.dispatch({
+            action: Action.ViewRoom,
+            event_id: this.props.mxEvent.getId(),
+            highlighted: true,
+            room_id: this.props.mxEvent.getRoomId(),
+            metricsTrigger: undefined, // room doesn't change
+        });
+
+        // Add a small delay to ensure the room is loaded before scrolling and highlighting
+        setTimeout(() => {
+            // Try to scroll to the highlighted message
+            const eventElement = document.querySelector(`[data-event-id="${this.props.mxEvent.getId()}"]`);
+            if (eventElement) {
+                eventElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+                
+                // Add a simple flash effect
+                eventElement.classList.add('mx_EventTile_highlight');
+                
+                // Remove the highlight class after animation completes
+                setTimeout(() => {
+                    eventElement.classList.remove('mx_EventTile_highlight');
+                }, 3000);
+            }
+        }, 500);
+    };
+
     private openHistoryDialog = async (): Promise<void> => {
         Modal.createDialog(MessageEditHistoryDialog, { mxEvent: this.props.mxEvent });
     };
@@ -359,7 +392,14 @@ export default class TextualBody extends React.Component<IBodyProps, IState> {
         }
 
         if (this.props.highlightLink) {
-            body = <a href={this.props.highlightLink}>{body}</a>;
+            body = (
+                <a 
+                    href={this.props.highlightLink}
+                    onClick={this.onHighlightLinkClick}
+                >
+                    {body}
+                </a>
+            );
         } else if (content.data && typeof content.data["org.matrix.neb.starter_link"] === "string") {
             body = (
                 <AccessibleButton
