@@ -17,6 +17,55 @@ import SearchWarning, { WarningKind } from "../elements/SearchWarning";
 import { type SearchInfo, SearchScope } from "../../../Searching";
 import InlineSpinner from "../elements/InlineSpinner";
 
+// Hàm helper để format thông tin tìm kiếm với tiếng Việt
+function formatSearchSummary(
+    count: number, 
+    term: string, 
+    senders: Array<[string, {member: any, name: string}]> = []
+): React.ReactNode {
+    // Kiểm tra xem có phải tìm kiếm theo sender không
+    const senderMatch = term.match(/sender:([^\s]+)(?:\s+(.*))?/);
+    
+    if (senderMatch) {
+        const senderId = senderMatch[1];
+        const keyword = senderMatch[2]?.trim();
+        
+        // Tìm tên hiển thị của sender
+        const senderInfo = senders.find(([id]) => id === senderId);
+        const senderName = senderInfo ? senderInfo[1].name : senderId;
+        
+        if (keyword) {
+            // Có cả sender filter và keyword
+            return (
+                <span>
+                    Tìm thấy <strong>{count}</strong> tin nhắn từ <strong>{senderName}</strong> chứa "<strong>{keyword}</strong>"
+                </span>
+            );
+        } else {
+            // Chỉ có sender filter
+            return (
+                <span>
+                    Tìm thấy <strong>{count}</strong> tin nhắn từ <strong>{senderName}</strong>
+                </span>
+            );
+        }
+    } else if (term) {
+        // Tìm kiếm thông thường theo keyword
+        return (
+            <span>
+                Tìm thấy <strong>{count}</strong> tin nhắn chứa "<strong>{term}</strong>"
+            </span>
+        );
+    } else {
+        // Không có từ khóa tìm kiếm
+        return (
+            <span>
+                Tìm thấy <strong>{count}</strong> tin nhắn
+            </span>
+        );
+    }
+}
+
 interface Props {
     searchInfo?: SearchInfo;
     isRoomEncrypted: boolean;
@@ -47,22 +96,22 @@ const RoomSearchAuxPanel: React.FC<Props> = ({
                     <SearchIcon width="24px" height="24px" />
                     <div className="mx_RoomSearchAuxPanel_summary_text">
                         {searchInfo?.count !== undefined ? (
-                            _t(
-                                "room|search|summary",
-                                { count: searchInfo.count },
-                                { query: () => <strong>{searchInfo.term}</strong> },
-                            )
+                            formatSearchSummary(searchInfo.count, searchInfo.term || "", senders)
                         ) : searchInfo?.error !== undefined ? (
-                            searchInfo?.error.message
+                            <span style={{ color: "var(--cpd-color-text-critical)" }}>
+                                Lỗi tìm kiếm: {searchInfo?.error.message}
+                            </span>
                         ) : (
-                            <InlineSpinner />
+                            <span>
+                                <InlineSpinner /> Đang tìm kiếm...
+                            </span>
                         )}
                         <SearchWarning kind={WarningKind.Search} isRoomEncrypted={isRoomEncrypted} showLogo={false} />
                     </div>
                 </div>
                 <div className="mx_RoomSearchAuxPanel_buttons">
-                    {/* Giao diện lọc theo người gửi */}
-                    {searchInfo?.term && onSenderChange && (
+                    {/* Giao diện lọc theo người gửi - hiển thị ngay cả khi không có từ khóa tìm kiếm */}
+                    {onSenderChange && (
                         <div style={{
                             display: "flex",
                             alignItems: "center",
@@ -99,7 +148,7 @@ const RoomSearchAuxPanel: React.FC<Props> = ({
                                     ))
                                 ) : (
                                     <option value="all" disabled>
-                                        Đang tìm kiếm...
+                                        Đang tải...
                                     </option>
                                 )}
                             </select>
@@ -113,14 +162,14 @@ const RoomSearchAuxPanel: React.FC<Props> = ({
                         kind="primary"
                     >
                         {scope === SearchScope.All
-                            ? _t("room|search|this_room_button")
-                            : _t("room|search|all_rooms_button")}
+                            ? "Tìm trong phòng này"
+                            : "Tìm trong tất cả phòng"}
                     </Link>
                     <IconButton
                         onClick={onCancelClick}
                         destructive
-                        tooltip={_t("action|cancel")}
-                        aria-label={_t("action|cancel")}
+                        tooltip="Hủy"
+                        aria-label="Hủy tìm kiếm"
                     >
                         <CloseIcon width="20px" height="20px" />
                     </IconButton>

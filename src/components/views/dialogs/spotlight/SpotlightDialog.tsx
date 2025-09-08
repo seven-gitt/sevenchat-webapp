@@ -272,6 +272,11 @@ const searchMessagesInRooms = (cli: MatrixClient, query: string): IMessageResult
                 const event = events[i];
                 
                 try {
+                    // Bỏ qua tin nhắn đã xóa (redacted messages)
+                    if (event.isRedacted?.()) {
+                        continue;
+                    }
+                    
                     if (event.getType() === "m.room.message") {
                         const content = event.getContent();
                         // Only process text messages, skip files, images, etc.

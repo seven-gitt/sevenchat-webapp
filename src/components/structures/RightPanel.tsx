@@ -45,6 +45,7 @@ interface BaseProps {
 interface RoomlessProps extends BaseProps {
     room?: undefined;
     permalinkCreator?: undefined;
+    onInitializeFilter?: () => void;
 }
 
 interface RoomProps extends BaseProps {
@@ -53,6 +54,8 @@ interface RoomProps extends BaseProps {
     onSearchChange?: (term: string) => void;
     onSearchCancel?: () => void;
     searchTerm?: string;
+    onInitializeFilter?: () => void;
+    selectedSender?: string;
 }
 
 type Props = XOR<RoomlessProps, RoomProps>;
@@ -264,6 +267,8 @@ export default class RightPanel extends React.Component<Props, IState> {
                             onSearchCancel={this.props.onSearchCancel}
                             searchTerm={this.props.searchTerm}
                             focusRoomSearch={cardState?.focusRoomSearch}
+                            onInitializeFilter={this.props.onInitializeFilter}
+                            selectedSender={this.props.selectedSender}
                         />
                     );
                 }

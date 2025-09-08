@@ -22,6 +22,8 @@ import {
 } from "@vector-im/compound-web";
 import FavouriteIcon from "@vector-im/compound-design-tokens/assets/web/icons/favourite";
 import UserAddIcon from "@vector-im/compound-design-tokens/assets/web/icons/user-add";
+import FilterIcon from "@vector-im/compound-design-tokens/assets/web/icons/filter";
+// import CloseIcon from "@vector-im/compound-design-tokens/assets/web/icons/close";
 import LinkIcon from "@vector-im/compound-design-tokens/assets/web/icons/link";
 import SettingsIcon from "@vector-im/compound-design-tokens/assets/web/icons/settings";
 import ExportArchiveIcon from "@vector-im/compound-design-tokens/assets/web/icons/export-archive";
@@ -32,26 +34,24 @@ import ThreadsIcon from "@vector-im/compound-design-tokens/assets/web/icons/thre
 import PollsIcon from "@vector-im/compound-design-tokens/assets/web/icons/polls";
 import PinIcon from "@vector-im/compound-design-tokens/assets/web/icons/pin";
 import LockIcon from "@vector-im/compound-design-tokens/assets/web/icons/lock-solid";
-import LockOffIcon from "@vector-im/compound-design-tokens/assets/web/icons/lock-off";
 import PublicIcon from "@vector-im/compound-design-tokens/assets/web/icons/public";
-import ErrorIcon from "@vector-im/compound-design-tokens/assets/web/icons/error";
 import ErrorSolidIcon from "@vector-im/compound-design-tokens/assets/web/icons/error-solid";
 import ChevronDownIcon from "@vector-im/compound-design-tokens/assets/web/icons/chevron-down";
 import DeleteIcon from "@vector-im/compound-design-tokens/assets/web/icons/delete";
 import { JoinRule, type Room } from "matrix-js-sdk/src/matrix";
 
-import BaseCard from "./BaseCard.tsx";
-import { _t } from "../../../languageHandler.tsx";
-import RoomAvatar from "../avatars/RoomAvatar.tsx";
-import { E2EStatus } from "../../../utils/ShieldUtils.ts";
-import { type RoomPermalinkCreator } from "../../../utils/permalinks/Permalinks.ts";
-import RoomName from "../elements/RoomName.tsx";
-import { Flex } from "../../utils/Flex.tsx";
-import { Linkify, topicToHtml } from "../../../HtmlUtils.tsx";
-import { Box } from "../../utils/Box.tsx";
-import { ReleaseAnnouncement } from "../../structures/ReleaseAnnouncement.tsx";
-import { useRoomSummaryCardViewModel } from "../../viewmodels/right_panel/RoomSummaryCardViewModel.tsx";
-import { useRoomTopicViewModel } from "../../viewmodels/right_panel/RoomSummaryCardTopicViewModel.tsx";
+import BaseCard from "./BaseCard";
+import { _t } from "../../../languageHandler";
+import RoomAvatar from "../avatars/RoomAvatar";
+import { E2EStatus } from "../../../utils/ShieldUtils";
+import { type RoomPermalinkCreator } from "../../../utils/permalinks/Permalinks";
+import RoomName from "../elements/RoomName";
+import { Flex } from "../../utils/Flex";
+import { Linkify, topicToHtml } from "../../../HtmlUtils";
+import { Box } from "../../utils/Box";
+import { ReleaseAnnouncement } from "../../structures/ReleaseAnnouncement";
+import { useRoomSummaryCardViewModel } from "../../viewmodels/right_panel/RoomSummaryCardViewModel";
+import { useRoomTopicViewModel } from "../../viewmodels/right_panel/RoomSummaryCardTopicViewModel";
 
 interface IProps {
     room: Room;
@@ -60,6 +60,8 @@ interface IProps {
     onSearchCancel?: () => void;
     focusRoomSearch?: boolean;
     searchTerm?: string;
+    onInitializeFilter?: () => void;
+    selectedSender?: string;
 }
 
 const RoomTopic: React.FC<Pick<IProps, "room">> = ({ room }): JSX.Element | null => {
@@ -131,15 +133,74 @@ const RoomSummaryCardView: React.FC<IProps> = ({
     onSearchCancel,
     focusRoomSearch,
     searchTerm = "",
+    onInitializeFilter,
+    selectedSender,
 }) => {
     const vm = useRoomSummaryCardViewModel(room, permalinkCreator, onSearchCancel);
 
     // The search field is controlled and onSearchChange is debounced in RoomView,
     // so we need to set the value of the input right away
     const [searchValue, setSearchValue] = useState(searchTerm);
+    const [showUserFilter, setShowUserFilter] = useState(false);
+    
     useEffect(() => {
+        // Không hiển thị "sender:..." trong ô tìm kiếm khi lọc theo người gửi
+        if (searchTerm?.startsWith?.('sender:')) {
+            // Tách keyword từ sender: term để hiển thị trong input
+            const parts = searchTerm.split(/\s+/);
+            const senderPart = parts.find(p => p.startsWith('sender:'));
+            const keywordParts = parts.filter(p => p !== senderPart);
+            const keyword = keywordParts.join(' ');
+            setSearchValue(keyword);
+            return;
+        }
         setSearchValue(searchTerm);
     }, [searchTerm]);
+
+    // Đóng dropdown khi click bên ngoài
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (showUserFilter) {
+                const target = event.target as Element;
+                if (!target.closest('.mx_RoomSummaryCard_search_container')) {
+                    setShowUserFilter(false);
+                }
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showUserFilter]);
+
+    // Lấy danh sách user trong phòng
+    const getRoomUsers = () => {
+        const members = room.getMembers();
+        return members
+            .filter(member => member.membership === 'join' || member.membership === 'invite')
+            .map(member => ({
+                id: member.userId,
+                name: member.name || member.userId,
+                avatar: member.getMxcAvatarUrl()
+            }));
+    };
+
+    // Xử lý khi chọn user
+    const handleUserSelect = (userId: string) => {
+        setShowUserFilter(false);
+        // Gọi onSearchChange với từ khóa đặc biệt để lọc theo user
+        if (onSearchChange) {
+            onSearchChange(`sender:${userId}`);
+        }
+    };
+
+    // Xử lý khi bỏ chọn user
+    // const handleClearUserFilter = () => {
+    //     if (onSearchCancel) {
+    //         onSearchCancel();
+    //     }
+    // };
 
     const roomInfo = (
         <header className="mx_RoomSummaryCard_container">
@@ -203,31 +264,249 @@ const RoomSummaryCardView: React.FC<IProps> = ({
     );
 
     const header = onSearchChange && (
-        <Form.Root className="mx_RoomSummaryCard_search" onSubmit={(e) => e.preventDefault()}>
-            <Search
-                placeholder={_t("room|search|placeholder")}
-                name="room_message_search"
-                onChange={(e) => {
-                    setSearchValue(e.currentTarget.value);
-                    onSearchChange(e.currentTarget.value);
-                }}
-                value={searchValue}
-                className="mx_no_textinput"
-                ref={vm.searchInputRef}
-                autoFocus={focusRoomSearch}
-                onKeyDown={vm.onUpdateSearchInput}
-            />
-        </Form.Root>
+        <div className="mx_RoomSummaryCard_search_container" style={{ position: "relative" }}>
+            <Form.Root className="mx_RoomSummaryCard_search" onSubmit={(e) => e.preventDefault()}>
+                <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                    <Search
+                        placeholder={_t("room|search|placeholder")}
+                        name="room_message_search"
+                        onChange={(e) => {
+                            const raw = e.currentTarget.value;
+                            setSearchValue(raw);
+                            // Nếu đang chọn một người gửi, luôn kết hợp thành truy vấn duy nhất
+                            const term = selectedSender && selectedSender !== "all"
+                                ? `sender:${selectedSender}${raw ? ` ${raw}` : ""}`
+                                : raw;
+                            console.log("RoomSummaryCardView onChange:", { raw, selectedSender, term });
+                            onSearchChange(term);
+                        }}
+                        value={searchValue}
+                        className="mx_no_textinput"
+                        ref={vm.searchInputRef}
+                        autoFocus={focusRoomSearch}
+                        onKeyDown={vm.onUpdateSearchInput}
+                        style={{ 
+                            paddingRight: "40px", // Tạo không gian cho nút filter
+                            flex: 1
+                        }}
+                    />
+                    
+                    {/* Icon lọc user bên trong ô tìm kiếm */}
+                    <div style={{ 
+                        position: "absolute", 
+                        right: "8px", 
+                        top: "50%", 
+                        transform: "translateY(-50%)",
+                        zIndex: 1
+                    }}>
+                        <IconButton
+                            onClick={() => setShowUserFilter(!showUserFilter)}
+                            size="sm"
+                            kind={selectedSender && selectedSender !== "all" ? "primary" : "secondary"}
+                            tooltip="Lọc tin nhắn theo người gửi"
+                            aria-label="Lọc tin nhắn theo người gửi"
+                            style={{
+                                width: "24px",
+                                height: "24px",
+                                minWidth: "24px",
+                                padding: "0"
+                            }}
+                        >
+                            <FilterIcon width="14px" height="14px" />
+                        </IconButton>
+                    </div>
+                </div>
+            </Form.Root>
+            
+            {/* Dropdown danh sách user */}
+            {showUserFilter && (
+                <div style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    backgroundColor: "#ffffff",
+                    border: "2px solid #e1e5e9",
+                    borderRadius: "16px",
+                    boxShadow: "0 12px 32px rgba(0, 0, 0, 0.15), 0 4px 16px rgba(0, 0, 0, 0.1)",
+                    zIndex: 1000,
+                    maxHeight: "350px",
+                    overflowY: "auto",
+                    marginTop: "8px",
+                    backdropFilter: "blur(12px)"
+                }}>
+                    
+                    <div style={{ padding: "16px 0" }}>
+                        {getRoomUsers().map((user, index) => (
+                            <div
+                                key={user.id}
+                                onClick={() => handleUserSelect(user.id)}
+                                style={{
+                                    padding: "16px 24px",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "16px",
+                                    backgroundColor: selectedSender === user.id ? "#e3f2fd" : "transparent",
+                                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                                    position: "relative",
+                                    margin: "0 12px",
+                                    borderRadius: "12px",
+                                    border: selectedSender === user.id ? "2px solid #2196f3" : "2px solid transparent"
+                                }}
+                                onMouseEnter={(e) => {
+                                    if (selectedSender !== user.id) {
+                                        e.currentTarget.style.backgroundColor = "#f5f5f5";
+                                        e.currentTarget.style.transform = "translateX(4px)";
+                                        e.currentTarget.style.border = "2px solid #e0e0e0";
+                                    }
+                                }}
+                                onMouseLeave={(e) => {
+                                    if (selectedSender !== user.id) {
+                                        e.currentTarget.style.backgroundColor = "transparent";
+                                        e.currentTarget.style.transform = "translateX(0)";
+                                        e.currentTarget.style.border = "2px solid transparent";
+                                    }
+                                }}
+                            >
+                                {/* Avatar với gradient đẹp */}
+                                <div style={{
+                                    width: "48px",
+                                    height: "48px",
+                                    borderRadius: "50%",
+                                    background: selectedSender === user.id 
+                                        ? "linear-gradient(135deg, #2196f3 0%, #1976d2 100%)"
+                                        : "linear-gradient(135deg, #6c757d 0%, #495057 100%)",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "18px",
+                                    fontWeight: "700",
+                                    color: "#ffffff",
+                                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                                    boxShadow: selectedSender === user.id 
+                                        ? "0 6px 16px rgba(33, 150, 243, 0.4)" 
+                                        : "0 3px 8px rgba(0, 0, 0, 0.15)",
+                                    position: "relative",
+                                    overflow: "hidden"
+                                }}>
+                                    {/* Hiệu ứng shimmer cho avatar được chọn */}
+                                    {selectedSender === user.id && (
+                                        <div style={{
+                                            position: "absolute",
+                                            top: 0,
+                                            left: "-100%",
+                                            width: "100%",
+                                            height: "100%",
+                                            background: "linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent)",
+                                            animation: "shimmer 2s infinite"
+                                        }}></div>
+                                    )}
+                                    {user.name.charAt(0).toUpperCase()}
+                                </div>
+                                
+                                {/* Thông tin user */}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ 
+                                        fontSize: "16px", 
+                                        fontWeight: selectedSender === user.id ? "700" : "600",
+                                        color: selectedSender === user.id ? "#1976d2" : "#212529",
+                                        marginBottom: "4px",
+                                        whiteSpace: "nowrap",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis"
+                                    }}>
+                                        {user.name}
+                                    </div>
+                                    <div style={{ 
+                                        fontSize: "13px", 
+                                        color: selectedSender === user.id ? "#1976d2" : "#6c757d",
+                                        whiteSpace: "nowrap",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        fontWeight: "500"
+                                    }}>
+                                        {user.id}
+                                    </div>
+                                </div>
+                                
+                                {/* Indicator cho user được chọn */}
+                                {selectedSender === user.id && (
+                                    <div style={{
+                                        width: "12px",
+                                        height: "12px",
+                                        borderRadius: "50%",
+                                        backgroundColor: "#4caf50",
+                                        boxShadow: "0 0 0 3px #ffffff, 0 0 0 6px #4caf50",
+                                        animation: "pulse 2s infinite"
+                                    }}></div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                    
+                    {/* Footer với thông tin */}
+                    <div style={{
+                        padding: "16px 24px",
+                        borderTop: "2px solid #f0f2f5",
+                        backgroundColor: "#f8f9fa",
+                        borderRadius: "0 0 16px 16px",
+                        textAlign: "center"
+                    }}>
+                        <div style={{
+                            fontSize: "13px",
+                            color: "#495057",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "8px",
+                            fontWeight: "600"
+                        }}>
+                            <div style={{
+                                width: "6px",
+                                height: "6px",
+                                borderRadius: "50%",
+                                backgroundColor: "#28a745",
+                                boxShadow: "0 0 4px rgba(40, 167, 69, 0.5)"
+                            }}></div>
+                            {getRoomUsers().length} thành viên trong phòng
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
     );
 
     return (
-        <BaseCard
-            id="room-summary-panel"
-            className="mx_RoomSummaryCard"
-            ariaLabelledBy="room-summary-panel-tab"
-            role="tabpanel"
-            header={header}
-        >
+        <>
+            {/* CSS Animations */}
+            <style>
+                {`
+                    @keyframes shimmer {
+                        0% { left: -100%; }
+                        100% { left: 100%; }
+                    }
+                    
+                    @keyframes pulse {
+                        0%, 100% { 
+                            transform: scale(1);
+                            opacity: 1;
+                        }
+                        50% { 
+                            transform: scale(1.1);
+                            opacity: 0.8;
+                        }
+                    }
+                `}
+            </style>
+            
+            <BaseCard
+                id="room-summary-panel"
+                className="mx_RoomSummaryCard"
+                ariaLabelledBy="room-summary-panel-tab"
+                role="tabpanel"
+                header={header}
+            >
             {roomInfo}
 
             <Separator />
@@ -332,6 +611,7 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                 </div>
             </div>
         </BaseCard>
+        </>
     );
 };
 

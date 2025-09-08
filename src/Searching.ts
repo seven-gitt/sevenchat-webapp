@@ -27,6 +27,122 @@ import { isNotUndefined } from "./Typeguards";
 
 const SEARCH_LIMIT = 1000; // Tăng giới hạn tìm kiếm lên 1000 để tìm được nhiều kết quả hơn
 
+// TODO: Thêm cấu hình LIMITS động trong tương lai để tối ưu hóa theo kích thước phòng
+
+// Room ID để bật debug khi quét timeline theo yêu cầu
+const DEBUG_ROOM_ID = "!RIRVSxYPwsrqSjINwk";
+
+// TODO: Thêm hàm calculateDynamicLimits trong tương lai để tối ưu hóa hiệu suất dựa trên kích thước phòng
+
+// Parse "sender:<userId>" token anywhere in the term and return remaining keyword
+function extractSenderFilter(rawTerm: string): { senderId?: string; keyword: string } {
+    if (!rawTerm) return { keyword: "" };
+    const parts = rawTerm.split(/\s+/).filter(Boolean);
+    let senderId: string | undefined;
+    const rest: string[] = [];
+    for (const p of parts) {
+        if (!senderId && p.toLowerCase().startsWith("sender:")) {
+            senderId = p.substring(7);
+        } else {
+            rest.push(p);
+        }
+    }
+    return { senderId, keyword: rest.join(" ") };
+}
+
+// Collect ALL messages of a sender in a room from Seshat (local index), paginating to exhaustion
+async function fetchAllSenderMessagesSeshat(
+    client: MatrixClient,
+    senderId: string,
+    roomId: string,
+): Promise<{ response: ISearchResponse; query: ISearchArgs }> {
+    let eventIndex = EventIndexPeg.get();
+    if (!eventIndex) {
+        const initialized = await EventIndexPeg.init();
+        if (!initialized) throw new Error("EventIndex (Seshat) not available");
+        eventIndex = EventIndexPeg.get();
+    }
+
+    const baseQuery: ISearchArgs = {
+        search_term: "*", // Luôn dùng wildcard để tìm tất cả tin nhắn
+        before_limit: 0,
+        after_limit: 0,
+        limit: SEARCH_LIMIT,
+        order_by_recency: true,
+        room_id: roomId,
+    };
+
+    const collected: any[] = [];
+    const seenEventIds = new Set<string>();
+    let nextBatch: string | undefined;
+    let pageCount = 0;
+    const MAX_PAGES = 1000; // Giới hạn số trang để tránh vòng lặp vô tận
+
+    // First page - luôn dùng wildcard search
+    let first = await eventIndex!.search(baseQuery);
+    if (first?.results) {
+        const filtered = first.results.filter(r => {
+            const eventId = r.result?.event_id;
+            if (!eventId || seenEventIds.has(eventId)) return false;
+            if (r.result?.sender === senderId) {
+                seenEventIds.add(eventId);
+                return true;
+            }
+            return false;
+        });
+        collected.push(...filtered);
+    }
+    nextBatch = first?.next_batch;
+
+    // Loop through all pages to get complete history
+    while (nextBatch && pageCount < MAX_PAGES) {
+        pageCount++;
+        const pageQuery: ISearchArgs = { ...baseQuery, next_batch: nextBatch };
+        try {
+            const page = await eventIndex!.search(pageQuery);
+            if (!page) break;
+            
+            if (page.results) {
+                const filtered = page.results.filter(r => {
+                    const eventId = r.result?.event_id;
+                    if (!eventId || seenEventIds.has(eventId)) return false;
+                    if (r.result?.sender === senderId) {
+                        seenEventIds.add(eventId);
+                        return true;
+                    }
+                    return false;
+                });
+                collected.push(...filtered);
+                
+                // Log progress for debugging
+                if (roomId === DEBUG_ROOM_ID && pageCount % 10 === 0) {
+                    console.log(`[Debug ${DEBUG_ROOM_ID}] Seshat page ${pageCount}: +${filtered.length} events, total: ${collected.length}`);
+                }
+            }
+            nextBatch = page.next_batch;
+        } catch (e) {
+            console.warn(`fetchAllSenderMessagesSeshat: page ${pageCount} failed:`, e);
+            break;
+        }
+    }
+
+    if (roomId === DEBUG_ROOM_ID) {
+        console.log(`[Debug ${DEBUG_ROOM_ID}] Seshat-only collected ${collected.length} events for sender ${senderId}`);
+    }
+
+    const response: ISearchResponse = {
+        search_categories: {
+            room_events: {
+                results: collected,
+                count: collected.length,
+                highlights: [], // Seshat sẽ được xử lý highlights ở frontend
+            } as any,
+        },
+    };
+
+    return { response, query: baseQuery };
+}
+
 // Enhanced search patterns for better URL and domain matching
 const ENHANCED_SEARCH_PATTERNS = {
     // URL patterns
@@ -243,6 +359,11 @@ function searchInTimeline(
                 const event = events[i];
                 
                 try {
+                    // Bỏ qua tin nhắn đã xóa (redacted messages)
+                    if (event.isRedacted?.()) {
+                        continue;
+                    }
+                    
                     if (event.getType() === "m.room.message") {
                         const content = event.getContent();
                         // Only process text messages, skip files, images, etc.
@@ -379,6 +500,326 @@ function analyzeSearchTerm(term: string): {
     };
 }
 
+// Fetch all messages of a sender in a room by paginating server search until exhaustion
+async function fetchAllSenderMessagesServer(
+    client: MatrixClient,
+    senderId: string,
+    roomId: string,
+    abortSignal?: AbortSignal,
+): Promise<{ response: ISearchResponse; query: ISearchRequestBody }> {
+    const baseBody: ISearchRequestBody = {
+        search_categories: {
+            room_events: {
+                search_term: "*", // Dùng wildcard để tìm tất cả tin nhắn
+                filter: {
+                    limit: SEARCH_LIMIT,
+                    rooms: [roomId],
+                    senders: [senderId],
+                },
+                order_by: SearchOrderBy.Recent,
+                event_context: { before_limit: 0, after_limit: 0, include_profile: true },
+            },
+        },
+    };
+
+    const allResults: any[] = [];
+    const seenEventIds = new Set<string>();
+    let nextBatch: string | undefined;
+    let pageCount = 0;
+    const MAX_PAGES = 500; // Giới hạn số trang để tránh vòng lặp vô tận
+    let firstQuery = baseBody;
+
+    // First page
+    try {
+        const firstResp = await client.search({ body: baseBody }, abortSignal);
+        const firstRoom = firstResp.search_categories.room_events;
+        if (firstRoom?.results?.length) {
+            // Lọc duplicate events và tin nhắn đã xóa
+            const uniqueResults = firstRoom.results.filter(r => {
+                const eventId = r.result?.event_id;
+                if (!eventId || seenEventIds.has(eventId)) return false;
+                
+                // Bỏ qua tin nhắn đã xóa
+                if (r.result?.unsigned?.redacted_because) {
+                    return false;
+                }
+                
+                seenEventIds.add(eventId);
+                return true;
+            });
+            allResults.push(...uniqueResults);
+        }
+        nextBatch = firstRoom?.next_batch;
+    } catch (e) {
+        console.warn('fetchAllSenderMessagesServer: first page failed:', e);
+        // Thử với search term rỗng nếu wildcard thất bại
+        try {
+            const fallbackBody = { ...baseBody };
+            fallbackBody.search_categories.room_events.search_term = "";
+            const fallbackResp = await client.search({ body: fallbackBody }, abortSignal);
+            const fallbackRoom = fallbackResp.search_categories.room_events;
+            if (fallbackRoom?.results?.length) {
+                const uniqueResults = fallbackRoom.results.filter(r => {
+                    const eventId = r.result?.event_id;
+                    if (!eventId || seenEventIds.has(eventId)) return false;
+                    
+                    // Bỏ qua tin nhắn đã xóa
+                    if (r.result?.unsigned?.redacted_because) {
+                        return false;
+                    }
+                    
+                    seenEventIds.add(eventId);
+                    return true;
+                });
+                allResults.push(...uniqueResults);
+            }
+            nextBatch = fallbackRoom?.next_batch;
+            firstQuery = fallbackBody;
+        } catch (fallbackError) {
+            console.warn('fetchAllSenderMessagesServer: fallback also failed:', fallbackError);
+            throw e; // Throw original error
+        }
+    }
+
+    // Loop through all pages to get complete history
+    while (nextBatch && pageCount < MAX_PAGES) {
+        if (abortSignal?.aborted) break;
+        pageCount++;
+        
+        try {
+            const pageResp = await client.search({ body: firstQuery, next_batch: nextBatch }, abortSignal);
+            const roomData = pageResp.search_categories.room_events;
+            if (roomData?.results?.length) {
+                // Lọc duplicate events và tin nhắn đã xóa
+                const uniqueResults = roomData.results.filter(r => {
+                    const eventId = r.result?.event_id;
+                    if (!eventId || seenEventIds.has(eventId)) return false;
+                    
+                    // Bỏ qua tin nhắn đã xóa
+                    if (r.result?.unsigned?.redacted_because) {
+                        return false;
+                    }
+                    
+                    seenEventIds.add(eventId);
+                    return true;
+                });
+                allResults.push(...uniqueResults);
+                
+                // Log progress for debugging
+                if (roomId === DEBUG_ROOM_ID && pageCount % 10 === 0) {
+                    console.log(`[Debug ${DEBUG_ROOM_ID}] Server page ${pageCount}: +${uniqueResults.length} events, total: ${allResults.length}`);
+                }
+            }
+            nextBatch = roomData?.next_batch;
+        } catch (e) {
+            console.warn(`fetchAllSenderMessagesServer: page ${pageCount} failed:`, e);
+            // Thử tiếp tục với các trang khác thay vì dừng hoàn toàn
+            if (pageCount < 5) { // Chỉ retry trong 5 trang đầu
+                continue;
+            }
+            break;
+        }
+    }
+
+    // Tạo highlights từ search term nếu có
+    const highlights: string[] = [];
+    const searchTerm = firstQuery.search_categories.room_events.search_term;
+    if (searchTerm && searchTerm !== "*" && searchTerm.trim()) {
+        highlights.push(searchTerm.trim());
+    }
+
+    const response: ISearchResponse = {
+        search_categories: {
+            room_events: {
+                results: allResults,
+                count: allResults.length,
+                highlights: highlights,
+            } as any,
+        },
+    };
+
+    return { response, query: firstQuery };
+}
+
+// Verify coverage by comparing Seshat vs Server results (for diagnostics)
+async function debugVerifyCoverage(
+    client: MatrixClient,
+    senderId: string,
+    roomId: string,
+    abortSignal?: AbortSignal,
+) {
+    try {
+        const seshat = await fetchAllSenderMessagesSeshat(client, senderId, roomId);
+        const server = await fetchAllSenderMessagesServer(client, senderId, roomId, abortSignal);
+        const s = new Set<string>();
+        const g = new Set<string>();
+        const sList = seshat.response.search_categories.room_events.results || [];
+        const gList = server.response.search_categories.room_events.results || [];
+        for (const r of sList) {
+            const ev: any = r?.result as any;
+            s.add(ev?.event_id || ev?.event?.event_id);
+        }
+        for (const r of gList) {
+            const ev: any = r?.result as any;
+            g.add(ev?.event_id || ev?.event?.event_id);
+        }
+        const missingInSeshat: string[] = [];
+        const missingInServer: string[] = [];
+        for (const id of g) if (id && !s.has(id)) missingInSeshat.push(id);
+        for (const id of s) if (id && !g.has(id)) missingInServer.push(id);
+        console.log(`[Coverage] sender:${senderId} room:${roomId} seshat=${s.size} server=${g.size} missingInSeshat=${missingInSeshat.length} missingInServer=${missingInServer.length}`);
+        if (missingInSeshat.length > 0) console.log('[Coverage] missingInSeshat sample:', missingInSeshat.slice(0, 10));
+        if (missingInServer.length > 0) console.log('[Coverage] missingInServer sample:', missingInServer.slice(0, 10));
+    } catch (e) {
+        console.warn('debugVerifyCoverage failed:', e);
+    }
+}
+
+// Scan full room timeline locally (client) to gather all events of a sender (works for encrypted rooms)
+async function scanFullTimelineBySender(
+    client: MatrixClient,
+    senderId: string,
+    roomId: string,
+    keyword: string,
+    abortSignal?: AbortSignal,
+): Promise<{ response: ISearchResponse; query: ISearchRequestBody }> {
+    const room = (client as any).getRoom?.(roomId);
+    // Use unfiltered timeline set to avoid missing events hidden by filters
+    const timelineSet = (room as any)?.getUnfilteredTimelineSet?.() || room?.getLiveTimelineSet?.();
+    const timeline = timelineSet?.getLiveTimeline?.();
+    const initialEvents = timeline?.getEvents?.() || [];
+    if (roomId === DEBUG_ROOM_ID) {
+        console.log(`[Debug ${DEBUG_ROOM_ID}] Timeline scan - initial events: ${initialEvents.length}`);
+    }
+
+    const results: any[] = [];
+    const seenEventIds = new Set<string>();
+    const PAGE = 500; // Tăng kích thước trang để giảm số lần gọi API
+    let paginationCount = 0;
+    const MAX_PAGINATION = 2000; // Giới hạn số lần phân trang để tránh vòng lặp vô tận
+
+    const collectFrom = (eventsArr: any[]) => {
+        let collected = 0;
+        for (let i = eventsArr.length - 1; i >= 0; i--) {
+            const ev = eventsArr[i];
+            const eventId = ev?.getId?.() || ev?.event_id || ev?.event?.event_id;
+            if (!eventId || seenEventIds.has(eventId)) continue;
+            
+            const type = ev?.getType?.();
+            const isMessageLike = type === 'm.room.message' || type === 'm.room.encrypted' || type === 'm.sticker';
+            
+            // Bỏ qua tin nhắn đã xóa (redacted messages)
+            if (ev.isRedacted?.()) {
+                continue;
+            }
+            
+            if (isMessageLike && ev.getSender?.() === senderId) {
+                // Nếu có keyword, kiểm tra nội dung tin nhắn
+                if (keyword && keyword.trim()) {
+                    const bodyText = ev.getContent?.()?.body as string | undefined;
+                    const lowerKeyword = keyword.toLowerCase();
+                    if (bodyText && !bodyText.toLowerCase().includes(lowerKeyword)) {
+                        // Thử kiểm tra trong các trường khác nếu body không match
+                        const formatted = ev.getContent?.()?.formatted_body as string | undefined;
+                        const displayName = ev.getSender?.() || '';
+                        if (!formatted?.toLowerCase().includes(lowerKeyword) && 
+                            !displayName.toLowerCase().includes(lowerKeyword)) {
+                            continue;
+                        }
+                    }
+                }
+                
+                results.push({
+                    rank: 1,
+                    result: ev.event || ev,
+                    context: { events_before: [], events_after: [] },
+                });
+                seenEventIds.add(eventId);
+                collected++;
+            }
+        }
+        return collected;
+    };
+
+    // Thu thập từ events ban đầu
+    const initialCollected = collectFrom(initialEvents);
+    if (roomId === DEBUG_ROOM_ID) {
+        console.log(`[Debug ${DEBUG_ROOM_ID}] Timeline scan - collected ${initialCollected} initial events for ${senderId}`);
+    }
+
+    // Phân trang ngược để lấy toàn bộ lịch sử
+    while (paginationCount < MAX_PAGINATION) {
+        if (abortSignal?.aborted) break;
+        
+        const prevSeen = seenEventIds.size;
+        const hasMoreToken = !!timeline?.getPaginationToken?.("b");
+        const hasOlderNeighbour = !!timeline?.getNeighbouringTimeline?.("b");
+        
+        if (!hasMoreToken && !hasOlderNeighbour) {
+            if (roomId === DEBUG_ROOM_ID) {
+                console.log(`[Debug ${DEBUG_ROOM_ID}] Timeline scan - no more events to paginate`);
+            }
+            break;
+        }
+        
+        try {
+            paginationCount++;
+            // eslint-disable-next-line @typescript-eslint/await-thenable
+            await (client as any).paginateEventTimeline?.(timeline, { backwards: true, limit: PAGE });
+            const pageEvents = timeline?.getEvents?.() || [];
+            const pageCollected = collectFrom(pageEvents);
+            
+            if (roomId === DEBUG_ROOM_ID && paginationCount % 10 === 0) {
+                console.log(`[Debug ${DEBUG_ROOM_ID}] Timeline scan - page ${paginationCount}: ${pageEvents.length} events, +${pageCollected} for ${senderId}, total: ${results.length}`);
+            }
+            
+            // Nếu không thu thập được thêm events nào sau vài lần thử, có thể đã hết
+            if (seenEventIds.size === prevSeen) {
+                if (roomId === DEBUG_ROOM_ID) {
+                    console.log(`[Debug ${DEBUG_ROOM_ID}] Timeline scan - no new events collected, stopping`);
+                }
+                break;
+            }
+        } catch (e) {
+            console.warn(`scanFullTimelineBySender: paginateEventTimeline failed at page ${paginationCount}:`, e);
+            // Thử tiếp tục thay vì dừng ngay lập tức
+            if (paginationCount < 5) {
+                continue;
+            }
+            break;
+        }
+    }
+
+    // Tạo highlights từ keyword nếu có
+    const highlights: string[] = [];
+    if (keyword && keyword.trim()) {
+        highlights.push(keyword.trim());
+    }
+
+    const response: ISearchResponse = {
+        search_categories: {
+            room_events: {
+                results,
+                count: results.length,
+                highlights: highlights,
+            } as any,
+        },
+    };
+
+    const query: ISearchRequestBody = {
+        search_categories: {
+            room_events: {
+                search_term: keyword || '',
+                filter: { limit: SEARCH_LIMIT, rooms: [roomId], senders: [senderId] },
+                order_by: SearchOrderBy.Recent,
+                event_context: { before_limit: 0, after_limit: 0, include_profile: true },
+            },
+        },
+    };
+
+    return { response, query };
+}
+
 async function serverSideSearch(
     client: MatrixClient,
     term: string,
@@ -390,6 +831,158 @@ async function serverSideSearch(
     };
 
     if (roomId !== undefined) filter.rooms = [roomId];
+
+    // Hỗ trợ truy vấn kết hợp: tách token sender và phần từ khóa còn lại
+    const { senderId: combinedSenderId, keyword: remainingKeyword } = extractSenderFilter(term || "");
+    if (combinedSenderId) {
+        term = remainingKeyword || ""; // dùng phần keyword còn lại cho nội dung
+    }
+
+    // Xử lý tìm kiếm theo người gửi
+    if (combinedSenderId) {
+        const senderId = combinedSenderId;
+        // Nếu đang tìm trong 1 phòng cụ thể, tự dựng kết quả từ timeline phòng để đảm bảo luôn hiển thị được
+        if (roomId) {
+            try {
+                // Ưu tiên gọi server search phân trang để gom toàn bộ tin nhắn của sender trong phòng
+                try {
+                    const full = await fetchAllSenderMessagesServer(client, senderId, roomId, abortSignal);
+                    const count = full.response?.search_categories?.room_events?.results?.length || 0;
+                    if (count > 0) {
+                        if (roomId === DEBUG_ROOM_ID) {
+                            console.log(`[Debug ${DEBUG_ROOM_ID}] Server paginated sender search found ${count} events`);
+                        }
+                        // Diagnostic cross-check for the room created at 2025-08-20
+                        await debugVerifyCoverage(client, senderId, roomId, abortSignal);
+                        return full;
+                    }
+                } catch (e) {
+                    console.warn('Server paginated sender search failed, fallback to timeline scan:', e);
+                }
+
+                // Fallback: quét full timeline để đảm bảo không sót (đặc biệt phòng mã hóa)
+                const timelineFull = await scanFullTimelineBySender(client, senderId, roomId, term, abortSignal);
+                await debugVerifyCoverage(client, senderId, roomId, abortSignal);
+                if (timelineFull?.response?.search_categories?.room_events?.results?.length) {
+                    return timelineFull;
+                }
+                const room = (client as any).getRoom?.(roomId);
+                const timeline = room?.getLiveTimeline?.();
+                const initialEvents = timeline?.getEvents?.() || [];
+                if (roomId === DEBUG_ROOM_ID) {
+                    console.log(`[Debug ${DEBUG_ROOM_ID}] Initial events: ${initialEvents.length}`);
+                }
+
+                // Thu thập sự kiện khớp sender trên toàn bộ lịch sử bằng phân trang lùi
+                // Đếm toàn bộ và đưa toàn bộ kết quả ra danh sách hiển thị
+                const results = [] as any[];
+                const seenEventIds = new Set<string>();
+                let totalCount = 0;
+                const PAGE = 250; // kích thước trang khi phân trang
+
+                const collectFrom = (eventsArr: any[]) => {
+                    for (let i = eventsArr.length - 1; i >= 0; i--) {
+                        const ev = eventsArr[i];
+                        const eventId = ev?.getId?.() || ev?.event_id || ev?.event?.event_id;
+                        if (!eventId || seenEventIds.has(eventId)) continue; // tránh đếm trùng khi phân trang
+                        
+                        // Bỏ qua tin nhắn đã xóa (redacted messages)
+                        if (ev.isRedacted?.()) {
+                            continue;
+                        }
+                        
+                        const type = ev?.getType?.();
+                        const isMessageLike = type === 'm.room.message' || type === 'm.room.encrypted' || type === 'm.sticker';
+                        if (isMessageLike && ev.getSender?.() === senderId) {
+                            const bodyText = ev.getContent?.()?.body as string | undefined;
+                            // Chỉ kiểm tra keyword nếu có term và bodyText
+                            if (term && term.trim() && bodyText && !bodyText.toLowerCase().includes(term.toLowerCase())) {
+                                continue; // không khớp keyword
+                            }
+                            totalCount += 1;
+                            // Không gửi kèm context để tránh hiển thị các tin nhắn lân cận bị mờ
+                            const before: any[] = [];
+                            const after: any[] = [];
+                            results.push({
+                                rank: 1,
+                                result: ev.event,
+                                context: {
+                                    events_before: before,
+                                    events_after: after,
+                                },
+                            });
+                            seenEventIds.add(eventId);
+                        }
+                    }
+                };
+
+                collectFrom(initialEvents);
+
+                // Phân trang lùi cho đến khi hết token hoặc đạt giới hạn
+                while (true) {
+                    if (abortSignal?.aborted) {
+                        console.warn('sender-only timeline scan aborted');
+                        break;
+                    }
+                    const prevSeen = seenEventIds.size;
+                    const hasMoreToken = !!timeline?.getPaginationToken?.("b");
+                    const hasOlderNeighbour = !!timeline?.getNeighbouringTimeline?.("b");
+                    if (!hasMoreToken && !hasOlderNeighbour) break;
+                    try {
+                        // eslint-disable-next-line @typescript-eslint/await-thenable
+                        await (client as any).paginateEventTimeline?.(timeline, { backwards: true, limit: PAGE });
+                        const pageEvents = timeline?.getEvents?.() || [];
+                        if (roomId === DEBUG_ROOM_ID) {
+                            console.log(`[Debug ${DEBUG_ROOM_ID}] Paged events: ${pageEvents.length}, collected so far: ${seenEventIds.size}`);
+                        }
+                        collectFrom(pageEvents);
+                    } catch (e) {
+                        console.warn('paginateEventTimeline failed:', e);
+                        break;
+                    }
+                    // Nếu không có event mới nào được thêm, dừng để tránh vòng lặp vô hạn
+                    if (seenEventIds.size === prevSeen) {
+                        break;
+                    }
+                }
+
+                const response: ISearchResponse = {
+                    search_categories: {
+                        room_events: {
+                            results,
+                            count: totalCount,
+                            highlights: [],
+                        } as any,
+                    },
+                };
+
+                const query: ISearchRequestBody = {
+                    search_categories: {
+                        room_events: {
+                            search_term: term || '',
+                            filter: { ...filter, rooms: [roomId], senders: [senderId] },
+                            order_by: SearchOrderBy.Recent,
+                            event_context: { before_limit: 1, after_limit: 1, include_profile: true },
+                        },
+                    },
+                };
+
+                // Trả về kết quả đã dựng sẵn, bỏ qua request lên server
+                return { response, query };
+            } catch (e) {
+                console.warn('Fallback timeline sender search failed, will try server search:', e);
+            }
+        }
+
+        // Nếu không có roomId hoặc fallback thất bại, dùng server search với wildcard/keyword
+        filter.senders = [senderId];
+        // Nếu chỉ có sender filter (không có keyword), dùng empty string thay vì "*"
+        term = term && term.trim().length > 0 ? term : "";
+        console.log("ServerSideSearch: Processing sender filter for:", senderId, "with term:", term || "<empty>");
+    } else if (!term) {
+        // Nếu từ khóa rỗng và không có sender filter, tìm kiếm tất cả tin nhắn
+        term = "";
+    }
 
     // Use enhanced search term analysis
     const searchAnalysis = analyzeSearchTerm(term);
@@ -481,6 +1074,10 @@ async function serverSideSearch(
                         },
                     };
 
+                    // Kiểm tra nếu signal đã bị abort trước khi thực hiện search
+                    if (abortSignal?.aborted) {
+                        continue; // Skip this strategy instead of throwing
+                    }
                     const strategyResponse = await client.search({ body: body }, abortSignal);
                     
                     // Check if we got meaningful results
@@ -538,6 +1135,10 @@ async function serverSideSearch(
                         },
                     };
 
+                    // Kiểm tra nếu signal đã bị abort trước khi thực hiện search
+                    if (abortSignal?.aborted) {
+                        continue; // Skip this strategy instead of throwing
+                    }
                     const strategyResponse = await client.search({ body: body }, abortSignal);
                     
                     const results = strategyResponse.search_categories?.room_events?.results;
@@ -571,8 +1172,57 @@ async function serverSideSearch(
             },
         };
 
+        // Kiểm tra nếu signal đã bị abort trước khi thực hiện search
+        if (abortSignal?.aborted) {
+            // Trả về kết quả rỗng thay vì throw error
+            return { 
+                response: { 
+                    search_categories: { 
+                        room_events: { 
+                            results: [], 
+                            count: 0, 
+                            highlights: [] 
+                        } 
+                    } 
+                }, 
+                query: body 
+            };
+        }
         response = await client.search({ body: body }, abortSignal);
         query = body;
+        
+        // Nếu chỉ có sender filter và kết quả ít, thử approach khác
+        const { senderId: checkSenderId } = extractSenderFilter(term || "");
+        const currentCount = response?.search_categories?.room_events?.count || 0;
+        if (checkSenderId && currentCount < 100) {
+            console.log(`ServerSideSearch: Low result count (${currentCount}) for sender-only search, trying alternative approach`);
+            try {
+                // Thử tìm kiếm với empty term và filter senders
+                const altBody: ISearchRequestBody = {
+                    search_categories: {
+                        room_events: {
+                            search_term: "",
+                            filter: { ...filter, senders: [checkSenderId] },
+                            order_by: SearchOrderBy.Recent,
+                            event_context: {
+                                before_limit: 1,
+                                after_limit: 1,
+                                include_profile: true,
+                            },
+                        },
+                    },
+                };
+                const altResponse = await client.search({ body: altBody }, abortSignal);
+                const altCount = altResponse?.search_categories?.room_events?.count || 0;
+                if (altCount > currentCount) {
+                    console.log(`ServerSideSearch: Found ${altCount} results with empty term`);
+                    response = altResponse;
+                    query = altBody;
+                }
+            } catch (e) {
+                console.log("ServerSideSearch: Alternative search failed:", e);
+            }
+        }
     }
 
     return { response, query };
@@ -701,13 +1351,30 @@ async function localSearch(
         return null;
     };
 
+    // Xử lý tìm kiếm theo người gửi + keyword kết hợp (hỗ trợ 'sender:<id> <keyword>')
+    let actualSearchTerm = searchTerm;
+    let senderFilter: string | undefined;
+    {
+        const { senderId, keyword } = extractSenderFilter(searchTerm || "");
+        if (senderId) {
+            senderFilter = senderId;
+            const kw = (keyword || "").trim();
+            // Nếu có keyword sau sender, dùng keyword; nếu không, dùng '*' để tìm tất cả
+            actualSearchTerm = kw.length > 0 ? kw : "*";
+            console.log("LocalSearch: Processing sender filter for:", senderFilter, "with keyword:", kw || "<any>");
+        } else if (!actualSearchTerm) {
+            // Nếu từ khóa rỗng và không có sender filter, tìm kiếm tất cả tin nhắn
+            actualSearchTerm = "*";
+        }
+    }
+
     const searchArgs: ISearchArgs = {
-        search_term: searchTerm,
+        search_term: actualSearchTerm,
         before_limit: 1,
         after_limit: 1,
         limit: SEARCH_LIMIT,
         order_by_recency: true,
-        room_id: undefined, // Tìm kiếm trong tất cả các phòng, không giới hạn theo roomId
+        room_id: roomId, // Giới hạn theo phòng hiện tại nếu có
     };
 
     // Chỉ giới hạn theo roomId nếu được yêu cầu cụ thể
@@ -716,7 +1383,7 @@ async function localSearch(
     }
 
     // Use enhanced search term analysis
-    const searchAnalysis = analyzeSearchTerm(searchTerm);
+    const searchAnalysis = analyzeSearchTerm(actualSearchTerm);
     const { isUrlSearch, isSingleToken, keywords } = searchAnalysis;
     
     let localResult;
@@ -1184,6 +1851,123 @@ async function localSearch(
     if (!localResult) {
         console.log("Falling back to normal search");
         localResult = await safeSearch(searchArgs);
+    }
+
+    // Lọc kết quả theo người gửi nếu có senderFilter
+    if (senderFilter && localResult?.results) {
+        console.log(`LocalSearch: Filtering results by sender: ${senderFilter}`);
+        console.log(`LocalSearch: Before filtering: ${localResult.results.length} results`);
+        console.log(`LocalSearch: Search term was: "${searchTerm}", actual term: "${actualSearchTerm}"`);
+        localResult.results = localResult.results.filter(result => {
+            const event = result.result;
+            const matches = event.sender === senderFilter;
+            if (!matches) {
+                console.log(`LocalSearch: Filtering out event from sender: ${event.sender}`);
+            }
+            return matches;
+        });
+        localResult.count = localResult.results.length;
+        console.log(`LocalSearch: After filtering: ${localResult.count} results from sender ${senderFilter}`);
+        
+        // Nếu chỉ có sender filter (không có keyword) thì QUÉT TOÀN BỘ TIMELINE phòng để lấy tất cả tin nhắn của user
+        if (actualSearchTerm === "*" && roomId) {
+            try {
+                console.log("LocalSearch: Sender-only filter detected, scanning full room timeline for all messages of user");
+                const room = (client as any).getRoom?.(roomId);
+                // Sử dụng unfiltered timeline set để tránh bỏ sót events bị ẩn bởi filters
+                const timelineSet = (room as any)?.getUnfilteredTimelineSet?.() || room?.getLiveTimelineSet?.();
+                const timeline = timelineSet?.getLiveTimeline?.();
+                const results: any[] = [];
+                const seenEventIds = new Set<string>();
+                const PAGE = 500; // Tăng kích thước trang
+                let paginationCount = 0;
+                const MAX_PAGINATION = 1000; // Giới hạn số lần phân trang
+
+                const collectFrom = (eventsArr: any[]) => {
+                    let collected = 0;
+                    for (let i = eventsArr.length - 1; i >= 0; i--) {
+                        const ev = eventsArr[i];
+                        const eventId = ev?.getId?.() || ev?.event_id || ev?.event?.event_id;
+                        if (!eventId || seenEventIds.has(eventId)) continue;
+                        
+                        // Bỏ qua tin nhắn đã xóa (redacted messages)
+                        if (ev.isRedacted?.()) {
+                            continue;
+                        }
+                        
+                        const type = ev?.getType?.();
+                        const isMessageLike = type === 'm.room.message' || type === 'm.room.encrypted' || type === 'm.sticker';
+                        
+                        if (isMessageLike && ev.getSender?.() === senderFilter) {
+                            results.push({
+                                rank: 1,
+                                result: ev.event || ev,
+                                context: { events_before: [], events_after: [] },
+                            });
+                            seenEventIds.add(eventId);
+                            collected++;
+                        }
+                    }
+                    return collected;
+                };
+
+                const initialEvents = timeline?.getEvents?.() || [];
+                const initialCollected = collectFrom(initialEvents);
+                if (roomId === DEBUG_ROOM_ID) {
+                    console.log(`[Debug ${DEBUG_ROOM_ID}] Local sender scan - initial events: ${initialEvents.length}, collected: ${initialCollected}`);
+                }
+
+                // Phân trang để lấy toàn bộ lịch sử
+                while (paginationCount < MAX_PAGINATION) {
+                    const prevSeen = seenEventIds.size;
+                    const hasMoreToken = !!timeline?.getPaginationToken?.("b");
+                    const hasOlderNeighbour = !!timeline?.getNeighbouringTimeline?.("b");
+                    
+                    if (!hasMoreToken && !hasOlderNeighbour) {
+                        if (roomId === DEBUG_ROOM_ID) {
+                            console.log(`[Debug ${DEBUG_ROOM_ID}] Local sender scan - no more events to paginate`);
+                        }
+                        break;
+                    }
+                    
+                    try {
+                        paginationCount++;
+                        // eslint-disable-next-line @typescript-eslint/await-thenable
+                        await (client as any).paginateEventTimeline?.(timeline, { backwards: true, limit: PAGE });
+                        const pageEvents = timeline?.getEvents?.() || [];
+                        const pageCollected = collectFrom(pageEvents);
+                        
+                        if (roomId === DEBUG_ROOM_ID && paginationCount % 20 === 0) {
+                            console.log(`[Debug ${DEBUG_ROOM_ID}] Local sender scan - page ${paginationCount}: ${pageEvents.length} events, +${pageCollected} for ${senderFilter}, total: ${results.length}`);
+                        }
+                        
+                        // Nếu không thu thập được thêm events nào, có thể đã hết
+                        if (seenEventIds.size === prevSeen) {
+                            if (roomId === DEBUG_ROOM_ID) {
+                                console.log(`[Debug ${DEBUG_ROOM_ID}] Local sender scan - no new events collected, stopping`);
+                            }
+                            break;
+                        }
+                    } catch (e) {
+                        console.warn(`LocalSearch: paginateEventTimeline failed at page ${paginationCount}:`, e);
+                        // Thử tiếp tục thay vì dừng ngay lập tức
+                        if (paginationCount < 10) {
+                            continue;
+                        }
+                        break;
+                    }
+                }
+
+                localResult.results = results;
+                localResult.count = results.length;
+                console.log(`LocalSearch: Collected ${results.length} messages from user ${senderFilter} via full timeline scan (${paginationCount} pages)`);
+                if (roomId === DEBUG_ROOM_ID) {
+                    console.log(`[Debug ${DEBUG_ROOM_ID}] Local sender scan - final count: ${results.length}`);
+                }
+            } catch (e) {
+                console.log("LocalSearch: Full timeline sender scan failed:", e);
+            }
+        }
     }
     
     // Nếu vẫn không có kết quả, thử tìm kiếm với các biến thể khác nhau
@@ -1708,6 +2492,114 @@ async function eventIndexSearch(
     let searchPromise: Promise<ISearchResults>;
 
     if (roomId !== undefined) {
+        // Nếu có filter theo sender trong 1 phòng cụ thể:
+        // 1) Ưu tiên kết hợp cả Seshat và Server để đảm bảo lấy đủ nhất
+        // 2) Nếu không có Seshat, dùng serverSideSearchProcess (có phân trang) làm fallback
+        const { senderId } = extractSenderFilter(term || "");
+        if (senderId) {
+            const eventIndex = EventIndexPeg.get();
+            if (eventIndex) {
+                if (roomId === DEBUG_ROOM_ID) {
+                    console.log(`[Debug ${DEBUG_ROOM_ID}] eventIndexSearch -> using combined Seshat+Server for sender:${senderId}`);
+                }
+                
+                try {
+                    // Kết hợp cả Seshat và Server search để đảm bảo lấy đủ
+                    const [seshatAll, serverAll] = await Promise.allSettled([
+                        fetchAllSenderMessagesSeshat(client, senderId, roomId),
+                        fetchAllSenderMessagesServer(client, senderId, roomId, abortSignal)
+                    ]);
+                    
+                    const allResults: any[] = [];
+                    const seenEventIds = new Set<string>();
+                    
+                    // Thu thập từ Seshat
+                    if (seshatAll.status === 'fulfilled' && seshatAll.value.response.search_categories.room_events.results) {
+                        for (const result of seshatAll.value.response.search_categories.room_events.results) {
+                            const eventId = result.result?.event_id;
+                            if (eventId && !seenEventIds.has(eventId)) {
+                                seenEventIds.add(eventId);
+                                allResults.push(result);
+                            }
+                        }
+                    }
+                    
+                    // Thu thập từ Server (bổ sung những gì Seshat thiếu)
+                    if (serverAll.status === 'fulfilled' && serverAll.value.response.search_categories.room_events.results) {
+                        for (const result of serverAll.value.response.search_categories.room_events.results) {
+                            const eventId = result.result?.event_id;
+                            if (eventId && !seenEventIds.has(eventId)) {
+                                seenEventIds.add(eventId);
+                                allResults.push(result);
+                            }
+                        }
+                    }
+                    
+                    if (roomId === DEBUG_ROOM_ID) {
+                        const seshatCount = seshatAll.status === 'fulfilled' ? (seshatAll.value.response.search_categories.room_events.results?.length || 0) : 0;
+                        const serverCount = serverAll.status === 'fulfilled' ? (serverAll.value.response.search_categories.room_events.results?.length || 0) : 0;
+                        console.log(`[Debug ${DEBUG_ROOM_ID}] Combined search: Seshat=${seshatCount}, Server=${serverCount}, Total unique=${allResults.length}`);
+                    }
+                    
+                    // Kết hợp highlights từ cả hai nguồn
+                    const combinedHighlights: string[] = [];
+                    if (seshatAll.status === 'fulfilled' && seshatAll.value.response.search_categories.room_events.highlights) {
+                        combinedHighlights.push(...seshatAll.value.response.search_categories.room_events.highlights);
+                    }
+                    if (serverAll.status === 'fulfilled' && serverAll.value.response.search_categories.room_events.highlights) {
+                        combinedHighlights.push(...serverAll.value.response.search_categories.room_events.highlights);
+                    }
+                    
+                    // Loại bỏ duplicates và thêm keyword từ search term
+                    const uniqueHighlights = Array.from(new Set(combinedHighlights));
+                    const senderMatch = term.match(/sender:([^\s]+)(?:\s+(.*))?/);
+                    if (senderMatch && senderMatch[2]) {
+                        const keyword = senderMatch[2].trim();
+                        if (keyword && !uniqueHighlights.includes(keyword)) {
+                            uniqueHighlights.push(keyword);
+                        }
+                    }
+
+                    // Tạo response kết hợp
+                    const combinedResponse: ISearchResponse = {
+                        search_categories: {
+                            room_events: {
+                                results: allResults,
+                                count: allResults.length,
+                                highlights: uniqueHighlights,
+                            } as any,
+                        },
+                    };
+                    
+                    const base: ISeshatSearchResults = {
+                        seshatQuery: seshatAll.status === 'fulfilled' ? seshatAll.value.query : {} as ISearchArgs,
+                        results: [],
+                        highlights: [],
+                    } as ISeshatSearchResults;
+                    
+                    await debugVerifyCoverage(client, senderId, roomId, abortSignal);
+                    return client.processRoomEventsSearch(base, combinedResponse);
+                    
+                } catch (e) {
+                    console.warn(`Combined search failed, falling back to Seshat-only:`, e);
+                    // Fallback to Seshat-only
+                    const seshatAll = await fetchAllSenderMessagesSeshat(client, senderId, roomId);
+                    const base: ISeshatSearchResults = {
+                        seshatQuery: seshatAll.query,
+                        results: [],
+                        highlights: [],
+                    } as ISeshatSearchResults;
+                    await debugVerifyCoverage(client, senderId, roomId, abortSignal);
+                    return client.processRoomEventsSearch(base, seshatAll.response);
+                }
+            } else {
+                if (roomId === DEBUG_ROOM_ID) {
+                    console.log(`[Debug ${DEBUG_ROOM_ID}] eventIndexSearch -> fallback to serverSideSearchProcess for sender:${senderId}`);
+                }
+                searchPromise = serverSideSearchProcess(client, term, roomId, abortSignal);
+                return searchPromise;
+            }
+        }
         if (await client.getCrypto()?.isEncryptionEnabledInRoom(roomId)) {
             // The search is for a single encrypted room, use our local
             // search method.

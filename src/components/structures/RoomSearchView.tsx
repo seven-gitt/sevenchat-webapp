@@ -98,8 +98,20 @@ export const RoomSearchView = ({
                     // whether it was used by the search engine or not.
 
                     let highlights = results.highlights;
-                    if (!highlights.includes(term)) {
-                        highlights = highlights.concat(term);
+                    
+                    // Xử lý highlight cho tìm kiếm kết hợp sender + keyword
+                    const senderMatch = term.match(/sender:([^\s]+)(?:\s+(.*))?/);
+                    if (senderMatch && senderMatch[2]) {
+                        // Có keyword sau sender filter
+                        const keyword = senderMatch[2].trim();
+                        if (keyword && !highlights.includes(keyword)) {
+                            highlights = highlights.concat(keyword);
+                        }
+                    } else if (term && !term.startsWith('sender:')) {
+                        // Tìm kiếm thông thường, không có sender filter
+                        if (!highlights.includes(term)) {
+                            highlights = highlights.concat(term);
+                        }
                     }
 
                     // For overlapping highlights,
@@ -134,6 +146,14 @@ export const RoomSearchView = ({
                         logger.error("Discarding stale search results");
                         return false;
                     }
+                    
+                    // Kiểm tra nếu lỗi là do AbortSignal
+                    if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+                        logger.log("Search was aborted by user or component unmount");
+                        onUpdate(false, null, null); // Không truyền error cho abort
+                        return false;
+                    }
+                    
                     logger.error("Search failed", error);
                     onUpdate(false, null, error);
                     return false;
@@ -145,17 +165,39 @@ export const RoomSearchView = ({
 
     // Lọc kết quả theo người gửi được chọn
     const filteredResults = useMemo(() => {
-        if (selectedSender === "all" || !results?.results) return results?.results || [];
-        return results.results.filter(r => r.context.getEvent().getSender() === selectedSender);
-    }, [results, selectedSender]);
+        if (!results?.results) {
+            return [];
+        }
+        
+        // Nếu đang sử dụng từ khóa sender:, kết quả đã được lọc ở backend
+        // Không cần lọc lại ở frontend
+        if (term.startsWith('sender:')) {
+            return results.results;
+        }
+        
+        // Chỉ lọc khi selectedSender khác "all" và không phải từ khóa sender:
+        if (selectedSender === "all") {
+            return results.results;
+        }
+        
+        const filtered = results.results.filter(r => r.context.getEvent().getSender() === selectedSender);
+        return filtered;
+    }, [results, selectedSender, term]);
 
     // Mount & unmount effect
     useEffect(() => {
         aborted.current = false;
-        handleSearchResult(promise);
+        handleSearchResult(promise).catch((error) => {
+            // Xử lý lỗi từ promise một cách graceful
+            if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+                return;
+            }
+            console.error("Search promise failed:", error);
+        });
         return () => {
             aborted.current = true;
-            abortController?.abort();
+            // Không abort nếu component đã unmount để tránh lỗi "signal is aborted without reason"
+            // Promise sẽ tự động cleanup khi component unmount
         };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -167,6 +209,40 @@ export const RoomSearchView = ({
                 data-testid="messagePanelSearchSpinner"
             >
                 <li className="mx_RoomView_scrollheader" />
+            </div>
+        );
+    }
+
+    // Nếu không có kết quả tìm kiếm, hiển thị thông báo
+    if (!results?.results?.length) {
+        let message = "Không tìm thấy kết quả";
+        
+        // Kiểm tra xem có phải tìm kiếm theo sender không
+        const senderMatch = term.match(/sender:([^\s]+)(?:\s+(.*))?/);
+        if (senderMatch) {
+            const senderId = senderMatch[1];
+            const keyword = senderMatch[2]?.trim();
+            
+            // Tìm tên hiển thị của sender (cần truyền từ props)
+            const senderName = senderId; // Tạm thời dùng senderId, sẽ cải thiện sau
+            
+            if (keyword) {
+                message = `Không tìm thấy tin nhắn nào từ ${senderName} chứa "${keyword}"`;
+            } else {
+                message = `Không tìm thấy tin nhắn nào từ ${senderName}`;
+            }
+        } else if (term) {
+            message = `Không tìm thấy tin nhắn nào chứa "${term}"`;
+        }
+            
+        return (
+            <div className="mx_RoomView_messagePanel">
+                <li className="mx_RoomView_scrollheader" />
+                <li key="no-results">
+                    <h2 className="mx_RoomView_topMarker">
+                        {message}
+                    </h2>
+                </li>
             </div>
         );
     }
@@ -206,7 +282,7 @@ export const RoomSearchView = ({
         } else {
             ret.push(
                 <li key="search-top-marker">
-                    <h2 className="mx_RoomView_topMarker">{_t("no_more_results")}</h2>
+                    <h2 className="mx_RoomView_topMarker">Không còn kết quả nào khác</h2>
                 </li>,
             );
         }
@@ -227,6 +303,7 @@ export const RoomSearchView = ({
 
     // Sử dụng filteredResults để hiển thị kết quả đã lọc
     const searchResults = filteredResults;
+    
     for (let i = (searchResults.length || 0) - 1; i >= 0; i--) {
         const result = searchResults[i];
 
@@ -265,7 +342,7 @@ export const RoomSearchView = ({
 
         // merging two successive search result if the query is present in both of them
         const currentTimeline = result.context.getTimeline();
-        const nextTimeline = i > 0 ? results.results[i - 1].context.getTimeline() : [];
+        const nextTimeline = i > 0 ? searchResults[i - 1].context.getTimeline() : [];
 
         if (i > 0 && currentTimeline[currentTimeline.length - 1].getId() == nextTimeline[0].getId()) {
             // if this is the first searchResult we merge then add all values of the current searchResult
@@ -283,7 +360,7 @@ export const RoomSearchView = ({
 
             // add the index of the matching event of the next searchResult
             ourEventsIndexes.push(
-                ourEventsIndexes[ourEventsIndexes.length - 1] + results.results[i - 1].context.getOurEventIndex() + 1,
+                ourEventsIndexes[ourEventsIndexes.length - 1] + searchResults[i - 1].context.getOurEventIndex() + 1,
             );
 
             continue;

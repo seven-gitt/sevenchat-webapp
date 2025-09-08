@@ -1701,8 +1701,55 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
     private onSearch = (term: string, scope = SearchScope.Room): void => {
         const roomId = scope === SearchScope.Room ? this.getRoomId() : undefined;
         debuglog("sending search request");
+        console.log("RoomView.onSearch called with:", { term, scope, roomId });
+        
+        // Nếu đang chọn một người gửi trên UI mà từ khóa chưa chứa sender:, tự động kết hợp
+        // Áp dụng cả khi term rỗng để giữ kết quả lọc theo người gửi sau khi xoá keyword
+        if (this.state.selectedSender && this.state.selectedSender !== "all" && !term.includes("sender:")) {
+            term = term ? `sender:${this.state.selectedSender} ${term}` : `sender:${this.state.selectedSender}`;
+        }
+
+        // Xử lý token sender:<id> (có thể kèm keyword phía sau) để cập nhật selectedSender
+        const extractSenderId = (raw: string): string | undefined => {
+            if (!raw) return undefined;
+            const parts = raw.split(/\s+/).filter(Boolean);
+            const token = parts.find((p) => p.toLowerCase().startsWith("sender:"));
+            return token ? token.substring(7) : undefined;
+        };
+
+        let selectedSender = this.state.selectedSender || "all";
+        const parsedSender = extractSenderId(term);
+        if (parsedSender) {
+            selectedSender = parsedSender;
+            console.log("Detected sender search for:", parsedSender);
+        }
+        
+        // Khởi tạo danh sách người gửi nếu chưa có
+        let searchSenders: Array<[string, {member: any, name: string}]> = [];
+        if (this.state.room) {
+            const room = this.state.room;
+            const members = room.getMembers();
+            searchSenders = members
+                .filter(member => member.membership === 'join' || member.membership === 'invite')
+                .map(member => [member.userId, {member, name: member.name || member.userId}]);
+        }
+        
+        // Abort search cũ nếu có và thêm lý do cụ thể
+        if (this.state.search?.abortController && !this.state.search.abortController.signal.aborted) {
+            this.state.search.abortController.abort("New search started");
+        }
+        
+        // Luôn tạo search mới ngay lập tức, không đợi
+        this.createNewSearch(term, scope, roomId, searchSenders, selectedSender);
+    };
+
+    // removed timeline-based fake search handler to prevent crashes
+
+    private createNewSearch = (term: string, scope: SearchScope, roomId?: string, searchSenders?: Array<[string, {member: any, name: string}]>, selectedSender?: string): void => {
         const abortController = new AbortController();
         const promise = eventSearch(this.context.client!, term, roomId, abortController.signal);
+        
+        console.log("Creating new search with:", { term, scope, roomId, selectedSender });
 
         this.setState({
             timelineRenderingType: TimelineRenderingType.Search,
@@ -1716,6 +1763,8 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                 promise,
                 abortController,
             },
+            searchSenders: searchSenders || [],
+            selectedSender: selectedSender || "all",
         });
     };
 
@@ -1725,9 +1774,22 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
 
     private onSenderChange = (senderId: string): void => {
         this.setState({ selectedSender: senderId });
+        
+        // Nếu đang ở chế độ search và chọn một người gửi cụ thể mà không có từ khóa tìm kiếm
+        // thì tìm kiếm tất cả tin nhắn của người đó
+        if (this.state.timelineRenderingType === TimelineRenderingType.Search && 
+            senderId !== "all" && 
+            (!this.state.search?.term || this.state.search.term.trim() === "")) {
+            
+            // Tạo từ khóa tìm kiếm đặc biệt để tìm tất cả tin nhắn của người gửi
+            const searchTerm = `sender:${senderId}`;
+            this.onSearch(searchTerm, this.state.search?.scope ?? SearchScope.Room);
+        }
     };
 
     private onSearchUpdate = (inProgress: boolean, searchResults: ISearchResults | null, error: Error | null): void => {
+        console.log("onSearchUpdate called with:", { inProgress, resultsCount: searchResults?.results?.length, error: error?.message });
+        
         // Lấy danh sách người gửi từ kết quả tìm kiếm
         let searchSenders: Array<[string, {member: any, name: string}]> = [];
         if (searchResults?.results && this.state.room) {
@@ -1742,13 +1804,28 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                 }
             }
             searchSenders = Array.from(map.entries());
+            console.log("Found senders from search results:", searchSenders.length);
+        } else if (!searchResults?.results && this.state.room && !inProgress) {
+            // Nếu không có kết quả tìm kiếm, lấy danh sách tất cả thành viên trong phòng
+            const room = this.state.room;
+            const members = room.getMembers();
+            searchSenders = members
+                .filter(member => member.membership === 'join' || member.membership === 'invite')
+                .map(member => [member.userId, {member, name: member.name || member.userId}]);
+            console.log("Using all room members as senders:", searchSenders.length);
+        }
+
+        // Xử lý AbortError một cách graceful - không hiển thị lỗi cho user
+        let displayError: Error | null = error;
+        if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+            displayError = null; // Không hiển thị lỗi abort cho user
         }
 
         this.setState({
             search: {
                 ...this.state.search!,
                 count: searchResults?.count,
-                error: error ?? undefined,
+                error: displayError ?? undefined,
                 inProgress,
             },
             searchSenders,
@@ -1879,12 +1956,22 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
         this.onSearch(term);
     }, 300);
 
+    // Khởi tạo search mode với dropdown lọc ngay cả khi không có từ khóa
+    public initializeSearchWithFilter = (): void => {
+        if (this.state.timelineRenderingType !== TimelineRenderingType.Search) {
+            // Khởi tạo search mode với từ khóa rỗng
+            this.onSearch("", SearchScope.Room);
+        }
+    };
+
     private onCancelSearchClick = (): Promise<void> => {
         return new Promise<void>((resolve) => {
             this.setState(
                 {
                     timelineRenderingType: TimelineRenderingType.Room,
                     search: undefined,
+                    selectedSender: "all", // Reset về "Tất cả" khi hủy search
+                    searchSenders: [], // Clear danh sách người gửi
                 },
                 resolve,
             );
@@ -2560,6 +2647,8 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                 onSearchChange={this.onSearchChange}
                 onSearchCancel={this.onCancelSearchClick}
                 searchTerm={this.state.search?.term ?? ""}
+                onInitializeFilter={this.initializeSearchWithFilter}
+                selectedSender={this.state.selectedSender}
             />
         ) : undefined;
 
