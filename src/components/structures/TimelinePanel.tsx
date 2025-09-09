@@ -1214,9 +1214,18 @@ class TimelinePanel extends React.Component<IProps, IState> {
         // Otherwise, reload the timeline rather than trying to paginate
         // through all of space-time.
         if (this.timelineWindow?.canPaginate(EventTimeline.FORWARDS)) {
+            // Hiển thị loading indicator ngắn khi reload timeline
+            this.setState({ canBackPaginate: false });
             this.loadTimeline();
         } else {
+            // Scroll mượt đến bottom với animation đã cải thiện
             this.messagePanel.current?.scrollToBottom();
+            
+            // Đảm bảo state được update để UI phản hồi đúng
+            this.setState({ 
+                canForwardPaginate: false,
+                timelineLoading: false 
+            });
         }
     };
 

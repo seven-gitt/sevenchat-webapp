@@ -51,22 +51,37 @@ function calculateDynamicLimits(term: string, roomId?: string): { limit: number;
     const isSimpleSearch = term.length <= 3 || !term.includes(' ');
     const hasSpecialFilter = term.includes('sender:') || term.includes('http');
     
+    // Đặc biệt xử lý cho sender filter - luôn sử dụng limit cao để đảm bảo lấy đủ tin nhắn
+    if (hasSpecialFilter && term.includes('sender:')) {
+        return { limit: SEARCH_LIMIT, maxPages: 50, strategies: MAX_SEARCH_STRATEGIES };
+    }
+    
     if (isSimpleSearch && !hasSpecialFilter) {
         return { limit: FAST_SEARCH_LIMIT, maxPages: 5, strategies: 3 };
     }
     
     if (roomId) {
         // Room-specific search có thể nhanh hơn
-        return { limit: SEARCH_LIMIT * 0.7, maxPages: 10, strategies: MAX_SEARCH_STRATEGIES };
+        return { limit: SEARCH_LIMIT * 0.7, maxPages: 15, strategies: MAX_SEARCH_STRATEGIES };
     }
     
-    return { limit: SEARCH_LIMIT, maxPages: 20, strategies: MAX_SEARCH_STRATEGIES };
+    return { limit: SEARCH_LIMIT, maxPages: 25, strategies: MAX_SEARCH_STRATEGIES };
 }
 
 // Cache management functions
 function getCachedResult(key: string): any | null {
     const cached = searchCache.get(key);
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        // Đối với sender search, chỉ trả về cache nếu có đủ kết quả (>= 50 tin nhắn)
+        // để tránh trả về cache không đầy đủ
+        if (key.includes('seshat_') && cached.results?.response?.results) {
+            const resultCount = cached.results.response.results.length;
+            if (resultCount < 50) {
+                console.log(`Cache có quá ít kết quả (${resultCount}), bỏ qua cache và tìm kiếm lại`);
+                searchCache.delete(key);
+                return null;
+            }
+        }
         return cached.results;
     }
     searchCache.delete(key);
@@ -2118,6 +2133,27 @@ async function localSearch(
         });
         localResult.count = localResult.results.length;
         console.log(`LocalSearch: After filtering: ${localResult.count} results from sender ${senderFilter}`);
+        
+        // Nếu kết quả quá ít (< 20) và chưa hết trang, thử tìm thêm
+        if (localResult.count < 20 && searchArgs.limit < SEARCH_LIMIT) {
+            console.log(`LocalSearch: Kết quả quá ít (${localResult.count}), thử tăng limit và tìm lại`);
+            const expandedArgs = { ...searchArgs, limit: SEARCH_LIMIT };
+            try {
+                const expandedResult = await safeSearch(expandedArgs);
+                if (expandedResult?.results) {
+                    const expandedFiltered = expandedResult.results.filter(result => 
+                        result.result.sender === senderFilter
+                    );
+                    if (expandedFiltered.length > localResult.count) {
+                        console.log(`LocalSearch: Tìm thêm được ${expandedFiltered.length - localResult.count} tin nhắn`);
+                        localResult.results = expandedFiltered;
+                        localResult.count = expandedFiltered.length;
+                    }
+                }
+            } catch (e) {
+                console.warn('LocalSearch: Không thể mở rộng tìm kiếm:', e);
+            }
+        }
         
         // Debug: Show some sample results after filtering
         if (localResult.results.length > 0) {

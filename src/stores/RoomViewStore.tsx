@@ -401,7 +401,8 @@ export class RoomViewStore extends EventEmitter {
                 roomId: payload.room_id,
                 roomAlias: payload.room_alias ?? null,
                 initialEventId: payload.event_id ?? null,
-                isInitialEventHighlighted: payload.highlighted ?? false,
+                // Chỉ highlight nếu có event_id cụ thể và payload.highlighted là true
+                isInitialEventHighlighted: !!(payload.event_id && payload.highlighted),
                 initialEventScrollIntoView: payload.scroll_into_view ?? true,
                 roomLoading: false,
                 roomLoadError: null,

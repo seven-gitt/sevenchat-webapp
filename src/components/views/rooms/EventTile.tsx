@@ -681,6 +681,14 @@ export class UnwrappedEventTile extends React.Component<EventTileProps, IState> 
             return false;
         }
 
+        // Tắt highlight cho @All mentions để tránh làm phiền user
+        const content = this.props.mxEvent.getContent();
+        if (content?.body && typeof content.body === 'string') {
+            if (content.body.includes('@All') || content.body.includes('@room')) {
+                return false;
+            }
+        }
+
         return !!(actions?.tweaks.highlight || previousActions?.tweaks.highlight);
     }
 

@@ -560,8 +560,35 @@ export default class ScrollPanel extends React.Component<IProps> {
         // it ourselves is hard, and we can't rely on an onScroll callback
         // happening, since there may be no user-visible change here).
         const sn = this.getScrollNode();
-        sn.scrollTop = sn.scrollHeight;
-        this.saveScrollState();
+        
+        // Cải thiện animation scroll để mượt hơn
+        const targetScrollTop = sn.scrollHeight;
+        const currentScrollTop = sn.scrollTop;
+        const distance = Math.abs(targetScrollTop - currentScrollTop);
+        
+        // Nếu khoảng cách ngắn hoặc đã ở bottom, scroll ngay lập tức
+        if (distance < 100 || currentScrollTop >= targetScrollTop - 10) {
+            sn.scrollTop = targetScrollTop;
+            this.saveScrollState();
+            return;
+        }
+        
+        // Sử dụng smooth scroll cho khoảng cách dài
+        try {
+            sn.scrollTo({
+                top: targetScrollTop,
+                behavior: 'smooth'
+            });
+            
+            // Save state sau khi animation hoàn thành
+            setTimeout(() => {
+                this.saveScrollState();
+            }, 300);
+        } catch (e) {
+            // Fallback nếu smooth scroll không được support
+            sn.scrollTop = targetScrollTop;
+            this.saveScrollState();
+        }
     };
 
     /**

@@ -597,6 +597,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
         }
 
         const initialEventId = this.context.roomViewStore.getInitialEventId() ?? this.state.initialEventId;
+        
         if (initialEventId) {
             let initialEvent = room?.findEventById(initialEventId);
             // The event does not exist in the current sync data
@@ -630,6 +631,11 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                 newState.isInitialEventHighlighted = this.context.roomViewStore.isInitialEventHighlighted();
                 newState.initialEventScrollIntoView = this.context.roomViewStore.initialEventScrollIntoView();
             }
+        } else {
+            // Nếu không có initialEventId, reset highlight state để tránh highlight tin nhắn cũ
+            newState.initialEventId = undefined;
+            newState.isInitialEventHighlighted = false;
+            newState.initialEventScrollIntoView = false;
         }
 
         // Add watchers for each of the settings we just looked up
@@ -692,6 +698,9 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                 if (roomScrollState) {
                     newState.initialEventId = roomScrollState.focussedEvent;
                     newState.initialEventPixelOffset = roomScrollState.pixelOffset;
+                    // KHÔNG highlight tin nhắn từ scroll state vì đó là scroll position cũ
+                    // chỉ dùng để restore vị trí scroll, không phải để highlight
+                    newState.isInitialEventHighlighted = false;
                 }
             }
         }
