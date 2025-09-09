@@ -8,7 +8,7 @@ Please see LICENSE files in the repository root for full details.
 
 import { useEffect } from "react";
 
-const DEBOUNCE_TIMEOUT = 100;
+const DEBOUNCE_TIMEOUT = 2000;
 
 export function useDebouncedCallback<T extends any[]>(
     enabled: boolean,

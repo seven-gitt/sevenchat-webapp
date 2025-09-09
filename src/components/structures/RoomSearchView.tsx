@@ -11,6 +11,7 @@ import {
     type ISearchResults,
     type IThreadBundledRelationship,
     type MatrixEvent,
+    type MatrixClient,
     THREAD_RELATION_TYPE,
 } from "matrix-js-sdk/src/matrix";
 import { logger } from "matrix-js-sdk/src/logger";
@@ -25,6 +26,35 @@ import type ResizeNotifier from "../../utils/ResizeNotifier";
 import MatrixClientContext from "../../contexts/MatrixClientContext";
 import { RoomPermalinkCreator } from "../../utils/permalinks/Permalinks";
 import { useScopedRoomContext } from "../../contexts/ScopedRoomContext";
+
+// Helper function để lấy display name của user trong room
+function getUserDisplayName(client: MatrixClient, userId: string, room: any): string {
+    if (!room || !client || !userId) {
+        return userId;
+    }
+    
+    // Thử lấy từ room member trước
+    const member = room.getMember(userId);
+    if (member) {
+        // Ưu tiên rawDisplayName trước vì nó là tên gốc user đặt
+        return member.rawDisplayName || member.name || userId;
+    }
+    
+    // Fallback: thử lấy từ client profile
+    try {
+        const user = client.getUser(userId);
+        if (user?.rawDisplayName) {
+            return user.rawDisplayName;
+        }
+        if (user?.displayName) {
+            return user.displayName;
+        }
+    } catch (e) {
+        // Ignore error, fallback to userId
+    }
+    
+    return userId;
+}
 
 const DEBUG = false;
 let debuglog = function (msg: string): void {};
@@ -64,7 +94,7 @@ export const RoomSearchView = ({
     selectedSender = "all",
 }: Props): JSX.Element => {
     const client = useContext(MatrixClientContext);
-    const roomContext = useScopedRoomContext("showHiddenEvents");
+    const roomContext = useScopedRoomContext("showHiddenEvents", "room");
     const [highlights, setHighlights] = useState<string[] | null>(null);
     const [results, setResults] = useState<ISearchResults | null>(null);
     const aborted = useRef(false);
@@ -169,18 +199,32 @@ export const RoomSearchView = ({
             return [];
         }
         
+        console.log(`[RoomSearchView] Filtering results: total=${results.results.length}, selectedSender=${selectedSender}, term="${term}"`);
+        
         // Nếu đang sử dụng từ khóa sender:, kết quả đã được lọc ở backend
         // Không cần lọc lại ở frontend
         if (term.startsWith('sender:')) {
+            console.log(`[RoomSearchView] Using backend-filtered results (sender: prefix found)`);
             return results.results;
         }
         
         // Chỉ lọc khi selectedSender khác "all" và không phải từ khóa sender:
         if (selectedSender === "all") {
+            console.log(`[RoomSearchView] Showing all results (selectedSender=all)`);
             return results.results;
         }
         
-        const filtered = results.results.filter(r => r.context.getEvent().getSender() === selectedSender);
+        const filtered = results.results.filter(r => {
+            const sender = r.context.getEvent().getSender();
+            return sender === selectedSender;
+        });
+        
+        console.log(`[RoomSearchView] Frontend filtering: ${results.results.length} -> ${filtered.length} (selectedSender=${selectedSender})`);
+        
+        // Debug: Log some sender info
+        const senders = new Set(results.results.map(r => r.context.getEvent().getSender()));
+        console.log(`[RoomSearchView] Available senders in results:`, Array.from(senders));
+        
         return filtered;
     }, [results, selectedSender, term]);
 
@@ -223,8 +267,8 @@ export const RoomSearchView = ({
             const senderId = senderMatch[1];
             const keyword = senderMatch[2]?.trim();
             
-            // Tìm tên hiển thị của sender (cần truyền từ props)
-            const senderName = senderId; // Tạm thời dùng senderId, sẽ cải thiện sau
+            // Lấy tên hiển thị của sender
+            const senderName = getUserDisplayName(client, senderId, roomContext?.room);
             
             if (keyword) {
                 message = `Không tìm thấy tin nhắn nào từ ${senderName} chứa "${keyword}"`;

@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR GPL-3.0-only OR LicenseRef-Element-Com
 Please see LICENSE files in the repository root for full details.
 */
 
-import React, { useEffect, useState, type JSX } from "react";
+import React, { useEffect, useState, useRef, type JSX } from "react";
 import classNames from "classnames";
 import {
     MenuItem,
@@ -143,8 +143,14 @@ const RoomSummaryCardView: React.FC<IProps> = ({
     const [searchValue, setSearchValue] = useState(searchTerm);
     const [showUserFilter, setShowUserFilter] = useState(false);
     
+    // Ref để track focus state
+    const lastFocusState = useRef(false);
+    
 
     useEffect(() => {
+        // Lưu lại focus state trước khi update
+        const wasInputFocused = vm.searchInputRef.current === document.activeElement;
+        
         // Không hiển thị "sender:..." trong ô tìm kiếm khi lọc theo người gửi
         if (searchTerm?.startsWith?.('sender:')) {
             // Tách keyword từ sender: term để hiển thị trong input
@@ -153,10 +159,39 @@ const RoomSummaryCardView: React.FC<IProps> = ({
             const keywordParts = parts.filter(p => p !== senderPart);
             const keyword = keywordParts.join(' ');
             setSearchValue(keyword);
-            return;
+        } else {
+            setSearchValue(searchTerm);
         }
-        setSearchValue(searchTerm);
-    }, [searchTerm]);
+        
+        // Khôi phục focus nếu input đang được focus trước đó
+        if (wasInputFocused) {
+            // Sử dụng setTimeout để đảm bảo DOM đã được update
+            setTimeout(() => {
+                vm.searchInputRef.current?.focus();
+            }, 0);
+        }
+        
+        // Lưu focus state cho lần render tiếp theo
+        lastFocusState.current = wasInputFocused;
+    }, [searchTerm, vm.searchInputRef]);
+    
+    // Effect để bảo vệ focus khi component re-render do các props khác
+    useEffect(() => {
+        // Kiểm tra xem có phải input đang được focus không
+        const isInputFocused = vm.searchInputRef.current === document.activeElement;
+        
+        // Nếu input đã mất focus nhưng trước đó đang được focus, khôi phục lại
+        if (!isInputFocused && lastFocusState.current) {
+            setTimeout(() => {
+                if (vm.searchInputRef.current && document.activeElement !== vm.searchInputRef.current) {
+                    vm.searchInputRef.current.focus();
+                }
+            }, 10);
+        }
+        
+        // Cập nhật focus state
+        lastFocusState.current = isInputFocused;
+    });
 
     // Đóng dropdown khi click bên ngoài
     useEffect(() => {
@@ -190,9 +225,11 @@ const RoomSummaryCardView: React.FC<IProps> = ({
     // Xử lý khi chọn user
     const handleUserSelect = (userId: string) => {
         setShowUserFilter(false);
-        // Gọi onSearchChange với từ khóa đặc biệt để lọc theo user
+        // Kết hợp keyword hiện tại với sender filter
         if (onSearchChange) {
-            onSearchChange(`sender:${userId}`);
+            const currentKeyword = searchValue.trim();
+            const newTerm = currentKeyword ? `sender:${userId} ${currentKeyword}` : `sender:${userId}`;
+            onSearchChange(newTerm);
         }
     };
 

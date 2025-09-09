@@ -1137,14 +1137,14 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                     payload.event?.getRoomId() === this.state.roomId &&
                     payload.context === TimelineRenderingType.Search
                 ) {
-                    this.onCancelSearchClick();
+                    this.onCancelSearchClickWithoutFocus();
                     // we don't need to re-dispatch as RoomViewStore knows to persist with context=Search also
                 }
                 break;
             case "cancel_search_and_navigate":
                 if (!this.unmounted && payload.room_id === this.state.roomId) {
                     // Đóng search mode và reset filter trước
-                    await this.onCancelSearchClick();
+                    await this.onCancelSearchClickWithoutFocus();
                     
                     // Thêm delay để đảm bảo state được update hoàn toàn và UI được re-render
                     setTimeout(() => {
@@ -1222,7 +1222,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                     payload.timelineRenderingType === TimelineRenderingType.Search
                 ) {
                     // we don't have the composer rendered in this state, so bring it back first
-                    await this.onCancelSearchClick();
+                    await this.onCancelSearchClickWithoutFocus();
                     timelineRenderingType = TimelineRenderingType.Room;
                 }
 
@@ -1718,12 +1718,31 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
     }
 
     private onSearch = (term: string, scope = SearchScope.Room): void => {
+        this.onSearchInternal(term, scope, false);
+    };
+
+    private onSearchWithExplicitTerm = (term: string, scope = SearchScope.Room): void => {
+        this.onSearchInternal(term, scope, true);
+    };
+
+    private onSearchInternal = (term: string, scope = SearchScope.Room, skipAutoSenderLogic = false): void => {
         const roomId = scope === SearchScope.Room ? this.getRoomId() : undefined;
         debuglog("sending search request");
         
+        // Kiểm tra nếu không có từ khóa và selectedSender là "all", thoát khỏi search mode
+        const trimmedTerm = term.trim();
+        const currentSelectedSender = this.state.selectedSender || "all";
+        
+        if (!trimmedTerm && currentSelectedSender === "all") {
+            // Thoát khỏi chế độ tìm kiếm mà không focus composer
+            this.onCancelSearchClickWithoutFocus();
+            return;
+        }
+        
         // Nếu đang chọn một người gửi trên UI mà từ khóa chưa chứa sender:, tự động kết hợp
         // Áp dụng cả khi term rỗng để giữ kết quả lọc theo người gửi sau khi xoá keyword
-        if (this.state.selectedSender && this.state.selectedSender !== "all" && !term.includes("sender:")) {
+        // Chỉ thực hiện khi không bỏ qua logic tự động
+        if (!skipAutoSenderLogic && this.state.selectedSender && this.state.selectedSender !== "all" && !term.includes("sender:")) {
             term = term ? `sender:${this.state.selectedSender} ${term}` : `sender:${this.state.selectedSender}`;
         }
 
@@ -1766,6 +1785,9 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
         const abortController = new AbortController();
         const promise = eventSearch(this.context.client!, term, roomId, abortController.signal);
         
+        // Lưu lại focus state trước khi setState
+        const activeElement = document.activeElement as HTMLElement;
+        const wasSearchInputFocused = activeElement?.getAttribute?.('name') === 'room_message_search';
 
         this.setState({
             timelineRenderingType: TimelineRenderingType.Search,
@@ -1781,6 +1803,16 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
             },
             searchSenders: searchSenders || [],
             selectedSender: selectedSender || "all",
+        }, () => {
+            // Khôi phục focus sau khi setState hoàn thành
+            if (wasSearchInputFocused) {
+                setTimeout(() => {
+                    const searchInput = document.querySelector('input[name="room_message_search"]') as HTMLInputElement;
+                    if (searchInput) {
+                        searchInput.focus();
+                    }
+                }, 50); // Delay ngắn để đảm bảo DOM đã được update
+            }
         });
     };
 
@@ -1789,17 +1821,62 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
     };
 
     private onSenderChange = (senderId: string): void => {
-        this.setState({ selectedSender: senderId });
-        
-        // Nếu đang ở chế độ search và chọn một người gửi cụ thể mà không có từ khóa tìm kiếm
-        // thì tìm kiếm tất cả tin nhắn của người đó
-        if (this.state.timelineRenderingType === TimelineRenderingType.Search && 
-            senderId !== "all" && 
-            (!this.state.search?.term || this.state.search.term.trim() === "")) {
+        // Nếu đang ở chế độ search, cần xử lý việc kết hợp search term với sender filter
+        if (this.state.timelineRenderingType === TimelineRenderingType.Search) {
+            const currentTerm = this.state.search?.term || "";
             
-            // Tạo từ khóa tìm kiếm đặc biệt để tìm tất cả tin nhắn của người gửi
-            const searchTerm = `sender:${senderId}`;
-            this.onSearch(searchTerm, this.state.search?.scope ?? SearchScope.Room);
+            if (senderId === "all") {
+                // Nếu chọn "Tất cả", kiểm tra xem có cần loại bỏ sender filter không
+                const senderMatch = currentTerm.match(/sender:([^\s]+)(?:\s+(.*))?/);
+                if (senderMatch) {
+                    const remainingKeyword = senderMatch[2]?.trim() || "";
+                    
+                    // Kiểm tra nếu không có keyword sau khi loại bỏ sender filter, thoát search mode
+                    if (!remainingKeyword) {
+                        this.setState({ selectedSender: senderId }, () => {
+                            this.onCancelSearchClickWithoutFocus();
+                        });
+                        return;
+                    }
+                    
+                    // Nếu có keyword, gọi lại search với keyword đó (loại bỏ sender filter)
+                    this.setState({ selectedSender: senderId }, () => {
+                        this.onSearchWithExplicitTerm(remainingKeyword, this.state.search?.scope ?? SearchScope.Room);
+                    });
+                } else {
+                    // Không có sender filter trong term, chỉ cập nhật selectedSender để lọc frontend
+                    this.setState({ selectedSender: senderId });
+                }
+            } else {
+                // Nếu chọn một người gửi cụ thể
+                const senderMatch = currentTerm.match(/sender:([^\s]+)(?:\s+(.*))?/);
+                
+                if (senderMatch) {
+                    // Đã có sender filter, thay thế bằng sender mới
+                    const existingKeyword = senderMatch[2]?.trim() || "";
+                    const newSearchTerm = existingKeyword ? `sender:${senderId} ${existingKeyword}` : `sender:${senderId}`;
+                    
+                    this.setState({ selectedSender: senderId }, () => {
+                        this.onSearchWithExplicitTerm(newSearchTerm, this.state.search?.scope ?? SearchScope.Room);
+                    });
+                } else {
+                    // Chưa có sender filter trong term
+                    // Ưu tiên lọc frontend thay vì gọi lại backend để giữ được nhiều kết quả hơn
+                    if (currentTerm.trim()) {
+                        // Có keyword, chỉ cập nhật selectedSender để lọc frontend
+                        this.setState({ selectedSender: senderId });
+                    } else {
+                        // Không có keyword, thêm sender filter và gọi backend
+                        const newSearchTerm = `sender:${senderId}`;
+                        this.setState({ selectedSender: senderId }, () => {
+                            this.onSearchWithExplicitTerm(newSearchTerm, this.state.search?.scope ?? SearchScope.Room);
+                        });
+                    }
+                }
+            }
+        } else {
+            // Nếu không ở chế độ search, chỉ cập nhật selectedSender
+            this.setState({ selectedSender: senderId });
         }
     };
 
@@ -1967,7 +2044,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
 
     private onSearchChange = debounce((term: string): void => {
         this.onSearch(term);
-    }, 300);
+    }, 800); // Tăng lên 800ms để tránh search quá sớm và xung đột với debounce trong Searching.ts
 
     // Khởi tạo search mode với dropdown lọc ngay cả khi không có từ khóa
     public initializeSearchWithFilter = (): void => {
@@ -1990,6 +2067,41 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                     searchSenders: [], // Clear danh sách người gửi
                 },
                 resolve,
+            );
+        });
+    };
+
+    // Hàm thoát search mode mà không focus vào composer (để giữ focus ở search input)
+    private onCancelSearchClickWithoutFocus = (): Promise<void> => {
+        // Đóng dropdown trước khi reset state
+        this.roomSearchAuxPanelRef.current?.closeDropdown();
+        
+        // Lưu lại element đang được focus
+        const activeElement = document.activeElement as HTMLElement;
+        const wasSearchInputFocused = activeElement?.getAttribute?.('name') === 'room_message_search';
+        
+        return new Promise<void>((resolve) => {
+            this.setState(
+                {
+                    timelineRenderingType: TimelineRenderingType.Room,
+                    search: undefined,
+                    selectedSender: "all", // Reset về "Tất cả" khi hủy search
+                    searchSenders: [], // Clear danh sách người gửi
+                },
+                () => {
+                    // Khôi phục focus nếu search input đang được focus
+                    if (wasSearchInputFocused) {
+                        setTimeout(() => {
+                            const searchInput = document.querySelector('input[name="room_message_search"]') as HTMLInputElement;
+                            if (searchInput) {
+                                searchInput.focus();
+                            }
+                        }, 100); // Delay để đảm bảo DOM đã được update
+                    }
+                    
+                    // Không gọi jumpToLiveTimeline để tránh focus vào composer
+                    resolve();
+                },
             );
         });
     };
@@ -2663,7 +2775,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                 permalinkCreator={this.permalinkCreator}
                 e2eStatus={this.state.e2eStatus}
                 onSearchChange={this.onSearchChange}
-                onSearchCancel={this.onCancelSearchClick}
+                onSearchCancel={this.onCancelSearchClickWithoutFocus}
                 searchTerm={this.state.search?.term ?? ""}
                 onInitializeFilter={this.initializeSearchWithFilter}
                 selectedSender={this.state.timelineRenderingType === TimelineRenderingType.Search ? this.state.selectedSender : undefined}

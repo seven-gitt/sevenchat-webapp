@@ -36,13 +36,18 @@ const MAX_CACHE_SIZE = 50;
 
 // Debounce timer
 let searchDebounceTimer: NodeJS.Timeout | null = null;
-const DEBOUNCE_DELAY = 300; // 300ms debounce
+const DEBOUNCE_DELAY = 300; // Giảm xuống 300ms để tránh xung đột với RoomView debounce (800ms)
 
 // Temporary debug room ID to avoid linting errors - can be removed in future cleanup
 const DEBUG_ROOM_ID = "";
 
 // Dynamic limits based on room size and search complexity
 function calculateDynamicLimits(term: string, roomId?: string): { limit: number; maxPages: number; strategies: number } {
+    // Tránh search với từ quá ngắn để cải thiện UX
+    if (term.length <= 1) {
+        return { limit: 10, maxPages: 1, strategies: 1 };
+    }
+    
     const isSimpleSearch = term.length <= 3 || !term.includes(' ');
     const hasSpecialFilter = term.includes('sender:') || term.includes('http');
     
@@ -101,9 +106,14 @@ async function fetchAllSenderMessagesSeshat(
     client: MatrixClient,
     senderId: string,
     roomId: string,
+    keyword?: string,
 ): Promise<{ response: ISearchResponse; query: ISearchArgs }> {
-    // Check cache first
-    const cacheKey = `seshat_${senderId}_${roomId}`;
+    // Sử dụng keyword nếu có, nếu không thì dùng wildcard
+    const searchTerm = keyword && keyword.trim() ? keyword.trim() : "*";
+    console.log(`fetchAllSenderMessagesSeshat: senderId=${senderId}, keyword="${keyword || ''}", searchTerm="${searchTerm}"`);
+    
+    // Check cache first - include keyword in cache key
+    const cacheKey = `seshat_${senderId}_${roomId}_${searchTerm}`;
     const cached = getCachedResult(cacheKey);
     if (cached) {
         console.log("Returning cached Seshat results");
@@ -117,9 +127,9 @@ async function fetchAllSenderMessagesSeshat(
         eventIndex = EventIndexPeg.get();
     }
 
-    const dynamicLimits = calculateDynamicLimits("*", roomId);
+    const dynamicLimits = calculateDynamicLimits(searchTerm, roomId);
     const baseQuery: ISearchArgs = {
-        search_term: "*", // Luôn dùng wildcard để tìm tất cả tin nhắn
+        search_term: searchTerm,
         before_limit: 0,
         after_limit: 0,
         limit: dynamicLimits.limit,
@@ -317,43 +327,68 @@ function calculateRelevanceScore(searchTerm: string, content: string): number {
         relevanceScore += 100;
     }
     
-    // Word-based matching
+    // Partial word matching - tìm từ chứa search term như "sagua" trong "Saguaro"
     const searchWords = lcSearchTerm.split(/\s+/).filter(word => word.length > 0);
     const contentWords = lcContent.split(/\s+/).filter(word => word.length > 0);
     
-    const hasWordMatch = searchWords.some(searchWord => 
+    // Kiểm tra exact word match
+    const hasExactWordMatch = searchWords.some(searchWord => 
+        contentWords.some(contentWord => contentWord === searchWord)
+    );
+    
+    // Kiểm tra partial word match (search word là substring của content word)
+    const hasPartialWordMatch = searchWords.some(searchWord => 
         contentWords.some(contentWord => contentWord.includes(searchWord))
     );
     
-    if (hasWordMatch) {
-        relevanceScore += searchWords.length * 10;
+    // Kiểm tra reverse partial match (content word là substring của search word)
+    const hasReversePartialMatch = searchWords.some(searchWord => 
+        contentWords.some(contentWord => searchWord.includes(contentWord) && contentWord.length >= 3)
+    );
+    
+    if (hasExactWordMatch) {
+        relevanceScore += searchWords.length * 15; // Cao hơn cho exact match
+    } else if (hasPartialWordMatch) {
+        relevanceScore += searchWords.length * 12; // Điểm cao cho partial match
+    } else if (hasReversePartialMatch) {
+        relevanceScore += searchWords.length * 8; // Điểm thấp hơn cho reverse match
     }
     
-    // Additional relevance factors
+    // Bonus cho partial matching với độ dài phù hợp
     const searchLength = lcSearchTerm.length;
     const contentLength = lcContent.length;
+    
+    // Tăng điểm cho partial match khi search term đủ dài (>= 4 chars)
+    if (searchLength >= 4 && hasPartialWordMatch) {
+        relevanceScore += 15;
+    }
+    
+    // Tăng điểm cho search term ngắn nhưng có trong content
+    if (searchLength >= 3 && searchLength <= 6 && hasPartialWordMatch) {
+        relevanceScore += 10;
+    }
     
     // Prefer shorter content for longer searches (more specific)
     if (searchLength > 5 && contentLength < 100) {
         relevanceScore += 20;
     }
     
-    // Penalize very long content unless it has exact match
-    if (contentLength > 200 && !lcContent.includes(lcSearchTerm)) {
+    // Giảm penalty cho long content nếu có partial match
+    if (contentLength > 200 && !lcContent.includes(lcSearchTerm) && !hasPartialWordMatch) {
         relevanceScore -= 10;
     }
     
-    // Heavy penalty for single character matches
+    // Giảm penalty cho single character matches khi có partial matching
     const matchedWords = searchWords.filter(searchWord => 
         contentWords.some(contentWord => contentWord.includes(searchWord))
     );
-    if (matchedWords.length === 1 && matchedWords[0].length <= 2) {
-        relevanceScore -= 50;
+    if (matchedWords.length === 1 && matchedWords[0].length <= 2 && !hasPartialWordMatch) {
+        relevanceScore -= 30; // Giảm penalty từ 50 xuống 30
     }
     
-    // Penalize content with URLs unless it has exact match
-    if (content.includes('http') && !lcContent.includes(lcSearchTerm)) {
-        relevanceScore -= 30;
+    // Giảm penalty cho URLs nếu có partial match
+    if (content.includes('http') && !lcContent.includes(lcSearchTerm) && !hasPartialWordMatch) {
+        relevanceScore -= 20; // Giảm penalty từ 30 xuống 20
     }
     
     return relevanceScore;
@@ -362,7 +397,9 @@ function calculateRelevanceScore(searchTerm: string, content: string): number {
 // Enhanced search with relevance scoring
 function enhancedSearchWithRelevance(searchTerm: string, content: string): boolean {
     const relevanceScore = calculateRelevanceScore(searchTerm, content);
-    return relevanceScore >= 20; // Minimum threshold for relevance
+    // Giảm threshold để cho phép nhiều partial matches hơn
+    const threshold = searchTerm.length >= 4 ? 10 : 15; // Threshold thấp hơn cho search term dài
+    return relevanceScore >= threshold;
 }
 
 // Timeline search helper function (inspired by spotlight dialog)
@@ -373,8 +410,8 @@ function searchInTimeline(
 ): { found: boolean; message?: string } {
     const lcSearchTerm = searchTerm.toLowerCase();
     
-    // Skip search if query is too short
-    if (lcSearchTerm.length < 2) {
+    // Skip search if query is too short - tăng lên 3 để tránh search quá sớm
+    if (lcSearchTerm.length < 3) {
         return { found: false };
     }
     
@@ -424,11 +461,23 @@ function searchInTimeline(
                             
                             // Check if message contains the query (case insensitive)
                             const hasExactMatch = messageText.includes(lcSearchTerm);
-                            const hasWordMatch = lcSearchTerm.split(/\s+/).some((queryWord: string) => 
-                                messageText.split(/\s+/).some((messageWord: string) => messageWord.includes(queryWord))
+                            
+                            // Enhanced word matching with partial support
+                            const queryWords = lcSearchTerm.split(/\s+/).filter(word => word.length > 0);
+                            const messageWords = messageText.split(/\s+/).filter(word => word.length > 0);
+                            
+                            const hasExactWordMatch = queryWords.some((queryWord: string) => 
+                                messageWords.some((messageWord: string) => messageWord === queryWord)
                             );
                             
-                            if (hasExactMatch || hasWordMatch) {
+                            const hasPartialWordMatch = queryWords.some((queryWord: string) => 
+                                messageWords.some((messageWord: string) => messageWord.includes(queryWord))
+                            );
+                            
+                            // Chỉ chấp nhận partial match nếu query đủ dài (>= 3 chars)
+                            const isValidPartialMatch = lcSearchTerm.length >= 3 && hasPartialWordMatch;
+                            
+                            if (hasExactMatch || hasExactWordMatch || isValidPartialMatch) {
                                 return { found: true, message: content.body };
                             }
                         }
@@ -444,6 +493,137 @@ function searchInTimeline(
     }
     
     return { found: false };
+}
+
+// Enhanced timeline search function for thorough partial matching
+async function enhancedTimelineSearch(
+    client: MatrixClient,
+    searchTerm: string,
+    roomId?: string,
+): Promise<{ results: any[] }> {
+    const lcSearchTerm = searchTerm.toLowerCase();
+    const results: any[] = [];
+    
+    // Skip search if query is too short - tăng lên để tránh search quá sớm
+    if (lcSearchTerm.length < 3) {
+        return { results: [] };
+    }
+    
+    console.log(`Enhanced timeline search for: "${searchTerm}"`);
+    
+    // Get rooms to search
+    let rooms: Room[];
+    if (roomId) {
+        const room = client.getRoom(roomId);
+        rooms = room ? [room] : [];
+    } else {
+        // Get all rooms the user is in
+        rooms = client.getVisibleRooms().filter(room => 
+            room.getMyMembership() === KnownMembership.Join
+        ).slice(0, 20); // Giới hạn 20 phòng để tránh quá chậm
+    }
+    
+    console.log(`Searching in ${rooms.length} rooms`);
+    
+    // Process rooms with pagination
+    for (const room of rooms) {
+        try {
+            const timeline = room.getLiveTimeline();
+            if (!timeline) continue;
+            
+            const seenEventIds = new Set<string>();
+            let paginationCount = 0;
+            const MAX_PAGINATION = roomId ? 50 : 10; // Nhiều hơn nếu search trong 1 phòng
+            
+            const collectMatches = (events: any[]) => {
+                for (let i = events.length - 1; i >= 0; i--) {
+                    const event = events[i];
+                    
+                    try {
+                        const eventId = event?.getId?.() || event?.event_id;
+                        if (!eventId || seenEventIds.has(eventId)) continue;
+                        seenEventIds.add(eventId);
+                        
+                        // Skip redacted messages
+                        if (event.isRedacted?.()) continue;
+                        
+                        if (event.getType() === "m.room.message") {
+                            const content = event.getContent();
+                            if (content && content.body && typeof content.body === 'string' && 
+                                content.msgtype === 'm.text' && !content.url && !content.info) {
+                                
+                                // Enhanced partial matching
+                                const hasPartialMatch = enhancedSearchWithRelevance(searchTerm, content.body);
+                                
+                                if (hasPartialMatch) {
+                                    console.log(`Found partial match in room ${room.name}: "${content.body}"`);
+                                    
+                                    // Create a proper search result
+                                    results.push({
+                                        rank: 1,
+                                        result: {
+                                            event_id: eventId,
+                                            origin_server_ts: event.getTs(),
+                                            sender: event.getSender(),
+                                            content: content,
+                                            type: event.getType(),
+                                            room_id: room.roomId,
+                                        },
+                                        context: {
+                                            events_before: [],
+                                            events_after: [],
+                                        },
+                                    });
+                                    
+                                    // Giới hạn kết quả để tránh quá nhiều
+                                    if (results.length >= 20) {
+                                        console.log(`Enhanced timeline search reached limit of 20 results`);
+                                        return { results };
+                                    }
+                                }
+                            }
+                        }
+                    } catch (eventError) {
+                        console.error(`Error processing event in room ${room.name}:`, eventError);
+                    }
+                }
+            };
+            
+            // Collect from initial events
+            const initialEvents = timeline.getEvents() || [];
+            collectMatches(initialEvents);
+            
+            // Paginate backwards for more history
+            while (paginationCount < MAX_PAGINATION && results.length < 20) {
+                const prevCount = results.length;
+                const hasMoreToken = !!timeline.getPaginationToken("b" as any);
+                
+                if (!hasMoreToken) break;
+                
+                try {
+                    paginationCount++;
+                    // eslint-disable-next-line @typescript-eslint/await-thenable
+                    await (client as any).paginateEventTimeline?.(timeline, { backwards: true, limit: 100 });
+                    const pageEvents = timeline.getEvents() || [];
+                    collectMatches(pageEvents);
+                    
+                    // If no new results after pagination, break
+                    if (results.length === prevCount) {
+                        break;
+                    }
+                } catch (e) {
+                    console.warn(`Enhanced timeline search pagination failed at page ${paginationCount}:`, e);
+                    break;
+                }
+            }
+            
+        } catch (roomError) {
+            console.error(`Error processing room ${room.name}:`, roomError);
+        }
+    }
+    
+    console.log(`Enhanced timeline search found ${results.length} total results`);
+    return { results };
 }
 
 // Generate related terms for Vietnamese search
@@ -552,11 +732,16 @@ async function fetchAllSenderMessagesServer(
     senderId: string,
     roomId: string,
     abortSignal?: AbortSignal,
+    keyword?: string,
 ): Promise<{ response: ISearchResponse; query: ISearchRequestBody }> {
+    // Sử dụng keyword nếu có, nếu không thì dùng wildcard
+    const serverSearchTerm = keyword && keyword.trim() ? keyword.trim() : "*";
+    console.log(`fetchAllSenderMessagesServer: senderId=${senderId}, keyword="${keyword || ''}", searchTerm="${serverSearchTerm}"`);
+    
     const baseBody: ISearchRequestBody = {
         search_categories: {
             room_events: {
-                search_term: "*", // Dùng wildcard để tìm tất cả tin nhắn
+                search_term: serverSearchTerm,
                 filter: {
                     limit: SEARCH_LIMIT,
                     rooms: [roomId],
@@ -665,9 +850,9 @@ async function fetchAllSenderMessagesServer(
 
     // Tạo highlights từ search term nếu có
     const highlights: string[] = [];
-    const searchTerm = firstQuery.search_categories.room_events.search_term;
-    if (searchTerm && searchTerm !== "*" && searchTerm.trim()) {
-        highlights.push(searchTerm.trim());
+    const querySearchTerm = firstQuery.search_categories.room_events.search_term;
+    if (querySearchTerm && querySearchTerm !== "*" && querySearchTerm.trim()) {
+        highlights.push(querySearchTerm.trim());
     }
 
     const response: ISearchResponse = {
@@ -882,9 +1067,11 @@ async function serverSideSearch(
             try {
                 // Ưu tiên gọi server search phân trang để gom toàn bộ tin nhắn của sender trong phòng
                 try {
-                    const full = await fetchAllSenderMessagesServer(client, senderId, roomId, abortSignal);
+                    console.log(`serverSideSearch: Calling fetchAllSenderMessagesServer with keyword="${term}"`);
+                    const full = await fetchAllSenderMessagesServer(client, senderId, roomId, abortSignal, term);
                     const count = full.response?.search_categories?.room_events?.results?.length || 0;
                     if (count > 0) {
+                        console.log(`serverSideSearch: fetchAllSenderMessagesServer found ${count} results`);
                         // Diagnostic cross-check for the room created at 2025-08-20
                         await debugVerifyCoverage(client, senderId, roomId, abortSignal);
                         return full;
@@ -1136,13 +1323,14 @@ async function serverSideSearch(
         }
         
         // Additional server-side strategies for better partial matching
-        if (!response) {
+        // Chạy wildcard strategies sớm hơn, đặc biệt cho terms ngắn
+        if (!response || (response.search_categories?.room_events?.results?.length || 0) < 5) {
             const additionalServerStrategies = [
                 { term: `*${term}*`, description: "wildcard search" },
-                { term: `%${term}%`, description: "SQL-like wildcard" },
-                { term: `.*${term}.*`, description: "regex-like search" },
                 { term: term + '*', description: "prefix wildcard" },
                 { term: '*' + term, description: "suffix wildcard" },
+                { term: `%${term}%`, description: "SQL-like wildcard" },
+                { term: `.*${term}.*`, description: "regex-like search" },
             ];
             
             for (const strategy of additionalServerStrategies) {
@@ -1182,8 +1370,12 @@ async function serverSideSearch(
         }
     }
 
-    // If no URL-specific results or not a URL search, use original term
+    // If no URL-specific results or not a URL search, use original term with enhanced strategies
     if (!response || !query) {
+        console.log(`=== SERVER SEARCH DEBUG ===`);
+        console.log(`Search term: "${term}"`);
+        console.log(`Room ID: ${roomId || 'all rooms'}`);
+        
         const body: ISearchRequestBody = {
             search_categories: {
                 room_events: {
@@ -1431,62 +1623,190 @@ async function localSearch(
     
     let localResult;
     
-    // Always try enhanced search for single tokens or URL-like terms
-    if (isUrlSearch || isSingleToken) {
-        console.log(`Enhanced search detected for term: "${searchTerm}"`);
-        console.log(`Extracted keywords: ${keywords.join(', ')}`);
+    // Strategy 1: Try exact search first (for all terms)
+    console.log(`=== LOCAL SEARCH DEBUG ===`);
+    console.log(`Original search term: "${searchTerm}"`);
+    console.log(`Actual search term: "${actualSearchTerm}"`);
+    console.log(`Room ID: ${roomId || 'all rooms'}`);
+    console.log(`Sender filter: ${senderFilter || 'none'}`);
+    
+    try {
+        localResult = await safeSearch(searchArgs);
+        console.log(`Exact search returned ${localResult?.count || 0} results`);
         
-        // Strategy 1: Try exact search first
-        try {
-            localResult = await safeSearch(searchArgs);
-            console.log(`Exact search returned ${localResult?.count || 0} results`);
-            
-            // Early termination if we got good results
-            if (localResult?.count && localResult.count >= 10) {
-                console.log("Early termination: found sufficient results");
-                const result = { response: localResult, query: searchArgs };
-                setCachedResult(cacheKey, result);
-                return result;
+        // Early termination if we got good results
+        if (localResult?.count && localResult.count >= 10) {
+            console.log("Early termination: found sufficient results");
+            const result = { response: localResult, query: searchArgs };
+            setCachedResult(cacheKey, result);
+            return result;
+        }
+    } catch (error) {
+        console.log("Exact search failed:", error);
+    }
+
+    // Enhanced search logic for all terms (not just URLs)
+    console.log(`Enhanced search for term: "${searchTerm}"`);
+    if (keywords.length > 0) {
+        console.log(`Extracted keywords: ${keywords.join(', ')}`);
+    }
+        
+    // Strategy 1.5: Try wildcard search for partial matching (for all terms)
+    if (!localResult || localResult.count === 0) {
+        // Thử wildcard search cho partial matching
+        const wildcardTerms = [
+            `*${actualSearchTerm}*`, // Tìm kiếm "sagua" trong "Saguaro"
+            `${actualSearchTerm}*`,  // Prefix matching
+            `*${actualSearchTerm}`,  // Suffix matching
+        ];
+        
+        for (const wildcardTerm of wildcardTerms) {
+            const wildcardArgs = { ...searchArgs, search_term: wildcardTerm };
+            try {
+                const wildcardResult = await safeSearch(wildcardArgs);
+                if (wildcardResult?.count && wildcardResult.count > 0) {
+                    localResult = wildcardResult;
+                    console.log(`Wildcard search returned ${wildcardResult.count} results for "${wildcardTerm}"`);
+                    break;
+                }
+            } catch (error) {
+                console.log(`Wildcard search failed for "${wildcardTerm}":`, error);
             }
-        } catch (error) {
-            console.log("Exact search failed:", error);
+        }
+    }
+
+    // Strategy 1.7: Try broad search with client-side filtering for partial matching
+    if (!localResult || localResult.count === 0) {
+        console.log(`Trying broad search with client-side filtering for partial matching`);
+        
+        // Thử search với từ ngắn hơn hoặc wildcard rộng hơn
+        const broadSearchTerms = [];
+        
+        // Nếu term >= 4 chars, thử search với 3 chars đầu
+        if (actualSearchTerm.length >= 4) {
+            broadSearchTerms.push(actualSearchTerm.substring(0, 3));
         }
         
-        // Strategy 1.5: Try searching with extracted keywords and relevance scoring (limited)
-        if (!localResult || localResult.count === 0) {
-            const limitedKeywords = keywords.slice(0, 3); // Giới hạn chỉ 3 keywords đầu tiên
-            for (const keyword of limitedKeywords) {
-                if (keyword !== searchTerm && keyword.length > 2) {
-                    const keywordArgs = { ...searchArgs, search_term: keyword };
-                    try {
-                        const keywordResult = await eventIndex!.search(keywordArgs);
-                        if (keywordResult?.count && keywordResult.count > 0) {
-                            // Apply relevance scoring to filter results
-                            if (keywordResult.results) {
-                                const relevantResults = keywordResult.results.filter(result => {
-                                    const content = result.result.content?.body || '';
-                                    return enhancedSearchWithRelevance(searchTerm, content);
-                                });
-                                
-                                if (relevantResults.length > 0) {
-                                    keywordResult.results = relevantResults;
-                                    keywordResult.count = relevantResults.length;
-                                    localResult = keywordResult;
-                                    console.log(`Keyword search with relevance scoring returned ${relevantResults.length} results for "${keyword}"`);
-                                    break;
-                                }
-                            } else {
-                                localResult = keywordResult;
-                                console.log(`Keyword search returned ${keywordResult.count} results for "${keyword}"`);
-                                break;
-                            }
-                        }
-                    } catch (error) {
-                        console.log(`Keyword search failed for "${keyword}":`, error);
-                    }
+        // Nếu term >= 5 chars, thử search với 4 chars đầu
+        if (actualSearchTerm.length >= 5) {
+            broadSearchTerms.push(actualSearchTerm.substring(0, 4));
+        }
+        
+        // Thử search với các từ con
+        if (actualSearchTerm.length >= 6) {
+            for (let i = 0; i <= actualSearchTerm.length - 3; i++) {
+                const substring = actualSearchTerm.substring(i, i + 3);
+                if (substring.length >= 3) {
+                    broadSearchTerms.push(substring);
                 }
             }
         }
+        
+        // Loại bỏ duplicates và terms quá ngắn
+        const uniqueBroadTerms = [...new Set(broadSearchTerms)].filter(t => t.length >= 3);
+        
+        for (const broadTerm of uniqueBroadTerms.slice(0, 3)) { // Giới hạn chỉ 3 terms
+            const broadArgs = { ...searchArgs, search_term: broadTerm };
+            try {
+                const broadResult = await safeSearch(broadArgs);
+                if (broadResult?.count && broadResult.count > 0 && broadResult.results) {
+                    // Client-side filtering với enhanced relevance scoring
+                    const relevantResults = broadResult.results.filter(result => {
+                        const content = result.result.content?.body || '';
+                        return enhancedSearchWithRelevance(actualSearchTerm, content);
+                    });
+                    
+                    if (relevantResults.length > 0) {
+                        broadResult.results = relevantResults;
+                        broadResult.count = relevantResults.length;
+                        localResult = broadResult;
+                        console.log(`Broad search with client-side filtering returned ${relevantResults.length} results for "${broadTerm}" -> "${actualSearchTerm}"`);
+                        break;
+                    }
+                }
+            } catch (error) {
+                console.log(`Broad search failed for "${broadTerm}":`, error);
+            }
+        }
+    }
+
+    // Strategy 1.8: Try case variations for partial matching
+    if (!localResult || localResult.count === 0) {
+        const caseVariations = [
+            actualSearchTerm.toLowerCase(),
+            actualSearchTerm.toUpperCase(),
+            actualSearchTerm.charAt(0).toUpperCase() + actualSearchTerm.slice(1).toLowerCase(),
+        ].filter(v => v !== actualSearchTerm); // Loại bỏ trùng lặp
+        
+        for (const variation of caseVariations) {
+            const variationArgs = { ...searchArgs, search_term: variation };
+            try {
+                const variationResult = await safeSearch(variationArgs);
+                if (variationResult?.count && variationResult.count > 0) {
+                    // Apply relevance scoring to filter results
+                    if (variationResult.results) {
+                        const relevantResults = variationResult.results.filter(result => {
+                            const content = result.result.content?.body || '';
+                            return enhancedSearchWithRelevance(actualSearchTerm, content);
+                        });
+                        
+                        if (relevantResults.length > 0) {
+                            variationResult.results = relevantResults;
+                            variationResult.count = relevantResults.length;
+                            localResult = variationResult;
+                            console.log(`Case variation search with relevance scoring returned ${relevantResults.length} results for "${variation}"`);
+                            break;
+                        }
+                    } else {
+                        localResult = variationResult;
+                        console.log(`Case variation search returned ${variationResult.count} results for "${variation}"`);
+                        break;
+                    }
+                }
+            } catch (error) {
+                console.log(`Case variation search failed for "${variation}":`, error);
+            }
+        }
+    }
+
+    // Strategy 1.6: Try searching with extracted keywords and relevance scoring (for URL-like terms)
+    if ((isUrlSearch || isSingleToken) && (!localResult || localResult.count === 0)) {
+        const limitedKeywords = keywords.slice(0, 3); // Giới hạn chỉ 3 keywords đầu tiên
+        for (const keyword of limitedKeywords) {
+            if (keyword !== searchTerm && keyword.length > 2) {
+                const keywordArgs = { ...searchArgs, search_term: keyword };
+                try {
+                    const keywordResult = await safeSearch(keywordArgs);
+                    if (keywordResult?.count && keywordResult.count > 0) {
+                        // Apply relevance scoring to filter results
+                        if (keywordResult.results) {
+                            const relevantResults = keywordResult.results.filter(result => {
+                                const content = result.result.content?.body || '';
+                                return enhancedSearchWithRelevance(searchTerm, content);
+                            });
+                            
+                            if (relevantResults.length > 0) {
+                                keywordResult.results = relevantResults;
+                                keywordResult.count = relevantResults.length;
+                                localResult = keywordResult;
+                                console.log(`Keyword search with relevance scoring returned ${relevantResults.length} results for "${keyword}"`);
+                                break;
+                            }
+                        } else {
+                            localResult = keywordResult;
+                            console.log(`Keyword search returned ${keywordResult.count} results for "${keyword}"`);
+                            break;
+                        }
+                    }
+                } catch (error) {
+                    console.log(`Keyword search failed for "${keyword}":`, error);
+                }
+            }
+        }
+    }
+
+    // Continue with URL-specific strategies only for URL-like terms
+    if (isUrlSearch || isSingleToken) {
         
         // Strategy 2: If no results, try without protocol
         if (!localResult || localResult.count === 0) {
@@ -1774,9 +2094,20 @@ async function localSearch(
 
     // Lọc kết quả theo người gửi nếu có senderFilter
     if (senderFilter && localResult?.results) {
+        console.log(`=== SENDER FILTERING DEBUG ===`);
         console.log(`LocalSearch: Filtering results by sender: ${senderFilter}`);
         console.log(`LocalSearch: Before filtering: ${localResult.results.length} results`);
         console.log(`LocalSearch: Search term was: "${searchTerm}", actual term: "${actualSearchTerm}"`);
+        
+        // Debug: Show some sample results before filtering
+        if (localResult.results.length > 0) {
+            console.log('Sample results before filtering:');
+            localResult.results.slice(0, 3).forEach((result, i) => {
+                const event = result.result;
+                console.log(`  ${i}: sender=${event.sender}, content="${event.content?.body?.substring(0, 50)}..."`);
+            });
+        }
+        
         localResult.results = localResult.results.filter(result => {
             const event = result.result;
             const matches = event.sender === senderFilter;
@@ -1787,6 +2118,16 @@ async function localSearch(
         });
         localResult.count = localResult.results.length;
         console.log(`LocalSearch: After filtering: ${localResult.count} results from sender ${senderFilter}`);
+        
+        // Debug: Show some sample results after filtering
+        if (localResult.results.length > 0) {
+            console.log('Sample results after filtering:');
+            localResult.results.slice(0, 3).forEach((result, i) => {
+                const event = result.result;
+                console.log(`  ${i}: sender=${event.sender}, content="${event.content?.body?.substring(0, 50)}..."`);
+            });
+        }
+        console.log(`=== END SENDER FILTERING DEBUG ===`);
         
         // Nếu chỉ có sender filter (không có keyword) thì QUÉT TOÀN BỘ TIMELINE phòng để lấy tất cả tin nhắn của user
         if (actualSearchTerm === "*" && roomId) {
@@ -1951,21 +2292,37 @@ async function localSearch(
         }
     }
     
-    // Final fallback: Try timeline search (like spotlight dialog)
+    // Enhanced timeline search as powerful fallback for partial matching
     if (!localResult || localResult.count === 0) {
-        console.log("Trying timeline search as final fallback");
-        const timelineResult = searchInTimeline(client, searchTerm, roomId);
-        if (timelineResult.found) {
-            console.log(`Timeline search found message: "${timelineResult.message}"`);
-            // Create a fake result to indicate success
+        console.log("Trying enhanced timeline search for partial matching");
+        
+        // Try enhanced timeline search that scans more thoroughly
+        const enhancedTimelineResult = await enhancedTimelineSearch(client, actualSearchTerm, roomId);
+        if (enhancedTimelineResult.results.length > 0) {
+            console.log(`Enhanced timeline search found ${enhancedTimelineResult.results.length} messages`);
             localResult = {
-                count: 1,
-                results: [],
-                highlights: [],
+                count: enhancedTimelineResult.results.length,
+                results: enhancedTimelineResult.results,
+                highlights: [actualSearchTerm],
                 next_batch: undefined,
             };
         } else {
-            console.log("Timeline search did not find any matches");
+            console.log("Enhanced timeline search did not find any matches");
+            
+            // Final fallback: Basic timeline search
+            const timelineResult = searchInTimeline(client, searchTerm, roomId);
+            if (timelineResult.found) {
+                console.log(`Basic timeline search found message: "${timelineResult.message}"`);
+                // Create a fake result to indicate success
+                localResult = {
+                    count: 1,
+                    results: [],
+                    highlights: [actualSearchTerm],
+                    next_batch: undefined,
+                };
+            } else {
+                console.log("Basic timeline search did not find any matches");
+            }
         }
     } else {
         console.log(`Local search found ${localResult.count} results, skipping timeline search`);
@@ -2413,19 +2770,19 @@ async function eventIndexSearch(
         // Nếu có filter theo sender trong 1 phòng cụ thể:
         // 1) Ưu tiên kết hợp cả Seshat và Server để đảm bảo lấy đủ nhất
         // 2) Nếu không có Seshat, dùng serverSideSearchProcess (có phân trang) làm fallback
-        const { senderId } = extractSenderFilter(term || "");
+        const { senderId, keyword } = extractSenderFilter(term || "");
         if (senderId) {
             const eventIndex = EventIndexPeg.get();
             if (eventIndex) {
                 if (roomId === DEBUG_ROOM_ID) {
-                    console.log(`[Debug ${DEBUG_ROOM_ID}] eventIndexSearch -> using combined Seshat+Server for sender:${senderId}`);
+                    console.log(`[Debug ${DEBUG_ROOM_ID}] eventIndexSearch -> using combined Seshat+Server for sender:${senderId}, keyword:${keyword}`);
                 }
                 
                 try {
                     // Kết hợp cả Seshat và Server search để đảm bảo lấy đủ
                     const [seshatAll, serverAll] = await Promise.allSettled([
-                        fetchAllSenderMessagesSeshat(client, senderId, roomId),
-                        fetchAllSenderMessagesServer(client, senderId, roomId, abortSignal)
+                        fetchAllSenderMessagesSeshat(client, senderId, roomId, keyword),
+                        fetchAllSenderMessagesServer(client, senderId, roomId, abortSignal, keyword)
                     ]);
                     
                     const allResults: any[] = [];
@@ -2501,7 +2858,7 @@ async function eventIndexSearch(
                 } catch (e) {
                     console.warn(`Combined search failed, falling back to Seshat-only:`, e);
                     // Fallback to Seshat-only
-                    const seshatAll = await fetchAllSenderMessagesSeshat(client, senderId, roomId);
+                    const seshatAll = await fetchAllSenderMessagesSeshat(client, senderId, roomId, keyword);
                     const base: ISeshatSearchResults = {
                         seshatQuery: seshatAll.query,
                         results: [],
@@ -2618,11 +2975,26 @@ export default function eventSearch(
     roomId?: string,
     abortSignal?: AbortSignal,
 ): Promise<ISearchResults> {
-    // Skip debouncing for very short terms or when we have abort signal
-    if (term.length <= 2 || abortSignal) {
+    // Không search với từ quá ngắn (<=1 char) - trả về kết quả rỗng để tránh mất focus
+    if (term.length <= 1) {
+        return Promise.resolve({
+            results: [],
+            highlights: [],
+            count: 0,
+        } as ISearchResults);
+    }
+    
+    // Skip debouncing khi có abort signal
+    if (abortSignal) {
         return eventSearchInternal(client, term, roomId, abortSignal);
     }
     
+    // Skip debouncing for terms that look complete (end with space or common punctuation)
+    if (term.endsWith(' ') || term.endsWith('.') || term.endsWith(',') || term.endsWith('!') || term.endsWith('?')) {
+        return eventSearchInternal(client, term.trim(), roomId, abortSignal);
+    }
+    
+    // Chỉ áp dụng debouncing cho terms từ 2 ký tự trở lên
     return debouncedEventSearch(client, term, roomId, abortSignal);
 }
 

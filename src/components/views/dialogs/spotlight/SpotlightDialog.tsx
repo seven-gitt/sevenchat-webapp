@@ -229,6 +229,29 @@ const toMemberResult = (member: Member | RoomMember, alreadyFiltered: boolean): 
     query: [member.userId.toLowerCase(), member.name.toLowerCase()].filter(Boolean),
 });
 
+// Helper function for enhanced partial matching
+const hasPartialMatch = (searchQuery: string, targetText: string): boolean => {
+    const lcQuery = searchQuery.toLowerCase();
+    const lcTarget = targetText.toLowerCase();
+    
+    // Exact match
+    if (lcTarget.includes(lcQuery)) {
+        return true;
+    }
+    
+    // Partial word matching
+    const queryWords = lcQuery.split(/\s+/).filter(word => word.length > 0);
+    const targetWords = lcTarget.split(/\s+/).filter(word => word.length > 0);
+    
+    // Check if any query word is substring of any target word
+    const hasPartialWordMatch = queryWords.some(queryWord => 
+        targetWords.some(targetWord => targetWord.includes(queryWord))
+    );
+    
+    // Only accept partial match if query is long enough (>= 3 chars)
+    return lcQuery.length >= 3 && hasPartialWordMatch;
+};
+
 const searchMessagesInRooms = (cli: MatrixClient, query: string): IMessageResult[] => {
     const results: IMessageResult[] = [];
     const lcQuery = query.toLowerCase();
@@ -282,50 +305,73 @@ const searchMessagesInRooms = (cli: MatrixClient, query: string): IMessageResult
                             !content.info) {
                             const messageText = content.body.toLowerCase();
                             
-                            // Check if message contains the query (case insensitive)
-                            // Also check if any word in the query matches any word in the message
+                            // Enhanced partial matching for spotlight search
                             const queryWords = lcQuery.split(/\s+/).filter(word => word.length > 0);
                             const messageWords = messageText.split(/\s+/).filter(word => word.length > 0);
                             
                             const hasExactMatch = messageText.includes(lcQuery);
-                            const hasWordMatch = queryWords.some(queryWord => 
+                            
+                            // Kiểm tra exact word match
+                            const hasExactWordMatch = queryWords.some(queryWord => 
+                                messageWords.some(messageWord => messageWord === queryWord)
+                            );
+                            
+                            // Kiểm tra partial word match (query word là substring của message word)
+                            const hasPartialWordMatch = queryWords.some(queryWord => 
                                 messageWords.some(messageWord => messageWord.includes(queryWord))
                             );
                             
-                            // Calculate relevance score
+                            // Kiểm tra reverse partial match (message word là substring của query word)
+                            const hasReversePartialMatch = queryWords.some(queryWord => 
+                                messageWords.some(messageWord => queryWord.includes(messageWord) && messageWord.length >= 3)
+                            );
+                            
+                            // Calculate enhanced relevance score
                             let relevanceScore = 0;
                             if (hasExactMatch) relevanceScore += 100;
-                            if (hasWordMatch) relevanceScore += queryWords.length * 10;
+                            if (hasExactWordMatch) relevanceScore += queryWords.length * 15;
+                            else if (hasPartialWordMatch) relevanceScore += queryWords.length * 12;
+                            else if (hasReversePartialMatch) relevanceScore += queryWords.length * 8;
                             
                             // Additional relevance factors
                             const queryLength = lcQuery.length;
                             const messageLength = messageText.length;
+                            
+                            // Bonus cho partial matching với độ dài phù hợp
+                            if (queryLength >= 4 && hasPartialWordMatch) {
+                                relevanceScore += 15;
+                            }
+                            
+                            if (queryLength >= 3 && queryLength <= 6 && hasPartialWordMatch) {
+                                relevanceScore += 10;
+                            }
                             
                             // Prefer shorter messages for longer queries (more specific)
                             if (queryLength > 5 && messageLength < 100) {
                                 relevanceScore += 20;
                             }
                             
-                            // Penalize very long messages unless they have exact match
-                            if (messageLength > 200 && !hasExactMatch) {
+                            // Giảm penalty cho long messages nếu có partial match
+                            if (messageLength > 200 && !hasExactMatch && !hasPartialWordMatch) {
                                 relevanceScore -= 10;
                             }
                             
-                            // Heavy penalty for messages that only match single characters
+                            // Giảm penalty cho single character matches khi có partial matching
                             const matchedWords = queryWords.filter(queryWord => 
                                 messageWords.some(messageWord => messageWord.includes(queryWord))
                             );
-                            if (matchedWords.length === 1 && matchedWords[0].length <= 2) {
-                                relevanceScore -= 50; // Heavy penalty for single character matches
+                            if (matchedWords.length === 1 && matchedWords[0].length <= 2 && !hasPartialWordMatch) {
+                                relevanceScore -= 30; // Giảm penalty từ 50 xuống 30
                             }
                             
-                            // Penalize messages with URLs unless they have exact match
-                            if (content.body.includes('http') && !hasExactMatch) {
-                                relevanceScore -= 30;
+                            // Giảm penalty cho URLs nếu có partial match
+                            if (content.body.includes('http') && !hasExactMatch && !hasPartialWordMatch) {
+                                relevanceScore -= 20; // Giảm penalty từ 30 xuống 20
                             }
                             
-                            // Only include messages with good relevance (minimum threshold)
-                            if (relevanceScore >= 20) {
+                            // Dynamic threshold based on query length
+                            const threshold = queryLength >= 4 ? 8 : 12; // Threshold thấp hơn cho query dài
+                            if (relevanceScore >= threshold) {
                                 console.log(`Found match in room ${room.name}: "${content.body}" contains "${query}"`);
                                 // Get sender display name
                                 const sender = event.getSender();
@@ -505,7 +551,7 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
                 const results = searchMessagesInRooms(cli, trimmedQuery);
                 setMessageSearchResults(results);
                 setMessageSearchLoading(false);
-            }, 300); // Increased debounce time for better performance
+            }, 1000); // Delay 1 giây trước khi hiển thị kết quả
             
             return () => {
                 clearTimeout(timeoutId);
@@ -647,7 +693,6 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
                 console.log(`Added ${messageSearchResults.length} message results to section`);
             } else {
                 // For other filters, use the normal search logic
-                const lcQuery = trimmedQuery.toLowerCase();
                 const normalizedQuery = normalize(trimmedQuery);
 
                 possibleResults.forEach((entry) => {
@@ -658,20 +703,20 @@ const SpotlightDialog: React.FC<IProps> = ({ initialText = "", initialFilter = n
                         if (!userDirectorySearchResults.some((user) => user.userId === userId)) {
                             if (
                                 !entry.room.normalizedName?.includes(normalizedQuery) &&
-                                !entry.room.getCanonicalAlias()?.toLowerCase().includes(lcQuery) &&
-                                !entry.query?.some((q) => q.includes(lcQuery))
+                                !hasPartialMatch(trimmedQuery, entry.room.getCanonicalAlias() || '') &&
+                                !entry.query?.some((q) => hasPartialMatch(trimmedQuery, q))
                             ) {
                                 return; // bail, does not match query
                             }
                         }
                     } else if (isMemberResult(entry)) {
-                        if (!entry.alreadyFiltered && !entry.query?.some((q) => q.includes(lcQuery))) return; // bail, does not match query
+                        if (!entry.alreadyFiltered && !entry.query?.some((q) => hasPartialMatch(trimmedQuery, q))) return; // bail, does not match query
                     } else if (isPublicRoomResult(entry)) {
-                        if (!entry.query?.some((q) => q.includes(lcQuery))) return; // bail, does not match query
+                        if (!entry.query?.some((q) => hasPartialMatch(trimmedQuery, q))) return; // bail, does not match query
                     } else if (isMessageResult(entry)) {
-                        if (!entry.query?.some((q) => q.includes(lcQuery))) return; // bail, does not match query
+                        if (!entry.query?.some((q) => hasPartialMatch(trimmedQuery, q))) return; // bail, does not match query
                     } else {
-                        if (!entry.name.toLowerCase().includes(lcQuery) && !entry.query?.some((q) => q.includes(lcQuery)))
+                        if (!hasPartialMatch(trimmedQuery, entry.name) && !entry.query?.some((q) => hasPartialMatch(trimmedQuery, q)))
                             return; // bail, does not match query
                     }
 

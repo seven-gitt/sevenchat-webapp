@@ -30,9 +30,20 @@ function formatSearchSummary(
         const senderId = senderMatch[1];
         const keyword = senderMatch[2]?.trim();
         
-        // Tìm tên hiển thị của sender
+        // Tìm tên hiển thị của sender từ danh sách senders
         const senderInfo = senders.find(([id]) => id === senderId);
-        const senderName = senderInfo ? senderInfo[1].name : senderId;
+        let senderName = senderId; // fallback to senderId
+        
+        if (senderInfo && senderInfo[1].name) {
+            senderName = senderInfo[1].name;
+        } else {
+            // Nếu không tìm thấy trong senders list, thử lấy từ senderId
+            // Loại bỏ domain để hiển thị ngắn gọn hơn
+            const localPart = senderId.split(':')[0];
+            if (localPart.startsWith('@')) {
+                senderName = localPart.substring(1); // Bỏ ký tự @
+            }
+        }
         
         if (keyword) {
             // Có cả sender filter và keyword
