@@ -235,7 +235,6 @@ const searchMessagesInRooms = (cli: MatrixClient, query: string): IMessageResult
     
     // Skip search if query is too short
     if (lcQuery.length < 2) {
-        console.log(`Query "${query}" is too short, skipping search`);
         return results;
     }
     
@@ -244,7 +243,6 @@ const searchMessagesInRooms = (cli: MatrixClient, query: string): IMessageResult
         room.getMyMembership() === KnownMembership.Join
     );
     
-    console.log(`Searching for "${query}" in ${rooms.length} rooms`);
     
     let totalEventsProcessed = 0;
     let totalMessagesFound = 0;
@@ -258,11 +256,9 @@ const searchMessagesInRooms = (cli: MatrixClient, query: string): IMessageResult
             
             // Only process if we have events
             if (events.length === 0) {
-                console.log(`Room ${room.name} has no events`);
                 return;
             }
             
-            console.log(`Room ${room.name} has ${events.length} events`);
             totalEventsProcessed += events.length;
             
             let roomMessagesFound = 0;

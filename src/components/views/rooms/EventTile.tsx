@@ -696,13 +696,25 @@ export class UnwrappedEventTile extends React.Component<EventTileProps, IState> 
         // This allows the permalink to be opened in a new tab/window or copied as
         // matrix.to, but also for it to enable routing within Element when clicked.
         e.preventDefault();
+        
+        // Nếu đang ở chế độ search, đóng search trước khi navigate
+        if (this.context.timelineRenderingType === TimelineRenderingType.Search) {
+            // Dispatch custom action để đóng search mode và reset filter
+            dis.dispatch({
+                action: "cancel_search_and_navigate",
+                room_id: this.props.mxEvent.getRoomId(),
+                event_id: this.props.mxEvent.getId(),
+                highlighted: true,
+            });
+            return; // Không cần dispatch ViewRoom nữa vì sẽ được xử lý trong RoomView
+        }
+        
         dis.dispatch<ViewRoomPayload>({
             action: Action.ViewRoom,
             event_id: this.props.mxEvent.getId(),
             highlighted: true,
             room_id: this.props.mxEvent.getRoomId(),
-            metricsTrigger:
-                this.context.timelineRenderingType === TimelineRenderingType.Search ? "MessageSearch" : undefined,
+            metricsTrigger: "MessageSearch",
         });
     };
 

@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR GPL-3.0-only OR LicenseRef-Element-Com
 Please see LICENSE files in the repository root for full details.
 */
 
-import React from "react";
+import React, { useRef, useImperativeHandle, forwardRef } from "react";
 import SearchIcon from "@vector-im/compound-design-tokens/assets/web/icons/search";
 import CloseIcon from "@vector-im/compound-design-tokens/assets/web/icons/close";
 import { IconButton, Link } from "@vector-im/compound-web";
@@ -77,7 +77,11 @@ interface Props {
     onSenderChange?: (senderId: string) => void;
 }
 
-const RoomSearchAuxPanel: React.FC<Props> = ({ 
+export interface RoomSearchAuxPanelRef {
+    closeDropdown(): void;
+}
+
+const RoomSearchAuxPanel = forwardRef<RoomSearchAuxPanelRef, Props>(({ 
     searchInfo, 
     isRoomEncrypted, 
     onSearchScopeChange, 
@@ -85,8 +89,17 @@ const RoomSearchAuxPanel: React.FC<Props> = ({
     senders = [],
     selectedSender = "all",
     onSenderChange
-}) => {
+}, ref) => {
     const scope = searchInfo?.scope ?? SearchScope.Room;
+    const selectRef = useRef<HTMLSelectElement>(null);
+
+    useImperativeHandle(ref, () => ({
+        closeDropdown: () => {
+            if (selectRef.current) {
+                selectRef.current.blur();
+            }
+        }
+    }));
 
     return (
         <>
@@ -126,6 +139,7 @@ const RoomSearchAuxPanel: React.FC<Props> = ({
                                 Lọc theo:
                             </span>
                             <select
+                                ref={selectRef}
                                 value={selectedSender}
                                 onChange={(e) => onSenderChange(e.target.value)}
                                 style={{
@@ -177,6 +191,8 @@ const RoomSearchAuxPanel: React.FC<Props> = ({
             </div>
         </>
     );
-};
+});
+
+RoomSearchAuxPanel.displayName = "RoomSearchAuxPanel";
 
 export default RoomSearchAuxPanel;

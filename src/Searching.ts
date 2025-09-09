@@ -29,8 +29,9 @@ const SEARCH_LIMIT = 1000; // Tăng giới hạn tìm kiếm lên 1000 để tì
 
 // TODO: Thêm cấu hình LIMITS động trong tương lai để tối ưu hóa theo kích thước phòng
 
-// Room ID để bật debug khi quét timeline theo yêu cầu
-const DEBUG_ROOM_ID = "!RIRVSxYPwsrqSjINwk";
+// Temporary debug room ID to avoid linting errors - can be removed in future cleanup
+const DEBUG_ROOM_ID = "";
+
 
 // TODO: Thêm hàm calculateDynamicLimits trong tương lai để tối ưu hóa hiệu suất dựa trên kích thước phòng
 
@@ -114,10 +115,6 @@ async function fetchAllSenderMessagesSeshat(
                 });
                 collected.push(...filtered);
                 
-                // Log progress for debugging
-                if (roomId === DEBUG_ROOM_ID && pageCount % 10 === 0) {
-                    console.log(`[Debug ${DEBUG_ROOM_ID}] Seshat page ${pageCount}: +${filtered.length} events, total: ${collected.length}`);
-                }
             }
             nextBatch = page.next_batch;
         } catch (e) {
@@ -126,9 +123,6 @@ async function fetchAllSenderMessagesSeshat(
         }
     }
 
-    if (roomId === DEBUG_ROOM_ID) {
-        console.log(`[Debug ${DEBUG_ROOM_ID}] Seshat-only collected ${collected.length} events for sender ${senderId}`);
-    }
 
     const response: ISearchResponse = {
         search_categories: {
@@ -337,22 +331,18 @@ function searchInTimeline(
         );
     }
     
-    console.log(`Timeline search check for "${searchTerm}" in ${rooms.length} rooms`);
     
     // Process rooms
     for (const room of rooms) {
-        console.log(`Checking room: ${room.name} (${room.roomId})`);
         try {
             // Get recent messages from the room timeline (like spotlight dialog)
             const timeline = room.getLiveTimeline();
             const events = timeline?.getEvents() || [];
             
             if (events.length === 0) {
-                console.log(`Room ${room.name} has no events`);
                 continue;
             }
             
-            console.log(`Room ${room.name} has ${events.length} events`);
             
             // Process events in reverse order (newest first) for better performance
             for (let i = events.length - 1; i >= 0; i--) {
@@ -380,10 +370,7 @@ function searchInTimeline(
                             );
                             
                             if (hasExactMatch || hasWordMatch) {
-                                console.log(`Found match in timeline: "${content.body}" contains "${searchTerm}"`);
                                 return { found: true, message: content.body };
-                            } else {
-                                console.log(`No match in message: "${content.body}" (searching for "${searchTerm}")`);
                             }
                         }
                     }
@@ -605,10 +592,6 @@ async function fetchAllSenderMessagesServer(
                 });
                 allResults.push(...uniqueResults);
                 
-                // Log progress for debugging
-                if (roomId === DEBUG_ROOM_ID && pageCount % 10 === 0) {
-                    console.log(`[Debug ${DEBUG_ROOM_ID}] Server page ${pageCount}: +${uniqueResults.length} events, total: ${allResults.length}`);
-                }
             }
             nextBatch = roomData?.next_batch;
         } catch (e) {
@@ -688,9 +671,6 @@ async function scanFullTimelineBySender(
     const timelineSet = (room as any)?.getUnfilteredTimelineSet?.() || room?.getLiveTimelineSet?.();
     const timeline = timelineSet?.getLiveTimeline?.();
     const initialEvents = timeline?.getEvents?.() || [];
-    if (roomId === DEBUG_ROOM_ID) {
-        console.log(`[Debug ${DEBUG_ROOM_ID}] Timeline scan - initial events: ${initialEvents.length}`);
-    }
 
     const results: any[] = [];
     const seenEventIds = new Set<string>();
@@ -742,10 +722,7 @@ async function scanFullTimelineBySender(
     };
 
     // Thu thập từ events ban đầu
-    const initialCollected = collectFrom(initialEvents);
-    if (roomId === DEBUG_ROOM_ID) {
-        console.log(`[Debug ${DEBUG_ROOM_ID}] Timeline scan - collected ${initialCollected} initial events for ${senderId}`);
-    }
+    collectFrom(initialEvents);
 
     // Phân trang ngược để lấy toàn bộ lịch sử
     while (paginationCount < MAX_PAGINATION) {
@@ -756,9 +733,6 @@ async function scanFullTimelineBySender(
         const hasOlderNeighbour = !!timeline?.getNeighbouringTimeline?.("b");
         
         if (!hasMoreToken && !hasOlderNeighbour) {
-            if (roomId === DEBUG_ROOM_ID) {
-                console.log(`[Debug ${DEBUG_ROOM_ID}] Timeline scan - no more events to paginate`);
-            }
             break;
         }
         
@@ -767,17 +741,11 @@ async function scanFullTimelineBySender(
             // eslint-disable-next-line @typescript-eslint/await-thenable
             await (client as any).paginateEventTimeline?.(timeline, { backwards: true, limit: PAGE });
             const pageEvents = timeline?.getEvents?.() || [];
-            const pageCollected = collectFrom(pageEvents);
+            collectFrom(pageEvents);
             
-            if (roomId === DEBUG_ROOM_ID && paginationCount % 10 === 0) {
-                console.log(`[Debug ${DEBUG_ROOM_ID}] Timeline scan - page ${paginationCount}: ${pageEvents.length} events, +${pageCollected} for ${senderId}, total: ${results.length}`);
-            }
             
             // Nếu không thu thập được thêm events nào sau vài lần thử, có thể đã hết
             if (seenEventIds.size === prevSeen) {
-                if (roomId === DEBUG_ROOM_ID) {
-                    console.log(`[Debug ${DEBUG_ROOM_ID}] Timeline scan - no new events collected, stopping`);
-                }
                 break;
             }
         } catch (e) {
@@ -849,9 +817,6 @@ async function serverSideSearch(
                     const full = await fetchAllSenderMessagesServer(client, senderId, roomId, abortSignal);
                     const count = full.response?.search_categories?.room_events?.results?.length || 0;
                     if (count > 0) {
-                        if (roomId === DEBUG_ROOM_ID) {
-                            console.log(`[Debug ${DEBUG_ROOM_ID}] Server paginated sender search found ${count} events`);
-                        }
                         // Diagnostic cross-check for the room created at 2025-08-20
                         await debugVerifyCoverage(client, senderId, roomId, abortSignal);
                         return full;
@@ -869,9 +834,6 @@ async function serverSideSearch(
                 const room = (client as any).getRoom?.(roomId);
                 const timeline = room?.getLiveTimeline?.();
                 const initialEvents = timeline?.getEvents?.() || [];
-                if (roomId === DEBUG_ROOM_ID) {
-                    console.log(`[Debug ${DEBUG_ROOM_ID}] Initial events: ${initialEvents.length}`);
-                }
 
                 // Thu thập sự kiện khớp sender trên toàn bộ lịch sử bằng phân trang lùi
                 // Đếm toàn bộ và đưa toàn bộ kết quả ra danh sách hiển thị
@@ -932,9 +894,6 @@ async function serverSideSearch(
                         // eslint-disable-next-line @typescript-eslint/await-thenable
                         await (client as any).paginateEventTimeline?.(timeline, { backwards: true, limit: PAGE });
                         const pageEvents = timeline?.getEvents?.() || [];
-                        if (roomId === DEBUG_ROOM_ID) {
-                            console.log(`[Debug ${DEBUG_ROOM_ID}] Paged events: ${pageEvents.length}, collected so far: ${seenEventIds.size}`);
-                        }
                         collectFrom(pageEvents);
                     } catch (e) {
                         console.warn('paginateEventTimeline failed:', e);
@@ -1912,10 +1871,7 @@ async function localSearch(
                 };
 
                 const initialEvents = timeline?.getEvents?.() || [];
-                const initialCollected = collectFrom(initialEvents);
-                if (roomId === DEBUG_ROOM_ID) {
-                    console.log(`[Debug ${DEBUG_ROOM_ID}] Local sender scan - initial events: ${initialEvents.length}, collected: ${initialCollected}`);
-                }
+                collectFrom(initialEvents);
 
                 // Phân trang để lấy toàn bộ lịch sử
                 while (paginationCount < MAX_PAGINATION) {
@@ -1924,9 +1880,6 @@ async function localSearch(
                     const hasOlderNeighbour = !!timeline?.getNeighbouringTimeline?.("b");
                     
                     if (!hasMoreToken && !hasOlderNeighbour) {
-                        if (roomId === DEBUG_ROOM_ID) {
-                            console.log(`[Debug ${DEBUG_ROOM_ID}] Local sender scan - no more events to paginate`);
-                        }
                         break;
                     }
                     

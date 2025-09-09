@@ -128,7 +128,7 @@ import { type CancelAskToJoinPayload } from "../../dispatcher/payloads/CancelAsk
 import { type SubmitAskToJoinPayload } from "../../dispatcher/payloads/SubmitAskToJoinPayload";
 import RightPanelStore from "../../stores/right-panel/RightPanelStore";
 import { onView3pidInvite } from "../../stores/right-panel/action-handlers";
-import RoomSearchAuxPanel from "../views/rooms/RoomSearchAuxPanel";
+import RoomSearchAuxPanel, { type RoomSearchAuxPanelRef } from "../views/rooms/RoomSearchAuxPanel";
 import { PinnedMessageBanner } from "../views/rooms/PinnedMessageBanner";
 import { ScopedRoomContextProvider, useScopedRoomContext } from "../../contexts/ScopedRoomContext";
 import { DeclineAndBlockInviteDialog } from "../views/dialogs/DeclineAndBlockInviteDialog";
@@ -372,6 +372,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
 
     private unmounted = false;
     private permalinkCreators: Record<string, RoomPermalinkCreator> = {};
+    private roomSearchAuxPanelRef = createRef<RoomSearchAuxPanelRef>();
 
     // The userId from which we received this invite.
     // Only populated if the membership of our user is invite.
@@ -1140,6 +1141,24 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                     // we don't need to re-dispatch as RoomViewStore knows to persist with context=Search also
                 }
                 break;
+            case "cancel_search_and_navigate":
+                if (!this.unmounted && payload.room_id === this.state.roomId) {
+                    // Đóng search mode và reset filter trước
+                    await this.onCancelSearchClick();
+                    
+                    // Thêm delay để đảm bảo state được update hoàn toàn và UI được re-render
+                    setTimeout(() => {
+                        // Sau đó navigate đến tin nhắn
+                        defaultDispatcher.dispatch<ViewRoomPayload>({
+                            action: Action.ViewRoom,
+                            event_id: payload.event_id,
+                            highlighted: payload.highlighted,
+                            room_id: payload.room_id,
+                            metricsTrigger: "MessageSearch",
+                        });
+                    }, 200);
+                }
+                break;
             case "MatrixActions.sync":
                 if (!this.state.matrixClientIsReady) {
                     const isReadyNow = Boolean(this.context.client?.isInitialSyncComplete());
@@ -1701,7 +1720,6 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
     private onSearch = (term: string, scope = SearchScope.Room): void => {
         const roomId = scope === SearchScope.Room ? this.getRoomId() : undefined;
         debuglog("sending search request");
-        console.log("RoomView.onSearch called with:", { term, scope, roomId });
         
         // Nếu đang chọn một người gửi trên UI mà từ khóa chưa chứa sender:, tự động kết hợp
         // Áp dụng cả khi term rỗng để giữ kết quả lọc theo người gửi sau khi xoá keyword
@@ -1721,7 +1739,6 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
         const parsedSender = extractSenderId(term);
         if (parsedSender) {
             selectedSender = parsedSender;
-            console.log("Detected sender search for:", parsedSender);
         }
         
         // Khởi tạo danh sách người gửi nếu chưa có
@@ -1749,7 +1766,6 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
         const abortController = new AbortController();
         const promise = eventSearch(this.context.client!, term, roomId, abortController.signal);
         
-        console.log("Creating new search with:", { term, scope, roomId, selectedSender });
 
         this.setState({
             timelineRenderingType: TimelineRenderingType.Search,
@@ -1788,7 +1804,6 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
     };
 
     private onSearchUpdate = (inProgress: boolean, searchResults: ISearchResults | null, error: Error | null): void => {
-        console.log("onSearchUpdate called with:", { inProgress, resultsCount: searchResults?.results?.length, error: error?.message });
         
         // Lấy danh sách người gửi từ kết quả tìm kiếm
         let searchSenders: Array<[string, {member: any, name: string}]> = [];
@@ -1804,7 +1819,6 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                 }
             }
             searchSenders = Array.from(map.entries());
-            console.log("Found senders from search results:", searchSenders.length);
         } else if (!searchResults?.results && this.state.room && !inProgress) {
             // Nếu không có kết quả tìm kiếm, lấy danh sách tất cả thành viên trong phòng
             const room = this.state.room;
@@ -1812,7 +1826,6 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
             searchSenders = members
                 .filter(member => member.membership === 'join' || member.membership === 'invite')
                 .map(member => [member.userId, {member, name: member.name || member.userId}]);
-            console.log("Using all room members as senders:", searchSenders.length);
         }
 
         // Xử lý AbortError một cách graceful - không hiển thị lỗi cho user
@@ -1965,6 +1978,9 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
     };
 
     private onCancelSearchClick = (): Promise<void> => {
+        // Đóng dropdown trước khi reset state
+        this.roomSearchAuxPanelRef.current?.closeDropdown();
+        
         return new Promise<void>((resolve) => {
             this.setState(
                 {
@@ -2452,6 +2468,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
             if (!isRoomEncryptionLoading) {
                 aux = (
                     <RoomSearchAuxPanel
+                        ref={this.roomSearchAuxPanelRef}
                         searchInfo={this.state.search}
                         onCancelClick={this.onCancelSearchClick}
                         onSearchScopeChange={this.onSearchScopeChange}
@@ -2640,6 +2657,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
 
         const rightPanel = showRightPanel ? (
             <RightPanel
+                key={`${this.state.room.roomId}-${this.state.selectedSender}-${this.state.timelineRenderingType}`}
                 room={this.state.room}
                 resizeNotifier={this.props.resizeNotifier}
                 permalinkCreator={this.permalinkCreator}
@@ -2648,7 +2666,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                 onSearchCancel={this.onCancelSearchClick}
                 searchTerm={this.state.search?.term ?? ""}
                 onInitializeFilter={this.initializeSearchWithFilter}
-                selectedSender={this.state.selectedSender}
+                selectedSender={this.state.timelineRenderingType === TimelineRenderingType.Search ? this.state.selectedSender : undefined}
             />
         ) : undefined;
 

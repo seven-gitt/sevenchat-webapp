@@ -143,6 +143,7 @@ const RoomSummaryCardView: React.FC<IProps> = ({
     const [searchValue, setSearchValue] = useState(searchTerm);
     const [showUserFilter, setShowUserFilter] = useState(false);
     
+
     useEffect(() => {
         // Không hiển thị "sender:..." trong ô tìm kiếm khi lọc theo người gửi
         if (searchTerm?.startsWith?.('sender:')) {
@@ -277,7 +278,7 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                             const term = selectedSender && selectedSender !== "all"
                                 ? `sender:${selectedSender}${raw ? ` ${raw}` : ""}`
                                 : raw;
-                            console.log("RoomSummaryCardView onChange:", { raw, selectedSender, term });
+                            // Handle search term change
                             onSearchChange(term);
                         }}
                         value={searchValue}
@@ -431,7 +432,7 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                                 </div>
                                 
                                 {/* Indicator cho user được chọn */}
-                                {selectedSender === user.id && (
+                                {selectedSender && selectedSender !== "all" && selectedSender === user.id && (
                                     <div style={{
                                         width: "12px",
                                         height: "12px",

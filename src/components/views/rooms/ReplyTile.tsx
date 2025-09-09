@@ -15,6 +15,7 @@ import { _t } from "../../../languageHandler";
 import dis from "../../../dispatcher/dispatcher";
 import { Action } from "../../../dispatcher/actions";
 import { type RoomPermalinkCreator } from "../../../utils/permalinks/Permalinks";
+import { TimelineRenderingType } from "../../../contexts/RoomContext";
 import SenderProfile from "../messages/SenderProfile";
 import MImageReplyBody from "../messages/MImageReplyBody";
 import { isVoiceMessage } from "../../../utils/EventUtils";
@@ -78,33 +79,45 @@ export default class ReplyTile extends React.PureComponent<IProps> {
             if (this.props.toggleExpandedQuote && e.shiftKey) {
                 this.props.toggleExpandedQuote();
             } else {
-                dis.dispatch<ViewRoomPayload>({
-                    action: Action.ViewRoom,
-                    event_id: this.props.mxEvent.getId(),
-                    highlighted: true,
-                    room_id: this.props.mxEvent.getRoomId(),
-                    metricsTrigger: undefined, // room doesn't change
-                });
+                // Kiểm tra xem có đang ở chế độ search không
+                const roomContext = this.context as any;
+                if (roomContext?.timelineRenderingType === TimelineRenderingType.Search) {
+                    // Dispatch custom action để đóng search mode và navigate
+                    dis.dispatch({
+                        action: "cancel_search_and_navigate",
+                        room_id: this.props.mxEvent.getRoomId(),
+                        event_id: this.props.mxEvent.getId(),
+                        highlighted: true,
+                    });
+                } else {
+                    dis.dispatch<ViewRoomPayload>({
+                        action: Action.ViewRoom,
+                        event_id: this.props.mxEvent.getId(),
+                        highlighted: true,
+                        room_id: this.props.mxEvent.getRoomId(),
+                        metricsTrigger: undefined, // room doesn't change
+                    });
 
-                // Add a small delay to ensure the room is loaded before scrolling and highlighting
-                setTimeout(() => {
-                    // Try to scroll to the highlighted message
-                    const eventElement = document.querySelector(`[data-event-id="${this.props.mxEvent.getId()}"]`);
-                    if (eventElement) {
-                        eventElement.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'center'
-                        });
-                        
-                        // Add a simple flash effect
-                        eventElement.classList.add('mx_EventTile_highlight');
-                        
-                        // Remove the highlight class after animation completes
-                        setTimeout(() => {
-                            eventElement.classList.remove('mx_EventTile_highlight');
-                        }, 3000);
-                    }
-                }, 500);
+                    // Add a small delay to ensure the room is loaded before scrolling and highlighting
+                    setTimeout(() => {
+                        // Try to scroll to the highlighted message
+                        const eventElement = document.querySelector(`[data-event-id="${this.props.mxEvent.getId()}"]`);
+                        if (eventElement) {
+                            eventElement.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center'
+                            });
+                            
+                            // Add a simple flash effect
+                            eventElement.classList.add('mx_EventTile_highlight');
+                            
+                            // Remove the highlight class after animation completes
+                            setTimeout(() => {
+                                eventElement.classList.remove('mx_EventTile_highlight');
+                            }, 3000);
+                        }
+                    }, 500);
+                }
             }
         }
     };
