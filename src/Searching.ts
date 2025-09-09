@@ -25,15 +25,60 @@ import { type ISearchArgs } from "./indexing/BaseEventIndexManager";
 import EventIndexPeg from "./indexing/EventIndexPeg";
 import { isNotUndefined } from "./Typeguards";
 
-const SEARCH_LIMIT = 1000; // Tăng giới hạn tìm kiếm lên 1000 để tìm được nhiều kết quả hơn
+const SEARCH_LIMIT = 500; // Giảm xuống 500 để cân bằng hiệu suất và kết quả
+const FAST_SEARCH_LIMIT = 100; // Limit thấp hơn cho tìm kiếm nhanh
+const MAX_SEARCH_STRATEGIES = 5; // Giới hạn số strategies để tránh chậm
 
-// TODO: Thêm cấu hình LIMITS động trong tương lai để tối ưu hóa theo kích thước phòng
+// Cache cho search results
+const searchCache = new Map<string, { results: any; timestamp: number }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 phút
+const MAX_CACHE_SIZE = 50;
+
+// Debounce timer
+let searchDebounceTimer: NodeJS.Timeout | null = null;
+const DEBOUNCE_DELAY = 300; // 300ms debounce
 
 // Temporary debug room ID to avoid linting errors - can be removed in future cleanup
 const DEBUG_ROOM_ID = "";
 
+// Dynamic limits based on room size and search complexity
+function calculateDynamicLimits(term: string, roomId?: string): { limit: number; maxPages: number; strategies: number } {
+    const isSimpleSearch = term.length <= 3 || !term.includes(' ');
+    const hasSpecialFilter = term.includes('sender:') || term.includes('http');
+    
+    if (isSimpleSearch && !hasSpecialFilter) {
+        return { limit: FAST_SEARCH_LIMIT, maxPages: 5, strategies: 3 };
+    }
+    
+    if (roomId) {
+        // Room-specific search có thể nhanh hơn
+        return { limit: SEARCH_LIMIT * 0.7, maxPages: 10, strategies: MAX_SEARCH_STRATEGIES };
+    }
+    
+    return { limit: SEARCH_LIMIT, maxPages: 20, strategies: MAX_SEARCH_STRATEGIES };
+}
 
-// TODO: Thêm hàm calculateDynamicLimits trong tương lai để tối ưu hóa hiệu suất dựa trên kích thước phòng
+// Cache management functions
+function getCachedResult(key: string): any | null {
+    const cached = searchCache.get(key);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        return cached.results;
+    }
+    searchCache.delete(key);
+    return null;
+}
+
+function setCachedResult(key: string, results: any): void {
+    if (searchCache.size >= MAX_CACHE_SIZE) {
+        // Remove oldest entries
+        const entries = Array.from(searchCache.entries());
+        entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+        for (let i = 0; i < 10; i++) {
+            searchCache.delete(entries[i][0]);
+        }
+    }
+    searchCache.set(key, { results, timestamp: Date.now() });
+}
 
 // Parse "sender:<userId>" token anywhere in the term and return remaining keyword
 function extractSenderFilter(rawTerm: string): { senderId?: string; keyword: string } {
@@ -57,6 +102,14 @@ async function fetchAllSenderMessagesSeshat(
     senderId: string,
     roomId: string,
 ): Promise<{ response: ISearchResponse; query: ISearchArgs }> {
+    // Check cache first
+    const cacheKey = `seshat_${senderId}_${roomId}`;
+    const cached = getCachedResult(cacheKey);
+    if (cached) {
+        console.log("Returning cached Seshat results");
+        return cached;
+    }
+
     let eventIndex = EventIndexPeg.get();
     if (!eventIndex) {
         const initialized = await EventIndexPeg.init();
@@ -64,11 +117,12 @@ async function fetchAllSenderMessagesSeshat(
         eventIndex = EventIndexPeg.get();
     }
 
+    const dynamicLimits = calculateDynamicLimits("*", roomId);
     const baseQuery: ISearchArgs = {
         search_term: "*", // Luôn dùng wildcard để tìm tất cả tin nhắn
         before_limit: 0,
         after_limit: 0,
-        limit: SEARCH_LIMIT,
+        limit: dynamicLimits.limit,
         order_by_recency: true,
         room_id: roomId,
     };
@@ -77,7 +131,7 @@ async function fetchAllSenderMessagesSeshat(
     const seenEventIds = new Set<string>();
     let nextBatch: string | undefined;
     let pageCount = 0;
-    const MAX_PAGES = 1000; // Giới hạn số trang để tránh vòng lặp vô tận
+    const MAX_PAGES = dynamicLimits.maxPages; // Sử dụng dynamic limit
 
     // First page - luôn dùng wildcard search
     let first = await eventIndex!.search(baseQuery);
@@ -134,7 +188,12 @@ async function fetchAllSenderMessagesSeshat(
         },
     };
 
-    return { response, query: baseQuery };
+    const result = { response, query: baseQuery };
+    
+    // Cache the result
+    setCachedResult(cacheKey, result);
+    
+    return result;
 }
 
 // Enhanced search patterns for better URL and domain matching
@@ -794,8 +853,17 @@ async function serverSideSearch(
     roomId?: string,
     abortSignal?: AbortSignal,
 ): Promise<{ response: ISearchResponse; query: ISearchRequestBody }> {
+    // Check cache first
+    const cacheKey = `server_${term}_${roomId || 'all'}`;
+    const cached = getCachedResult(cacheKey);
+    if (cached) {
+        console.log("Returning cached server search results");
+        return cached;
+    }
+
+    const dynamicLimits = calculateDynamicLimits(term, roomId);
     const filter: IRoomEventFilter = {
-        limit: SEARCH_LIMIT, // Sử dụng giới hạn cao hơn cho server search
+        limit: dynamicLimits.limit, // Sử dụng dynamic limit
     };
 
     if (roomId !== undefined) filter.rooms = [roomId];
@@ -1009,7 +1077,7 @@ async function serverSideSearch(
             { term: fragment, description: "fragment" },
             ...searchTerms.map((t: string) => ({ term: t, description: "keyword/domain search" })),
             ...additionalStrategies,
-        ];
+        ].slice(0, dynamicLimits.strategies); // Giới hạn số strategies
 
         // let bestResponse = null;
         // let bestQuery: ISearchRequestBody | null = null;
@@ -1184,7 +1252,14 @@ async function serverSideSearch(
         }
     }
 
-    return { response, query };
+    const result = { response, query };
+    
+    // Cache the result if successful
+    if (response && response.search_categories?.room_events?.results && response.search_categories.room_events.results.length > 0) {
+        setCachedResult(cacheKey, result);
+    }
+    
+    return result;
 }
 
 async function serverSideSearchProcess(
@@ -1286,6 +1361,14 @@ async function localSearch(
     roomId?: string,
     processResult = true,
 ): Promise<{ response: IResultRoomEvents; query: ISearchArgs }> {
+    // Check cache first
+    const cacheKey = `local_${searchTerm}_${roomId || 'all'}`;
+    const cached = getCachedResult(cacheKey);
+    if (cached) {
+        console.log("Returning cached local search results");
+        return cached;
+    }
+
     const eventIndex = EventIndexPeg.get();
     
     // Đảm bảo Seshat đã được khởi tạo
@@ -1327,11 +1410,12 @@ async function localSearch(
         }
     }
 
+    const dynamicLimits = calculateDynamicLimits(actualSearchTerm, roomId);
     const searchArgs: ISearchArgs = {
         search_term: actualSearchTerm,
         before_limit: 1,
         after_limit: 1,
-        limit: SEARCH_LIMIT,
+        limit: dynamicLimits.limit, // Sử dụng dynamic limit
         order_by_recency: true,
         room_id: roomId, // Giới hạn theo phòng hiện tại nếu có
     };
@@ -1356,13 +1440,22 @@ async function localSearch(
         try {
             localResult = await safeSearch(searchArgs);
             console.log(`Exact search returned ${localResult?.count || 0} results`);
+            
+            // Early termination if we got good results
+            if (localResult?.count && localResult.count >= 10) {
+                console.log("Early termination: found sufficient results");
+                const result = { response: localResult, query: searchArgs };
+                setCachedResult(cacheKey, result);
+                return result;
+            }
         } catch (error) {
             console.log("Exact search failed:", error);
         }
         
-        // Strategy 1.5: Try searching with extracted keywords and relevance scoring
+        // Strategy 1.5: Try searching with extracted keywords and relevance scoring (limited)
         if (!localResult || localResult.count === 0) {
-            for (const keyword of keywords) {
+            const limitedKeywords = keywords.slice(0, 3); // Giới hạn chỉ 3 keywords đầu tiên
+            for (const keyword of limitedKeywords) {
                 if (keyword !== searchTerm && keyword.length > 2) {
                     const keywordArgs = { ...searchArgs, search_term: keyword };
                     try {
@@ -1551,22 +1644,15 @@ async function localSearch(
             }
         }
 
-        // Strategy 8: If keyword without TLD, try common domain expansions
+        // Strategy 8: If keyword without TLD, try common domain expansions (limited)
         if ((!localResult || localResult.count === 0) && isSingleToken) {
             const expansions = [
                 `${searchTerm}.com`,
                 `${searchTerm}.vn`,
-                `${searchTerm}.net`,
-                `${searchTerm}.org`,
                 `${searchTerm}.io`,
                 `${searchTerm}.app`,
-                `www.${searchTerm}.com`,
-                `app.${searchTerm}.com`,
                 `https://${searchTerm}.com`,
-                `http://${searchTerm}.com`,
-                `https://app.${searchTerm}.com`,
-                `https://www.${searchTerm}.com`,
-            ];
+            ].slice(0, 3); // Giới hạn chỉ 3 expansions đầu tiên
             for (const exp of expansions) {
                 const args = { ...searchArgs, search_term: exp };
                 try {
@@ -1619,19 +1705,14 @@ async function localSearch(
             }
         }
         
-        // Strategy 10: Try fuzzy matching for single tokens
+        // Strategy 10: Try fuzzy matching for single tokens (simplified)
         if (!localResult || localResult.count === 0) {
             if (isSingleToken) {
-                // Try partial matches and common variations
+                // Only try most common variations
                 const fuzzyTerms = [
                     searchTerm.toLowerCase(),
                     searchTerm.toUpperCase(),
-                    searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1),
-                    searchTerm + 'app',
-                    searchTerm + 'web',
-                    searchTerm + 'site',
-                    searchTerm + 'page',
-                ];
+                ].slice(0, 2); // Chỉ 2 variations đầu tiên
                 
                 for (const fuzzyTerm of fuzzyTerms) {
                     const fuzzyArgs = { ...searchArgs, search_term: fuzzyTerm };
@@ -1649,158 +1730,37 @@ async function localSearch(
             }
         }
         
-        // Strategy 11: Try substring search for better partial matching
+        // Strategy 11: Try word-based search (final fallback)
         if (!localResult || localResult.count === 0) {
-            // Try searching with wildcard-like patterns
-            const substringPatterns = [
-                `*${searchTerm}*`,
-                `%${searchTerm}%`,
-                `.*${searchTerm}.*`,
-                searchTerm + '*',
-                '*' + searchTerm,
-            ];
+            const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(word => word.length > 2);
             
-            for (const pattern of substringPatterns) {
-                const patternArgs = { ...searchArgs, search_term: pattern };
+            // Chỉ thử từ đầu tiên
+            if (searchWords.length > 0) {
+                const word = searchWords[0];
+                const wordArgs = { ...searchArgs, search_term: word };
                 try {
-                    const patternResult = await eventIndex!.search(patternArgs);
-                    if (patternResult?.count && patternResult.count > 0) {
-                        localResult = patternResult;
-                        console.log(`Substring pattern search returned ${patternResult.count} results for "${pattern}"`);
-                        break;
-                    }
-                } catch (error) {
-                    console.log(`Substring pattern search failed for "${pattern}":`, error);
-                }
-            }
-        }
-        
-        // Strategy 12: Try searching with common URL patterns that might contain the term
-        if (!localResult || localResult.count === 0) {
-            const urlPatterns = [
-                `https://*${searchTerm}*`,
-                `http://*${searchTerm}*`,
-                `*${searchTerm}*.com`,
-                `*${searchTerm}*.org`,
-                `*${searchTerm}*.net`,
-                `*${searchTerm}*.io`,
-                `*${searchTerm}*.app`,
-            ];
-            
-            for (const urlPattern of urlPatterns) {
-                const urlArgs = { ...searchArgs, search_term: urlPattern };
-                try {
-                    const urlResult = await eventIndex!.search(urlArgs);
-                    if (urlResult?.count && urlResult.count > 0) {
-                        localResult = urlResult;
-                        console.log(`URL pattern search returned ${urlResult.count} results for "${urlPattern}"`);
-                        break;
-                    }
-                } catch (error) {
-                    console.log(`URL pattern search failed for "${urlPattern}":`, error);
-                }
-            }
-        }
-        
-        // Strategy 13: Try searching with all generated variations
-        if (!localResult || localResult.count === 0) {
-            const allVariations = generateSearchVariations(searchTerm);
-            console.log(`Trying ${allVariations.length} search variations for "${searchTerm}"`);
-            
-            for (const variation of allVariations) {
-                if (variation !== searchTerm) {
-                    const variationArgs = { ...searchArgs, search_term: variation };
-                    try {
-                        const variationResult = await eventIndex!.search(variationArgs);
-                        if (variationResult?.count && variationResult.count > 0) {
-                            localResult = variationResult;
-                            console.log(`Variation search returned ${variationResult.count} results for "${variation}"`);
-                            break;
-                        }
-                    } catch (error) {
-                        console.log(`Variation search failed for "${variation}":`, error);
-                    }
-                }
-            }
-        }
-        
-        // Strategy 14: Try fuzzy matching with word-based search (inspired by spotlight dialog)
-        if (!localResult || localResult.count === 0) {
-            const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(word => word.length > 1);
-            
-            for (const word of searchWords) {
-                if (word.length >= 2) {
-                    const wordArgs = { ...searchArgs, search_term: word };
-                    try {
-                        const wordResult = await eventIndex!.search(wordArgs);
-                        if (wordResult?.count && wordResult.count > 0) {
-                            // Apply relevance scoring to filter results
-                            if (wordResult.results) {
-                                const relevantResults = wordResult.results.filter(result => {
-                                    const content = result.result.content?.body || '';
-                                    return enhancedSearchWithRelevance(searchTerm, content);
-                                });
-                                
-                                if (relevantResults.length > 0) {
-                                    wordResult.results = relevantResults;
-                                    wordResult.count = relevantResults.length;
-                                    localResult = wordResult;
-                                    console.log(`Fuzzy word search with relevance scoring returned ${relevantResults.length} results for "${word}"`);
-                                    break;
-                                }
-                            } else {
+                    const wordResult = await eventIndex!.search(wordArgs);
+                    if (wordResult?.count && wordResult.count > 0) {
+                        // Apply relevance scoring to filter results
+                        if (wordResult.results) {
+                            const relevantResults = wordResult.results.filter(result => {
+                                const content = result.result.content?.body || '';
+                                return enhancedSearchWithRelevance(searchTerm, content);
+                            });
+                            
+                            if (relevantResults.length > 0) {
+                                wordResult.results = relevantResults;
+                                wordResult.count = relevantResults.length;
                                 localResult = wordResult;
-                                console.log(`Fuzzy word search returned ${wordResult.count} results for "${word}"`);
-                                break;
+                                console.log(`Word search with relevance scoring returned ${relevantResults.length} results for "${word}"`);
                             }
+                        } else {
+                            localResult = wordResult;
+                            console.log(`Word search returned ${wordResult.count} results for "${word}"`);
                         }
-                    } catch (error) {
-                        console.log(`Fuzzy word search failed for "${word}":`, error);
                     }
-                }
-            }
-        }
-        
-        // Strategy 15: Try broad search with lower relevance threshold (fallback)
-        if (!localResult || localResult.count === 0) {
-            console.log(`Trying broad search with lower relevance threshold for "${searchTerm}"`);
-            
-            // Try with a broader search term
-            const broadTerms = [
-                searchTerm.substring(0, Math.max(3, Math.floor(searchTerm.length * 0.7))), // 70% of original term
-                searchTerm.substring(0, Math.max(2, Math.floor(searchTerm.length * 0.5))), // 50% of original term
-            ];
-            
-            for (const broadTerm of broadTerms) {
-                if (broadTerm.length >= 2 && broadTerm !== searchTerm) {
-                    const broadArgs = { ...searchArgs, search_term: broadTerm };
-                    try {
-                        const broadResult = await eventIndex!.search(broadArgs);
-                        if (broadResult?.count && broadResult.count > 0) {
-                            // Apply lower relevance threshold for broad search
-                            if (broadResult.results) {
-                                const relevantResults = broadResult.results.filter(result => {
-                                    const content = result.result.content?.body || '';
-                                    const relevanceScore = calculateRelevanceScore(searchTerm, content);
-                                    return relevanceScore >= 10; // Lower threshold for broad search
-                                });
-                                
-                                if (relevantResults.length > 0) {
-                                    broadResult.results = relevantResults;
-                                    broadResult.count = relevantResults.length;
-                                    localResult = broadResult;
-                                    console.log(`Broad search with lower threshold returned ${relevantResults.length} results for "${broadTerm}"`);
-                                    break;
-                                }
-                            } else {
-                                localResult = broadResult;
-                                console.log(`Broad search returned ${broadResult.count} results for "${broadTerm}"`);
-                                break;
-                            }
-                        }
-                    } catch (error) {
-                        console.log(`Broad search failed for "${broadTerm}":`, error);
-                    }
+                } catch (error) {
+                    console.log(`Word search failed for "${word}":`, error);
                 }
             }
         }
@@ -2021,6 +1981,11 @@ async function localSearch(
         response: localResult,
         query: searchArgs,
     };
+
+    // Cache successful results
+    if (localResult.count && localResult.count > 0) {
+        setCachedResult(cacheKey, result);
+    }
 
     return result;
 }
@@ -2607,7 +2572,31 @@ export function searchPagination(client: MatrixClient, searchResult: ISearchResu
     else return eventIndexSearchPagination(client, searchResult);
 }
 
-export default function eventSearch(
+// Debounced search function
+function debouncedEventSearch(
+    client: MatrixClient,
+    term: string,
+    roomId?: string,
+    abortSignal?: AbortSignal,
+): Promise<ISearchResults> {
+    return new Promise((resolve, reject) => {
+        if (searchDebounceTimer) {
+            clearTimeout(searchDebounceTimer);
+        }
+        
+        searchDebounceTimer = setTimeout(async () => {
+            try {
+                const result = await eventSearchInternal(client, term, roomId, abortSignal);
+                resolve(result);
+            } catch (error) {
+                reject(error);
+            }
+        }, DEBOUNCE_DELAY);
+    });
+}
+
+// Internal search function
+async function eventSearchInternal(
     client: MatrixClient,
     term: string,
     roomId?: string,
@@ -2620,6 +2609,21 @@ export default function eventSearch(
     } else {
         return eventIndexSearch(client, term, roomId, abortSignal);
     }
+}
+
+// Main export - use debounced version for better UX
+export default function eventSearch(
+    client: MatrixClient,
+    term: string,
+    roomId?: string,
+    abortSignal?: AbortSignal,
+): Promise<ISearchResults> {
+    // Skip debouncing for very short terms or when we have abort signal
+    if (term.length <= 2 || abortSignal) {
+        return eventSearchInternal(client, term, roomId, abortSignal);
+    }
+    
+    return debouncedEventSearch(client, term, roomId, abortSignal);
 }
 
 /**
