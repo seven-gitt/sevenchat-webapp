@@ -53,6 +53,12 @@ import { Box } from "../../utils/Box";
 import { ReleaseAnnouncement } from "../../structures/ReleaseAnnouncement";
 import { useRoomSummaryCardViewModel } from "../../viewmodels/right_panel/RoomSummaryCardViewModel";
 import { useRoomTopicViewModel } from "../../viewmodels/right_panel/RoomSummaryCardTopicViewModel";
+import { MatrixClientPeg } from "../../../MatrixClientPeg";
+import { Direction } from "matrix-js-sdk/src/matrix";
+import dispatcher from "../../../dispatcher/dispatcher";
+import { Action } from "../../../dispatcher/actions";
+import { SdkContextClass } from "../../../contexts/SDKContext";
+import RoomScrollStateStore from "../../../stores/RoomScrollStateStore";
 
 interface IProps {
     room: Room;
@@ -143,6 +149,116 @@ const RoomSummaryCardView: React.FC<IProps> = ({
     // so we need to set the value of the input right away
     const [searchValue, setSearchValue] = useState(searchTerm);
     const [showUserFilter, setShowUserFilter] = useState(false);
+    const [showDateFilter, setShowDateFilter] = useState(false);
+    const [selectedDate, setSelectedDate] = useState<string>("");
+    const [calendarYear, setCalendarYear] = useState<number>(new Date().getFullYear());
+    const [calendarMonth, setCalendarMonth] = useState<number>(new Date().getMonth()); // 0-11
+
+    const daysOfWeek = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]; // Vietnamese labels
+    const monthNames = [
+        "Thg 1", "Thg 2", "Thg 3", "Thg 4", "Thg 5", "Thg 6",
+        "Thg 7", "Thg 8", "Thg 9", "Thg 10", "Thg 11", "Thg 12",
+    ];
+
+    const toISODate = (d: Date): string => {
+        const year = `${d.getFullYear()}`.padStart(4, "0");
+        const month = `${d.getMonth() + 1}`.padStart(2, "0");
+        const day = `${d.getDate()}`.padStart(2, "0");
+        return `${year}-${month}-${day}`;
+    };
+
+    const getCalendarCells = (): Array<{ date: Date | null; isToday: boolean; isSelected: boolean; isFuture: boolean }[]> => {
+        const firstOfMonth = new Date(calendarYear, calendarMonth, 1);
+        const startDay = (firstOfMonth.getDay() + 6) % 7; // convert Sun(0) -> 6, Mon(1) -> 0
+        const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+        const todayISO = toISODate(new Date());
+        const selectedISO = selectedDate || "";
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const cells: Array<{ date: Date | null; isToday: boolean; isSelected: boolean; isFuture: boolean }[]> = [];
+        let currentRow: { date: Date | null; isToday: boolean; isSelected: boolean; isFuture: boolean }[] = [];
+
+        // leading blanks
+        for (let i = 0; i < startDay; i++) {
+            currentRow.push({ date: null, isToday: false, isSelected: false, isFuture: false });
+        }
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            const date = new Date(calendarYear, calendarMonth, day);
+            const iso = toISODate(date);
+            const isFuture = new Date(date.getFullYear(), date.getMonth(), date.getDate()) > today;
+            currentRow.push({ date, isToday: iso === todayISO, isSelected: iso === selectedISO, isFuture });
+            if (currentRow.length === 7) {
+                cells.push(currentRow);
+                currentRow = [];
+            }
+        }
+        // trailing blanks
+        if (currentRow.length) {
+            while (currentRow.length < 7) currentRow.push({ date: null, isToday: false, isSelected: false, isFuture: false });
+            cells.push(currentRow);
+        }
+        return cells;
+    };
+
+    const goPrevMonth = (): void => {
+        const d = new Date(calendarYear, calendarMonth - 1, 1);
+        setCalendarYear(d.getFullYear());
+        setCalendarMonth(d.getMonth());
+    };
+    const goNextMonth = (): void => {
+        const d = new Date(calendarYear, calendarMonth + 1, 1);
+        setCalendarYear(d.getFullYear());
+        setCalendarMonth(d.getMonth());
+    };
+
+    const jumpToDate = async (inputDate: Date): Promise<void> => {
+        try {
+            const cli = MatrixClientPeg.safeGet();
+            const unixTimestamp = inputDate.getTime();
+            const roomIdForJumpRequest = room.roomId;
+            const { event_id: eventId } = await cli.timestampToEvent(roomIdForJumpRequest, unixTimestamp, Direction.Forward);
+
+            const currentRoomId = SdkContextClass.instance.roomViewStore.getRoomId();
+            if (currentRoomId === roomIdForJumpRequest) {
+                // Thoát chế độ tìm kiếm (nếu đang bật) để đảm bảo nhảy trên timeline chính
+                onSearchCancel?.();
+                // Đánh dấu để mở lại dropdown sau khi timeline re-render (RightPanel có thể remount)
+                (window as any).__reopenDateDropdown = true;
+                // Lưu pixelOffset mong muốn; sẽ tinh chỉnh lại bằng DOM ngay sau khi render
+                RoomScrollStateStore.setScrollState(roomIdForJumpRequest, { focussedEvent: eventId, pixelOffset: 0 });
+                dispatcher.dispatch({
+                    action: Action.ViewRoom,
+                    event_id: eventId,
+                    highlighted: true,
+                    scroll_into_view: true,
+                    room_id: roomIdForJumpRequest,
+                    metricsTrigger: undefined,
+                });
+
+                // Căn chính xác header ngày tương ứng với eventId vừa nhảy đến
+                const alignHeader = () => {
+                    const scrollNode = document.querySelector('.mx_ScrollPanel') as HTMLElement | null;
+                    const targetNode = document.querySelector(`[data-scroll-token="${CSS.escape(eventId)}"]`) as HTMLElement | null;
+                    const headers = Array.from(document.querySelectorAll('.mx_DateSeparator_dateContent')) as HTMLElement[];
+                    if (!scrollNode || !targetNode || headers.length === 0) return;
+                    let chosen: HTMLElement | null = null;
+                    for (const h of headers) {
+                        if (h.offsetTop <= targetNode.offsetTop) chosen = h; else break;
+                    }
+                    if (chosen) scrollNode.scrollTop = chosen.offsetTop;
+                };
+                // Gọi nhiều nhịp để đảm bảo sau khi timeline render xong
+                window.requestAnimationFrame(alignHeader);
+                setTimeout(alignHeader, 80);
+                setTimeout(alignHeader, 200);
+            }
+        } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error("Jump to date failed", e);
+        }
+    };
     
     // Ref để track focus state
     const lastFocusState = useRef(false);
@@ -178,6 +294,26 @@ const RoomSummaryCardView: React.FC<IProps> = ({
     
     // Effect để bảo vệ focus khi component re-render do các props khác
     useEffect(() => {
+        // Nếu có yêu cầu mở lại dropdown lịch sau khi remount, thực hiện ngay
+        if ((window as any).__reopenDateDropdown) {
+            setShowDateFilter(true);
+            (window as any).__reopenDateDropdown = false;
+        }
+        // Sau khi timeline ổn định, cố gắng căn header ngày sát top
+        const adjustToDateHeader = () => {
+            const scrollNode = document.querySelector('.mx_ScrollPanel') as HTMLElement | null;
+            const headers = Array.from(document.querySelectorAll('.mx_DateSeparator_dateContent')) as HTMLElement[];
+            if (!scrollNode || !headers.length) return;
+            const currentTop = scrollNode.scrollTop;
+            let candidate: HTMLElement | null = null;
+            for (const h of headers) {
+                if (h.offsetTop >= currentTop - 4) { candidate = h; break; }
+            }
+            if (candidate) scrollNode.scrollTop = candidate.offsetTop;
+        };
+        setTimeout(adjustToDateHeader, 60);
+        window.requestAnimationFrame(adjustToDateHeader);
+        setTimeout(adjustToDateHeader, 180);
         // Kiểm tra xem có phải input đang được focus không
         const isInputFocused = vm.searchInputRef.current === document.activeElement;
         
@@ -326,19 +462,23 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                         autoFocus={focusRoomSearch}
                         onKeyDown={vm.onUpdateSearchInput}
                         style={{ 
-                            paddingRight: "40px", // Tạo không gian cho nút filter
+                            paddingRight: "76px", // Tạo không gian cho 2 nút filter (user + date)
                             flex: 1
                         }}
                     />
                     
-                    {/* Icon lọc user bên trong ô tìm kiếm */}
+                    {/* Nhóm icon filter bên trong ô tìm kiếm: User filter + Date filter */}
                     <div style={{ 
                         position: "absolute", 
                         right: "8px", 
                         top: "50%", 
                         transform: "translateY(-50%)",
-                        zIndex: 1
+                        zIndex: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px"
                     }}>
+                        {/* Nút lọc theo người gửi (giữ nguyên) */}
                         <IconButton
                             onClick={() => setShowUserFilter(!showUserFilter)}
                             size="sm"
@@ -353,6 +493,33 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                             }}
                         >
                             <FilterIcon width="14px" height="14px" />
+                        </IconButton>
+
+                        {/* Nút chọn ngày (UI only) */}
+                        <IconButton
+                            onClick={() => {
+                                setShowDateFilter((v) => !v);
+                                // Đảm bảo chỉ một dropdown hiển thị tại một thời điểm
+                                if (!showDateFilter) setShowUserFilter(false);
+                            }}
+                            size="sm"
+                            kind="secondary"
+                            tooltip="Lọc theo ngày"
+                            aria-label="Lọc theo ngày"
+                            style={{
+                                width: "24px",
+                                height: "24px",
+                                minWidth: "24px",
+                                padding: "0"
+                            }}
+                        >
+                            {/* SVG icon lịch tối giản để tránh phụ thuộc biểu tượng mới */}
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="2" />
+                                <path d="M3 9H21" stroke="currentColor" strokeWidth="2" />
+                                <path d="M8 3V7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                <path d="M16 3V7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                            </svg>
                         </IconButton>
                     </div>
                 </div>
@@ -511,6 +678,164 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                             {getRoomUsers().length} thành viên trong phòng
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Dropdown chọn ngày (UI only) */}
+            {showDateFilter && (
+                <div style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    backgroundColor: "var(--cpd-color-bg-canvas-default)",
+                    border: "2px solid var(--cpd-color-border-interactive-secondary)",
+                    borderRadius: "16px",
+                    boxShadow: "0 12px 32px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.2)",
+                    zIndex: 1000,
+                    marginTop: "8px",
+                    padding: "16px",
+                    backdropFilter: "blur(12px)"
+                }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+                        <Text as="label" style={{ fontWeight: 600, color: "var(--cpd-color-text-primary)" }}>
+                            Chọn ngày
+                        </Text>
+                        <button
+                            type="button"
+                            onClick={() => setShowDateFilter(false)}
+                            style={{
+                                appearance: "none",
+                                background: "transparent",
+                                border: 0,
+                                color: "var(--cpd-color-text-secondary)",
+                                cursor: "pointer",
+                                fontSize: "12px",
+                                fontWeight: 600
+                            }}
+                        >
+                            Đóng
+                        </button>
+                    </div>
+                    {/* Lịch hiển thị trực tiếp */}
+                    <div style={{
+                        border: "1px solid var(--cpd-color-border-subtle)",
+                        borderRadius: "12px",
+                        overflow: "hidden",
+                        background: "var(--cpd-color-bg-subtle-secondary)"
+                    }}
+                        onWheel={(e) => {
+                            e.stopPropagation();
+                            const isHorizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+                            const delta = isHorizontal ? e.deltaX : e.deltaY;
+                            if (delta > 0) {
+                                goNextMonth();
+                            } else if (delta < 0) {
+                                goPrevMonth();
+                            }
+                        }}
+                    >
+                        {/* Header tháng */}
+                        <div style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "8px 10px",
+                            background: "var(--cpd-color-bg-canvas-default)",
+                            borderBottom: "1px solid var(--cpd-color-border-subtle)"
+                        }}>
+                            <button type="button" onClick={goPrevMonth} aria-label="Tháng trước" style={{
+                                appearance: "none",
+                                background: "transparent",
+                                border: 0,
+                                color: "var(--cpd-color-text-primary)",
+                                cursor: "pointer",
+                                padding: "4px 6px",
+                                borderRadius: "8px"
+                            }}>
+                                ‹
+                            </button>
+                            <div style={{ fontWeight: 700, color: "var(--cpd-color-text-primary)" }}>
+                                {monthNames[calendarMonth]} {calendarYear}
+                            </div>
+                            <button type="button" onClick={goNextMonth} aria-label="Tháng sau" style={{
+                                appearance: "none",
+                                background: "transparent",
+                                border: 0,
+                                color: "var(--cpd-color-text-primary)",
+                                cursor: "pointer",
+                                padding: "4px 6px",
+                                borderRadius: "8px"
+                            }}>
+                                ›
+                            </button>
+                        </div>
+                        {/* Tên các ngày trong tuần */}
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "0", padding: "6px 6px 0 6px" }}>
+                            {daysOfWeek.map((d) => (
+                                <div key={d} style={{
+                                    textAlign: "center",
+                                    fontSize: "12px",
+                                    fontWeight: 700,
+                                    color: "var(--cpd-color-text-secondary)",
+                                    padding: "4px 0"
+                                }}>{d}</div>
+                            ))}
+                        </div>
+                        {/* Lưới ngày */}
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "6px", padding: "6px" }}>
+                            {getCalendarCells().flat().map((cell, idx) => (
+                                <button
+                                    key={idx}
+                                    type="button"
+                                    disabled={!cell.date || cell.isFuture}
+                                    onClick={() => {
+                                        if (cell.date && !cell.isFuture) {
+                                            setSelectedDate(toISODate(cell.date));
+                                            const d = new Date(cell.date.getFullYear(), cell.date.getMonth(), cell.date.getDate(), 0, 0, 0, 0);
+                                            // Giữ dropdown mở, chỉ thực hiện nhảy timeline
+                                            jumpToDate(d);
+                                        }
+                                    }}
+                                    style={{
+                                        aspectRatio: "1 / 1",
+                                        width: "100%",
+                                        borderRadius: "10px",
+                                        border: cell.isSelected
+                                            ? "2px solid #007A61"
+                                            : cell.isFuture
+                                                ? "1px solid var(--cpd-color-border-subtle)"
+                                                : cell.isToday
+                                                    ? "2px solid #007A61"
+                                                    : "1px solid var(--cpd-color-border-subtle)",
+                                        background: cell.isSelected
+                                            ? "#007A61"
+                                            : "var(--cpd-color-bg-canvas-default)",
+                                        color: cell.isSelected
+                                            ? "#FFFFFF"
+                                            : cell.isFuture
+                                                ? "var(--cpd-color-text-disabled)"
+                                                : cell.isToday
+                                                    ? "#007A61"
+                                                    : cell.date
+                                                        ? "var(--cpd-color-text-primary)"
+                                                        : "transparent",
+                                        boxShadow: cell.isSelected ? "0 0 0 2px rgba(0, 122, 97, 0.15) inset" : "none",
+                                        cursor: cell.date && !cell.isFuture ? "pointer" : "not-allowed",
+                                        fontWeight: cell.isToday ? 800 : 600,
+                                        opacity: cell.isFuture ? 0.5 : 1,
+                                    }}
+                                >
+                                    {cell.date ? cell.date.getDate() : ""}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    {selectedDate && (
+                        <div style={{ marginTop: "10px", fontSize: "12px", color: "var(--cpd-color-text-secondary)" }}>
+                            Ngày đã chọn: {selectedDate}
+                        </div>
+                    )}
                 </div>
             )}
         </div>

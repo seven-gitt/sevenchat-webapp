@@ -1205,28 +1205,24 @@ class TimelinePanel extends React.Component<IProps, IState> {
         this.setReadMarker(ev.getId()!, ev.getTs());
     }
 
-    /* jump down to the bottom of this room, where new events are arriving
-     */
+    /* jump down to the bottom of this room, where new events are arriving */
     public jumpToLiveTimeline = (): void => {
-        // if we can't forward-paginate the existing timeline, then there
-        // is no point reloading it - just jump straight to the bottom.
-        //
-        // Otherwise, reload the timeline rather than trying to paginate
-        // through all of space-time.
+        // Luôn cuộn xuống đáy ngay lập tức để phản hồi tức thời cho 1 lần bấm
+        this.messagePanel.current?.scrollToBottom();
+
+        // Nếu còn có thể forward-paginate, reload timeline ở nền để đồng bộ
+        // nhưng vẫn giữ vị trí cuối sau khi load xong.
         if (this.timelineWindow?.canPaginate(EventTimeline.FORWARDS)) {
-            // Hiển thị loading indicator ngắn khi reload timeline
             this.setState({ canBackPaginate: false });
-            this.loadTimeline();
-        } else {
-            // Scroll mượt đến bottom với animation đã cải thiện
-            this.messagePanel.current?.scrollToBottom();
-            
-            // Đảm bảo state được update để UI phản hồi đúng
-            this.setState({ 
-                canForwardPaginate: false,
-                timelineLoading: false 
-            });
+            this.loadTimeline(undefined, undefined, undefined, true);
+            return;
         }
+
+        // Nếu đã ở live timeline, cập nhật state nhẹ để đảm bảo UI đúng
+        this.setState({
+            canForwardPaginate: false,
+            timelineLoading: false,
+        });
     };
 
     public scrollToEventIfNeeded = (eventId: string): void => {
