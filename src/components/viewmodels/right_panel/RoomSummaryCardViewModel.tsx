@@ -124,10 +124,14 @@ const useIsDirectMessage = (room: Room): boolean => {
 /**
  * Hook to handle the search input in the right panel
  * @param onSearchCancel - The callback when the search input is cancelled
+ * @param onSearchChange - The callback when the search input value changes
+ * @param onCloseUserFilter - The callback to close user filter dropdown
  * @returns The search input ref and the callback when the search input is updated
  */
 const useSearchInput = (
     onSearchCancel?: () => void,
+    onSearchChange?: (term: string) => void,
+    onCloseUserFilter?: () => void,
 ): {
     searchInputRef: React.RefObject<HTMLInputElement | null>;
     onUpdateSearchInput: (e: React.KeyboardEvent<HTMLInputElement>) => void;
@@ -138,6 +142,17 @@ const useSearchInput = (
         if (searchInputRef.current && e.key === Key.ESCAPE) {
             searchInputRef.current.value = "";
             onSearchCancel?.();
+        }
+        // Xử lý phím Enter để thực hiện tìm kiếm
+        if (e.key === Key.ENTER) {
+            e.preventDefault();
+            // Gọi onSearchChange với giá trị hiện tại để thực hiện tìm kiếm
+            const currentValue = searchInputRef.current?.value || "";
+            if (currentValue.trim() && onSearchChange) {
+                onSearchChange(currentValue.trim());
+            }
+            // Đóng dropdown lọc user nếu đang mở
+            onCloseUserFilter?.();
         }
     };
 
@@ -158,6 +173,8 @@ export function useRoomSummaryCardViewModel(
     room: Room,
     permalinkCreator: RoomPermalinkCreator,
     onSearchCancel?: () => void,
+    onSearchChange?: (term: string) => void,
+    onCloseUserFilter?: () => void,
 ): RoomSummaryCardState {
     const cli = useMatrixClientContext();
 
@@ -306,7 +323,7 @@ export function useRoomSummaryCardViewModel(
     };
 
     // Room Search element ref
-    const { searchInputRef, onUpdateSearchInput } = useSearchInput(onSearchCancel);
+    const { searchInputRef, onUpdateSearchInput } = useSearchInput(onSearchCancel, onSearchChange, onCloseUserFilter);
 
     return {
         isDirectMessage,

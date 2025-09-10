@@ -43,6 +43,7 @@ import { JoinRule, type Room } from "matrix-js-sdk/src/matrix";
 import BaseCard from "./BaseCard";
 import { _t } from "../../../languageHandler";
 import RoomAvatar from "../avatars/RoomAvatar";
+import MemberAvatar from "../avatars/MemberAvatar";
 import { E2EStatus } from "../../../utils/ShieldUtils";
 import { type RoomPermalinkCreator } from "../../../utils/permalinks/Permalinks";
 import RoomName from "../elements/RoomName";
@@ -136,7 +137,7 @@ const RoomSummaryCardView: React.FC<IProps> = ({
     onInitializeFilter,
     selectedSender,
 }) => {
-    const vm = useRoomSummaryCardViewModel(room, permalinkCreator, onSearchCancel);
+    const vm = useRoomSummaryCardViewModel(room, permalinkCreator, onSearchCancel, onSearchChange, () => setShowUserFilter(false));
 
     // The search field is controlled and onSearchChange is debounced in RoomView,
     // so we need to set the value of the input right away
@@ -209,6 +210,7 @@ const RoomSummaryCardView: React.FC<IProps> = ({
             document.removeEventListener('mousedown', handleClickOutside);
         };
     }, [showUserFilter]);
+
 
     // Lấy danh sách user trong phòng
     const getRoomUsers = () => {
@@ -363,10 +365,10 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                     top: "100%",
                     left: 0,
                     right: 0,
-                    backgroundColor: "#ffffff",
-                    border: "2px solid #e1e5e9",
+                    backgroundColor: "var(--cpd-color-bg-canvas-default)",
+                    border: "2px solid var(--cpd-color-border-interactive-secondary)",
                     borderRadius: "16px",
-                    boxShadow: "0 12px 32px rgba(0, 0, 0, 0.15), 0 4px 16px rgba(0, 0, 0, 0.1)",
+                    boxShadow: "0 12px 32px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.2)",
                     zIndex: 1000,
                     maxHeight: "350px",
                     overflowY: "auto",
@@ -385,18 +387,18 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                                     display: "flex",
                                     alignItems: "center",
                                     gap: "16px",
-                                    backgroundColor: selectedSender === user.id ? "#e3f2fd" : "transparent",
+                                    backgroundColor: selectedSender === user.id ? "var(--cpd-color-bg-accent-primary)" : "transparent",
                                     transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                                     position: "relative",
                                     margin: "0 12px",
                                     borderRadius: "12px",
-                                    border: selectedSender === user.id ? "2px solid #2196f3" : "2px solid transparent"
+                                    border: selectedSender === user.id ? "2px solid var(--cpd-color-border-accent)" : "2px solid transparent"
                                 }}
                                 onMouseEnter={(e) => {
                                     if (selectedSender !== user.id) {
-                                        e.currentTarget.style.backgroundColor = "#f5f5f5";
+                                        e.currentTarget.style.backgroundColor = "var(--cpd-color-bg-subtle-secondary)";
                                         e.currentTarget.style.transform = "translateX(4px)";
-                                        e.currentTarget.style.border = "2px solid #e0e0e0";
+                                        e.currentTarget.style.border = "2px solid var(--cpd-color-border-interactive-secondary)";
                                     }
                                 }}
                                 onMouseLeave={(e) => {
@@ -407,27 +409,26 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                                     }
                                 }}
                             >
-                                {/* Avatar với gradient đẹp */}
+                                {/* Avatar thực tế của user */}
                                 <div style={{
+                                    position: "relative",
                                     width: "48px",
                                     height: "48px",
                                     borderRadius: "50%",
-                                    background: selectedSender === user.id 
-                                        ? "linear-gradient(135deg, #2196f3 0%, #1976d2 100%)"
-                                        : "linear-gradient(135deg, #6c757d 0%, #495057 100%)",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    fontSize: "18px",
-                                    fontWeight: "700",
-                                    color: "#ffffff",
-                                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                                    overflow: "hidden",
                                     boxShadow: selectedSender === user.id 
-                                        ? "0 6px 16px rgba(33, 150, 243, 0.4)" 
+                                        ? "0 6px 16px var(--cpd-color-border-accent-alpha-20)" 
                                         : "0 3px 8px rgba(0, 0, 0, 0.15)",
-                                    position: "relative",
-                                    overflow: "hidden"
+                                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                                    border: selectedSender === user.id 
+                                        ? "2px solid var(--cpd-color-border-accent)" 
+                                        : "2px solid transparent"
                                 }}>
+                                    <MemberAvatar
+                                        member={room.getMember(user.id)}
+                                        size="48px"
+                                        hideTitle={true}
+                                    />
                                     {/* Hiệu ứng shimmer cho avatar được chọn */}
                                     {selectedSender === user.id && (
                                         <div style={{
@@ -437,10 +438,10 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                                             width: "100%",
                                             height: "100%",
                                             background: "linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent)",
-                                            animation: "shimmer 2s infinite"
+                                            animation: "shimmer 2s infinite",
+                                            pointerEvents: "none"
                                         }}></div>
                                     )}
-                                    {user.name.charAt(0).toUpperCase()}
                                 </div>
                                 
                                 {/* Thông tin user */}
@@ -448,7 +449,7 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                                     <div style={{ 
                                         fontSize: "16px", 
                                         fontWeight: selectedSender === user.id ? "700" : "600",
-                                        color: selectedSender === user.id ? "#1976d2" : "#212529",
+                                        color: selectedSender === user.id ? "var(--cpd-color-text-accent-primary)" : "var(--cpd-color-text-primary)",
                                         marginBottom: "4px",
                                         whiteSpace: "nowrap",
                                         overflow: "hidden",
@@ -458,7 +459,7 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                                     </div>
                                     <div style={{ 
                                         fontSize: "13px", 
-                                        color: selectedSender === user.id ? "#1976d2" : "#6c757d",
+                                        color: selectedSender === user.id ? "var(--cpd-color-text-accent-primary)" : "var(--cpd-color-text-secondary)",
                                         whiteSpace: "nowrap",
                                         overflow: "hidden",
                                         textOverflow: "ellipsis",
@@ -474,8 +475,8 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                                         width: "12px",
                                         height: "12px",
                                         borderRadius: "50%",
-                                        backgroundColor: "#4caf50",
-                                        boxShadow: "0 0 0 3px #ffffff, 0 0 0 6px #4caf50",
+                                        backgroundColor: "var(--cpd-color-bg-success-primary)",
+                                        boxShadow: `0 0 0 3px var(--cpd-color-bg-canvas-default), 0 0 0 6px var(--cpd-color-bg-success-primary)`,
                                         animation: "pulse 2s infinite"
                                     }}></div>
                                 )}
@@ -486,14 +487,14 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                     {/* Footer với thông tin */}
                     <div style={{
                         padding: "16px 24px",
-                        borderTop: "2px solid #f0f2f5",
-                        backgroundColor: "#f8f9fa",
+                        borderTop: "2px solid var(--cpd-color-border-subtle)",
+                        backgroundColor: "var(--cpd-color-bg-subtle-secondary)",
                         borderRadius: "0 0 16px 16px",
                         textAlign: "center"
                     }}>
                         <div style={{
                             fontSize: "13px",
-                            color: "#495057",
+                            color: "var(--cpd-color-text-secondary)",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
