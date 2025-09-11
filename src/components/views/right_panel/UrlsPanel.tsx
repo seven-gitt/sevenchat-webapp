@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import BaseCard from "./BaseCard";
 import { _t } from "../../../languageHandler";
-import { type Room, type MatrixEvent, type RoomMember } from "matrix-js-sdk/src/matrix";
+import { type Room, type MatrixEvent, type RoomMember, Direction } from "matrix-js-sdk/src/matrix";
 import MemberAvatar from "../avatars/MemberAvatar";
+import MatrixClientContext from "../../../contexts/MatrixClientContext";
 
 interface Props {
     room: Room;
@@ -13,11 +14,20 @@ interface Props {
 const URL_WITH_PROTOCOL_REGEX = /https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/gi;
 // Regex để nhận diện domain pattern (ví dụ: example.com, sub.example.com)
 // Chỉ nhận diện domain có ít nhất 2 phần và phần cuối có ít nhất 2 ký tự
-const DOMAIN_REGEX = /\b(?:[\w-]+\.)+[\w-]{2,}\b(?:\/[\w\-._~:/?#[\]@!$&'()*+,;=%]*)?/gi;
+// Loại bỏ các pattern số tiền (ví dụ: 168.000, 1.000.000)
+const DOMAIN_REGEX = /\b(?:[a-zA-Z][\w-]*\.)+[a-zA-Z][\w-]{2,}\b(?:\/[\w\-._~:/?#[\]@!$&'()*+,;=%]*)?/gi;
 
 interface UrlInfo {
     original: string;
     processed: string;
+}
+
+// Hàm kiểm tra xem có phải là số tiền không
+function isCurrencyAmount(text: string): boolean {
+    // Pattern cho số tiền: có thể có dấu phẩy, chấm, hoặc khoảng trắng làm phân cách hàng nghìn
+    // Ví dụ: 168.000, 1,000, 1 000, 1000.50, 1,000.50
+    const currencyPattern = /^\d{1,3}([.,\s]\d{3})*([.,]\d{2})?$/;
+    return currencyPattern.test(text);
 }
 
 function extractUrlsFromEvent(ev: MatrixEvent): UrlInfo[] {
@@ -57,9 +67,12 @@ function extractUrlsFromEvent(ev: MatrixEvent): UrlInfo[] {
         if (!protocolDomains.has(domain)) {
             // Kiểm tra xem có phải là domain hợp lệ không
             if (domain.includes('.') && !domain.startsWith('.')) {
-                const fullUrl = 'https://' + domain;
-                if (!isMediaUrl(fullUrl)) {
-                    urls.push({ original: domain, processed: fullUrl });
+                // Loại bỏ các pattern số tiền
+                if (!isCurrencyAmount(domain)) {
+                    const fullUrl = 'https://' + domain;
+                    if (!isMediaUrl(fullUrl)) {
+                        urls.push({ original: domain, processed: fullUrl });
+                    }
                 }
             }
         }
@@ -125,23 +138,93 @@ function isMediaUrl(url: string): boolean {
 }
 
 const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
+    const client = useContext(MatrixClientContext);
     const [selectedSender, setSelectedSender] = useState<string>("all");
+    const [urlEvents, setUrlEvents] = useState<Array<{ ev: MatrixEvent; urls: UrlInfo[] }>>([]);
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [scannedEvents, setScannedEvents] = useState<number>(0);
+    const isUnmountedRef = useRef(false);
 
-    // Lấy tất cả events từ liveTimeline và pending events
-    const events: MatrixEvent[] = [
-        ...(room.getLiveTimeline().getEvents?.() || []),
-        ...(room.getPendingEvents?.() || []),
-    ];
-    // Sắp xếp events theo thời gian giảm dần (mới nhất trước)
-    events.sort((a, b) => b.getTs() - a.getTs());
+    useEffect(() => {
+        isUnmountedRef.current = false;
+        return () => {
+            isUnmountedRef.current = true;
+        };
+    }, []);
 
-    // Lọc ra các event có chứa URL
-    const urlEvents = events
-        .map(ev => ({
-            ev,
-            urls: extractUrlsFromEvent(ev),
-        }))
-        .filter(item => item.urls.length > 0);
+    // Thu thập toàn bộ link trong lịch sử phòng bằng cách phân trang ngược
+    useEffect(() => {
+        let cancelled = false;
+        const run = async (): Promise<void> => {
+            try {
+                setIsLoading(true);
+                setUrlEvents([]);
+                setScannedEvents(0);
+
+                // Sử dụng Map để dedupe theo eventId + urlProcessed
+                const aggregated: Map<string, { ev: MatrixEvent; urls: UrlInfo[] }> = new Map();
+
+                const collectFromEvents = (eventsList: MatrixEvent[]): void => {
+                    eventsList.forEach((ev) => {
+                        const urls = extractUrlsFromEvent(ev);
+                        if (urls.length === 0) return;
+                        // Deduplicate per URL within the event
+                        const uniqueUrls = new Map<string, UrlInfo>();
+                        urls.forEach((u) => uniqueUrls.set(u.processed + "|" + u.original, u));
+                        const finalUrls = Array.from(uniqueUrls.values());
+                        const keyBase = ev.getId() || `${ev.getSender() || ""}-${ev.getTs()}`;
+                        finalUrls.forEach((u, idx) => {
+                            const key = `${keyBase}|${u.processed}`;
+                            if (!aggregated.has(key)) {
+                                aggregated.set(key, { ev, urls: [u] });
+                            }
+                        });
+                    });
+                    setScannedEvents((prev) => prev + eventsList.length);
+                };
+
+                // Thu thập từ live timeline hiện tại
+                const liveTimeline = room.getLiveTimeline();
+                const initial = liveTimeline.getEvents?.() || [];
+                // Sắp xếp giảm dần thời gian để hiển thị đẹp sau này
+                initial.sort((a, b) => b.getTs() - a.getTs());
+                collectFromEvents(initial);
+
+                // Phân trang ngược cho đến đầu lịch sử
+                // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
+                while (!cancelled) {
+                    const hasMoreToken = !!liveTimeline.getPaginationToken?.(Direction.Backward);
+                    const hasOlderNeighbour = !!liveTimeline.getNeighbouringTimeline?.(Direction.Backward);
+                    if (!hasMoreToken && !hasOlderNeighbour) break;
+                    // eslint-disable-next-line @typescript-eslint/await-thenable
+                    const got = await client!.paginateEventTimeline(liveTimeline, {
+                        backwards: true,
+                        limit: 200,
+                    });
+                    if (!got) break;
+                    const more = liveTimeline.getEvents?.() || [];
+                    collectFromEvents(more);
+                }
+
+                if (cancelled || isUnmountedRef.current) return;
+
+                // Chuyển Map -> mảng và sắp xếp theo thời gian giảm dần
+                const list = Array.from(aggregated.values())
+                    .sort((a, b) => (b.ev.getTs() - a.ev.getTs()));
+                setUrlEvents(list);
+            } finally {
+                if (!cancelled && !isUnmountedRef.current) setIsLoading(false);
+            }
+        };
+
+        if (client) {
+            void run();
+        }
+
+        return () => {
+            cancelled = true;
+        };
+    }, [client, room]);
 
     // Lấy danh sách người gửi có gửi URL
     const senders = useMemo(() => {
@@ -193,7 +276,17 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
                     </span>
                 )}
             </div>
-            {filteredUrlEvents.length === 0 ? (
+            {isLoading ? (
+                <div className="mx_RoomView_empty">
+                    <div style={{textAlign: 'center', marginTop: 40}}>
+                        <div style={{fontSize: 24, marginBottom: 16}}>⏳</div>
+                        <div style={{fontWeight: 600, marginBottom: 8}}>
+                            Đang thu thập các đường dẫn…
+                        </div>
+                        <div style={{color: '#888'}}>Đã quét {scannedEvents.toLocaleString()} tin nhắn</div>
+                    </div>
+                </div>
+            ) : filteredUrlEvents.length === 0 ? (
                 <div className="mx_RoomView_empty">
                     <div style={{textAlign: 'center', marginTop: 40}}>
                         <div style={{fontSize: 24, marginBottom: 16}}>🔗</div>
@@ -213,7 +306,12 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
                                         <a href={urlInfo.processed} target="_blank" rel="noopener noreferrer" style={{color: '#1976d2', wordBreak: 'break-all'}}>{urlInfo.original}</a>
                                     </div>
                                     <div style={{fontSize: 12, color: '#888', marginTop: 2}}>
-                                        {ev.getSender() || "(unknown)"} &bull; {new Date(ev.getTs()).toLocaleString()}
+                                        {(() => {
+                                            const userId = ev.getSender();
+                                            const member = userId ? room.getMember?.(userId) : undefined;
+                                            const displayName = member?.name || userId || "(unknown)";
+                                            return displayName;
+                                        })()} &bull; {new Date(ev.getTs()).toLocaleString()}
                                     </div>
                                 </li>
                             ))

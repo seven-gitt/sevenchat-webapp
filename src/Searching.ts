@@ -226,15 +226,20 @@ async function fetchAllSenderMessagesSeshat(
 const ENHANCED_SEARCH_PATTERNS = {
     // URL patterns
     FULL_URL: /^https?:\/\/[^\s]+$/i,
-    DOMAIN_WITH_PATH: /^[^\s]+\.[^\s]+\/[^\s]*$/i,
-    DOMAIN_ONLY: /^[^\s]+\.[^\s]+$/i,
+    DOMAIN_WITH_PATH: /^[a-zA-Z][\w-]*\.[a-zA-Z][\w-]*\/[^\s]*$/i,
+    DOMAIN_ONLY: /^[a-zA-Z][\w-]*\.[a-zA-Z][\w-]*$/i,
     IP_ADDRESS: /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
     LOCALHOST: /^localhost(:\d+)?(\/.*)?$/i,
     
     // Enhanced patterns for better matching
-    SUBDOMAIN: /^[a-z0-9]+\./i,
+    SUBDOMAIN: /^[a-zA-Z][\w-]*\./i,
     PATH_SEGMENT: /^[a-z0-9-_]+$/i,
     QUERY_PARAM: /^[a-z0-9_]+$/i,
+    
+    // ✅ THÊM: Subdomain patterns for better partial matching
+    SUBDOMAIN_PART: /^[a-zA-Z][\w-]*$/i, // seven-hub, my-app, etc.
+    PARTIAL_DOMAIN: /^[a-zA-Z][\w-]*[a-zA-Z]$/i, // seven-hub, vercel, etc.
+    HYPHENATED_WORD: /^[a-zA-Z]+-[a-zA-Z]+$/i, // seven-hub, my-app, etc.
     
     // New patterns for better keyword extraction
     SINGLE_WORD: /^[a-z0-9]+$/i,
@@ -296,6 +301,20 @@ function generateSearchVariations(term: string): string[] {
     variations.push(term.toUpperCase());
     variations.push(term.charAt(0).toUpperCase() + term.slice(1).toLowerCase());
     
+    // ✅ THÊM: Subdomain variations (seven-hub, my-app, etc.)
+    if (term.includes('-') || term.includes('_')) {
+        const subParts = term.split(/[-_]/);
+        variations.push(...subParts.filter(part => part.length > 1));
+        
+        // Thêm variations cho từng phần
+        subParts.forEach(part => {
+            if (part.length > 1) {
+                variations.push(part.toLowerCase());
+                variations.push(part.toUpperCase());
+            }
+        });
+    }
+    
     // Common domain variations
     const domainVariations = [
         `${term}.com`,
@@ -303,12 +322,26 @@ function generateSearchVariations(term: string): string[] {
         `${term}.net`,
         `${term}.io`,
         `${term}.app`,
+        `${term}.vn`,
         `www.${term}.com`,
         `app.${term}.com`,
         `https://${term}.com`,
         `http://${term}.com`,
     ];
     variations.push(...domainVariations);
+    
+    // ✅ THÊM: Subdomain domain variations
+    if (term.includes('-') || term.includes('_')) {
+        const subParts = term.split(/[-_]/);
+        subParts.forEach(part => {
+            if (part.length > 1) {
+                variations.push(`${part}.com`);
+                variations.push(`${part}.app`);
+                variations.push(`${part}.io`);
+                variations.push(`www.${part}.com`);
+            }
+        });
+    }
     
     // Substring variations (for partial matching)
     if (term.length > 3) {
@@ -407,6 +440,27 @@ function calculateRelevanceScore(searchTerm: string, content: string): number {
         relevanceScore -= 20; // Giảm penalty từ 30 xuống 20
     }
     
+    // ✅ THÊM: Bonus cho subdomain matching
+    const hasSubdomainMatch = searchTerm.includes('-') && 
+        lcContent.includes(lcSearchTerm);
+    if (hasSubdomainMatch) {
+        relevanceScore += 25; // High bonus for subdomain matches
+    }
+    
+    // ✅ THÊM: Bonus cho partial domain matching
+    const urlComponents = extractUrlComponents(content);
+    const hasPartialDomainMatch = urlComponents.some(component => 
+        component.toLowerCase().includes(lcSearchTerm)
+    );
+    if (hasPartialDomainMatch) {
+        relevanceScore += 20; // Bonus for partial domain matches
+    }
+    
+    // ✅ THÊM: Bonus cho hyphenated word matching
+    if (searchTerm.includes('-') && hasPartialWordMatch) {
+        relevanceScore += 15; // Bonus for hyphenated words
+    }
+    
     return relevanceScore;
 }
 
@@ -416,6 +470,63 @@ function enhancedSearchWithRelevance(searchTerm: string, content: string): boole
     // Giảm threshold để cho phép nhiều partial matches hơn
     const threshold = searchTerm.length >= 4 ? 10 : 15; // Threshold thấp hơn cho search term dài
     return relevanceScore >= threshold;
+}
+
+// Hàm extract URL components từ text để tìm kiếm
+function extractUrlComponents(text: string): string[] {
+    const components: string[] = [];
+    
+    // Tìm tất cả URL trong text
+    const urlRegex = /https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/gi;
+    const urls = text.match(urlRegex) || [];
+    
+    urls.forEach(url => {
+        try {
+            const urlObj = new URL(url);
+            
+            // Thêm hostname (domain)
+            components.push(urlObj.hostname);
+            
+            // Thêm các phần của hostname
+            const hostnameParts = urlObj.hostname.split('.');
+            components.push(...hostnameParts.filter(part => part.length > 1));
+            
+            // ✅ THÊM: Extract subdomain parts (seven-hub, my-app, etc.)
+            hostnameParts.forEach((part, index) => {
+                if (part.includes('-') || part.includes('_')) {
+                    const subParts = part.split(/[-_]/);
+                    components.push(...subParts.filter(subPart => subPart.length > 1));
+                }
+            });
+            
+            // Thêm pathname (loại bỏ leading slash)
+            const pathname = urlObj.pathname.replace(/^\/+/, '');
+            if (pathname) {
+                components.push(pathname);
+                
+                // Thêm các phần của path
+                const pathParts = pathname.split('/').filter(part => part.length > 0);
+                components.push(...pathParts);
+            }
+            
+            // Thêm search params
+            urlObj.searchParams.forEach((value, key) => {
+                components.push(key, value);
+            });
+            
+            // Thêm fragment
+            if (urlObj.hash) {
+                const fragment = urlObj.hash.replace(/^#+/, '');
+                components.push(fragment);
+            }
+            
+        } catch (error) {
+            // Nếu không parse được URL, thêm toàn bộ URL
+            components.push(url);
+        }
+    });
+    
+    return [...new Set(components)]; // Remove duplicates
 }
 
 // Timeline search helper function (inspired by spotlight dialog)
@@ -493,7 +604,13 @@ function searchInTimeline(
                             // Chỉ chấp nhận partial match nếu query đủ dài (>= 3 chars)
                             const isValidPartialMatch = lcSearchTerm.length >= 3 && hasPartialWordMatch;
                             
-                            if (hasExactMatch || hasExactWordMatch || isValidPartialMatch) {
+                            // Enhanced URL search: extract URL components and check if search term matches any component
+                            const urlComponents = extractUrlComponents(content.body);
+                            const hasUrlMatch = urlComponents.some(component => 
+                                component.toLowerCase().includes(lcSearchTerm)
+                            );
+                            
+                            if (hasExactMatch || hasExactWordMatch || isValidPartialMatch || hasUrlMatch) {
                                 return { found: true, message: content.body };
                             }
                         }
@@ -689,6 +806,14 @@ function generateRelatedTerms(term: string): string[] {
     return [...new Set(relatedTerms)].filter(t => t !== term);
 }
 
+// Hàm kiểm tra xem có phải là số tiền không
+function isCurrencyAmount(text: string): boolean {
+    // Pattern cho số tiền: có thể có dấu phẩy, chấm, hoặc khoảng trắng làm phân cách hàng nghìn
+    // Ví dụ: 168.000, 1,000, 1 000, 1000.50, 1,000.50
+    const currencyPattern = /^\d{1,3}([.,\s]\d{3})*([.,]\d{2})?$/;
+    return currencyPattern.test(text);
+}
+
 // Enhanced search term analysis
 function analyzeSearchTerm(term: string): {
     isUrlSearch: boolean;
@@ -698,6 +823,18 @@ function analyzeSearchTerm(term: string): {
     keywords: string[];
     potentialDomains: string[];
 } {
+    // Kiểm tra xem có phải là số tiền không
+    if (isCurrencyAmount(term)) {
+        return {
+            isUrlSearch: false,
+            isUrl: false,
+            isDomain: false,
+            isSingleToken: false,
+            keywords: [],
+            potentialDomains: [],
+        };
+    }
+    
     const isUrl = Object.values(ENHANCED_SEARCH_PATTERNS).some(pattern => pattern.test(term)) ||
                   term.includes('.') || 
                   term.includes('://') || 
@@ -707,14 +844,15 @@ function analyzeSearchTerm(term: string): {
     const isSingleToken = ENHANCED_SEARCH_PATTERNS.SINGLE_WORD.test(term);
     const isDomain = term.includes('.') && !term.includes('://') && !term.includes('/');
     
-    // Enhanced URL search detection
-    const isUrlSearch = isUrl || isSingleToken || isDomain || term.includes('.') || term.includes('/');
+    // Enhanced URL search detection - include domain-like terms with hyphens/underscores
+    const isUrlSearch = isUrl || isSingleToken || isDomain || term.includes('.') || term.includes('/') || 
+                       /^[a-zA-Z0-9-_]+$/.test(term);
     
     // Extract keywords from the term itself
     const keywords = extractKeywordsFromUrl(term);
     
-    // Generate potential domains for single tokens
-    const potentialDomains = isSingleToken ? [
+    // Generate potential domains for single tokens and domain-like terms
+    const potentialDomains = (isSingleToken || /^[a-zA-Z0-9-_]+$/.test(term)) ? [
         `${term}.com`,
         `${term}.vn`,
         `${term}.net`,
@@ -730,6 +868,12 @@ function analyzeSearchTerm(term: string): {
         `${term}.co`,
         `${term}.dev`,
         `${term}.me`,
+        `${term}.vercel.app`,
+        `https://${term}.vercel.app`,
+        `${term}.github.io`,
+        `https://${term}.github.io`,
+        `${term}.netlify.app`,
+        `https://${term}.netlify.app`,
     ] : [];
     
     return {
@@ -1130,8 +1274,22 @@ async function serverSideSearch(
                         if (isMessageLike && ev.getSender?.() === senderId) {
                             const bodyText = ev.getContent?.()?.body as string | undefined;
                             // Chỉ kiểm tra keyword nếu có term và bodyText
-                            if (term && term.trim() && bodyText && !bodyText.toLowerCase().includes(term.toLowerCase())) {
-                                continue; // không khớp keyword
+                            if (term && term.trim() && bodyText) {
+                                const lcTerm = term.toLowerCase();
+                                const lcBodyText = bodyText.toLowerCase();
+                                
+                                // Kiểm tra exact match
+                                const hasExactMatch = lcBodyText.includes(lcTerm);
+                                
+                                // Kiểm tra URL components match
+                                const urlComponents = extractUrlComponents(bodyText);
+                                const hasUrlMatch = urlComponents.some(component => 
+                                    component.toLowerCase().includes(lcTerm)
+                                );
+                                
+                                if (!hasExactMatch && !hasUrlMatch) {
+                                    continue; // không khớp keyword
+                                }
                             }
                             totalCount += 1;
                             // Không gửi kèm context để tránh hiển thị các tin nhắn lân cận bị mờ
@@ -1249,10 +1407,34 @@ async function serverSideSearch(
 
         // Use extracted keywords, potential domains, and search variations
         const searchVariations = generateSearchVariations(term);
+        
+        // Generate URL component variations for better URL search
+        const urlComponentVariations = [];
+        if (term.includes('-') || term.includes('_') || /^[a-zA-Z0-9-]+$/.test(term)) {
+            // If term looks like a domain component, generate URL variations
+            urlComponentVariations.push(
+                `https://${term}.com`,
+                `https://${term}.org`,
+                `https://${term}.net`,
+                `https://${term}.io`,
+                `https://${term}.app`,
+                `https://${term}.co`,
+                `https://${term}.dev`,
+                `https://${term}.me`,
+                `https://${term}.vn`,
+                `https://www.${term}.com`,
+                `https://app.${term}.com`,
+                `https://${term}.vercel.app`,
+                `https://${term}.github.io`,
+                `https://${term}.netlify.app`
+            );
+        }
+        
         const searchTerms = [
             base,
             ...keywords.filter(k => k !== base && k.length > 1),
             ...potentialDomains,
+            ...urlComponentVariations,
             ...searchVariations.filter(v => v !== base && v !== term)
         ];
 
