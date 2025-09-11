@@ -18,6 +18,7 @@ import { KeyBindingAction } from "../../../../../accessibility/KeyboardShortcuts
 import { getBlobSafeMimeType } from "../../../../../utils/blobs";
 import ContentMessages from "../../../../../ContentMessages";
 import { isNotNull } from "../../../../../Typeguards";
+import { IS_MAC } from "../../../../../Keyboard";
 
 export function focusComposer(
     composerElement: RefObject<HTMLElement | null>,
@@ -34,10 +35,12 @@ export function focusComposer(
         // some other event is still processing.
         // The following line ensures that the cursor is actually
         // visible in composer.
+        // Use longer timeout for macOS due to different event processing timing
         if (timeoutId.current) {
             clearTimeout(timeoutId.current);
         }
-        timeoutId.current = window.setTimeout(() => composerElement.current?.focus(), 200);
+        const focusTimeout = IS_MAC ? 400 : 200;
+        timeoutId.current = window.setTimeout(() => composerElement.current?.focus(), focusTimeout);
     }
 }
 
@@ -69,6 +72,9 @@ export function handleEventWithAutocomplete(
     const autocompleteIsOpen = autocompleteRef?.current && !autocompleteRef.current.state.hide;
 
     if (!autocompleteRef.current || !autocompleteIsOpen) {
+        if (IS_MAC) {
+            console.log("## macOS Debug ## handleEventWithAutocomplete: Autocomplete not open or ref not available");
+        }
         return false;
     }
 
@@ -77,23 +83,39 @@ export function handleEventWithAutocomplete(
     const component = autocompleteRef.current;
 
     if (component && component.countCompletions() > 0) {
+        if (IS_MAC) {
+            console.log(`## macOS Debug ## handleEventWithAutocomplete: Action ${autocompleteAction}, Completions: ${component.countCompletions()}`);
+        }
+        
         switch (autocompleteAction) {
             case KeyBindingAction.ForceCompleteAutocomplete:
             case KeyBindingAction.CompleteAutocomplete:
                 autocompleteRef.current.onConfirmCompletion();
                 handled = true;
+                if (IS_MAC) {
+                    console.log("## macOS Debug ## handleEventWithAutocomplete: Confirmed completion");
+                }
                 break;
             case KeyBindingAction.PrevSelectionInAutocomplete:
                 autocompleteRef.current.moveSelection(-1);
                 handled = true;
+                if (IS_MAC) {
+                    console.log("## macOS Debug ## handleEventWithAutocomplete: Moved to previous selection");
+                }
                 break;
             case KeyBindingAction.NextSelectionInAutocomplete:
                 autocompleteRef.current.moveSelection(1);
                 handled = true;
+                if (IS_MAC) {
+                    console.log("## macOS Debug ## handleEventWithAutocomplete: Moved to next selection");
+                }
                 break;
             case KeyBindingAction.CancelAutocomplete:
                 autocompleteRef.current.onEscape(event);
                 handled = true;
+                if (IS_MAC) {
+                    console.log("## macOS Debug ## handleEventWithAutocomplete: Cancelled autocomplete");
+                }
                 break;
             default:
                 break; // don't return anything, allow event to pass through

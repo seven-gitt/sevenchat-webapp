@@ -86,6 +86,7 @@ interface Props {
     senders?: Array<[string, {member: any, name: string}]>;
     selectedSender?: string;
     onSenderChange?: (senderId: string) => void;
+    onRemoveSenderFilter?: () => void;
 }
 
 export interface RoomSearchAuxPanelRef {
@@ -99,7 +100,8 @@ const RoomSearchAuxPanel = forwardRef<RoomSearchAuxPanelRef, Props>(({
     onCancelClick,
     senders = [],
     selectedSender = "all",
-    onSenderChange
+    onSenderChange,
+    onRemoveSenderFilter
 }, ref) => {
     const scope = searchInfo?.scope ?? SearchScope.Room;
     const selectRef = useRef<HTMLSelectElement>(null);
@@ -149,34 +151,95 @@ const RoomSearchAuxPanel = forwardRef<RoomSearchAuxPanelRef, Props>(({
                             }}>
                                 Lọc theo:
                             </span>
-                            <select
-                                ref={selectRef}
-                                value={selectedSender}
-                                onChange={(e) => onSenderChange(e.target.value)}
-                                style={{
-                                    padding: "4px 8px",
+                            
+                            {/* Hiển thị tag với nút X khi đã chọn user cụ thể */}
+                            {selectedSender && selectedSender !== "all" ? (
+                                <div style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                    padding: "6px 10px",
+                                    backgroundColor: "var(--cpd-color-bg-subtle)",
                                     border: "1px solid var(--cpd-color-border-interactive)",
-                                    borderRadius: "4px",
-                                    backgroundColor: "var(--cpd-color-bg-canvas)",
-                                    color: "var(--cpd-color-text-primary)",
+                                    borderRadius: "6px",
                                     fontSize: "13px",
-                                    minWidth: "120px",
-                                    cursor: "pointer"
-                                }}
-                            >
-                                <option value="all">Tất cả</option>
-                                {senders.length > 0 ? (
-                                    senders.map(([senderId, {name}]) => (
-                                        <option key={senderId} value={senderId}>
-                                            {name}
+                                    boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)"
+                                }}>
+                                    <span style={{ color: "var(--cpd-color-text-primary)" }}>
+                                        {(() => {
+                                            const senderInfo = senders.find(([id]) => id === selectedSender);
+                                            if (senderInfo && senderInfo[1].name) {
+                                                return senderInfo[1].name;
+                                            }
+                                            // Fallback: lấy local part của userId
+                                            const localPart = selectedSender.split(':')[0];
+                                            return localPart.startsWith('@') ? localPart.substring(1) : localPart;
+                                        })()}
+                                    </span>
+                                    <button
+                                        onClick={onRemoveSenderFilter}
+                                        style={{
+                                            background: "none",
+                                            border: "none",
+                                            color: "var(--cpd-color-text-secondary)",
+                                            cursor: "pointer",
+                                            padding: "2px",
+                                            fontSize: "14px",
+                                            fontWeight: "bold",
+                                            lineHeight: "1",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            width: "20px",
+                                            height: "20px",
+                                            borderRadius: "3px",
+                                            transition: "all 0.2s ease"
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.backgroundColor = "var(--cpd-color-bg-critical-subtle)";
+                                            e.currentTarget.style.color = "var(--cpd-color-text-critical)";
+                                            e.currentTarget.style.transform = "scale(1.1)";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.backgroundColor = "transparent";
+                                            e.currentTarget.style.color = "var(--cpd-color-text-secondary)";
+                                            e.currentTarget.style.transform = "scale(1)";
+                                        }}
+                                        title="Tắt lọc theo user này"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            ) : (
+                                <select
+                                    ref={selectRef}
+                                    value={selectedSender}
+                                    onChange={(e) => onSenderChange(e.target.value)}
+                                    style={{
+                                        padding: "4px 8px",
+                                        border: "1px solid var(--cpd-color-border-interactive)",
+                                        borderRadius: "4px",
+                                        backgroundColor: "var(--cpd-color-bg-canvas)",
+                                        color: "var(--cpd-color-text-primary)",
+                                        fontSize: "13px",
+                                        minWidth: "120px",
+                                        cursor: "pointer"
+                                    }}
+                                >
+                                    <option value="all">Tất cả</option>
+                                    {senders.length > 0 ? (
+                                        senders.map(([senderId, {name}]) => (
+                                            <option key={senderId} value={senderId}>
+                                                {name}
+                                            </option>
+                                        ))
+                                    ) : (
+                                        <option value="all" disabled>
+                                            Đang tải...
                                         </option>
-                                    ))
-                                ) : (
-                                    <option value="all" disabled>
-                                        Đang tải...
-                                    </option>
-                                )}
-                            </select>
+                                    )}
+                                </select>
+                            )}
                         </div>
                     )}
                     

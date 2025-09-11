@@ -1155,17 +1155,51 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                     // Đóng search mode và reset filter trước
                     await this.onCancelSearchClickWithoutFocus();
                     
-                    // Thêm delay để đảm bảo state được update hoàn toàn và UI được re-render
-                    setTimeout(() => {
-                        // Sau đó navigate đến tin nhắn
-                        defaultDispatcher.dispatch<ViewRoomPayload>({
-                            action: Action.ViewRoom,
+                    // Force refresh timeline để đảm bảo hiển thị đúng tin nhắn
+                    const room = this.state.room;
+                    if (room) {
+                        // Reset timeline để force re-render
+                        const timeline = room.getLiveTimeline();
+                        if (timeline) {
+                            // Trigger timeline refresh by resetting state
+                            this.setState({ liveTimeline: timeline });
+                        }
+                    }
+                    
+                    // Sử dụng deferred_action để đảm bảo scroll sau khi room được load hoàn toàn
+                    defaultDispatcher.dispatch<ViewRoomPayload>({
+                        action: Action.ViewRoom,
+                        event_id: payload.event_id,
+                        highlighted: payload.highlighted,
+                        room_id: payload.room_id,
+                        metricsTrigger: "MessageSearch",
+                        deferred_action: {
+                            action: "scroll_to_event_after_navigation",
                             event_id: payload.event_id,
-                            highlighted: payload.highlighted,
-                            room_id: payload.room_id,
-                            metricsTrigger: "MessageSearch",
-                        });
-                    }, 200);
+                        }
+                    });
+                }
+                break;
+            case "scroll_to_event_after_navigation":
+                if (payload.event_id) {
+                    console.log(`RoomView: scroll_to_event_after_navigation for ${payload.event_id}`);
+                    // Wait for layout to stabilize after search panel closes
+                    this.waitForLayoutStabilization().then(() => {
+                        // Force timeline refresh before scrolling
+                        const room = this.state.room;
+                        if (room) {
+                            const timeline = room.getLiveTimeline();
+                            if (timeline) {
+                                // Trigger timeline refresh by resetting state
+                                this.setState({ liveTimeline: timeline });
+                            }
+                        }
+                        
+                        // Wait a bit more for timeline to refresh
+                        setTimeout(() => {
+                            this.scrollToEventWithHighlight(payload.event_id);
+                        }, 200);
+                    });
                 }
                 break;
             case "MatrixActions.sync":
@@ -1413,6 +1447,16 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
             liveTimeline: room.getLiveTimeline(),
         });
 
+        // Nếu có initialEventId và cần highlight, scroll đến event đó
+        const initialEventId = this.context.roomViewStore.getInitialEventId();
+        if (initialEventId && this.context.roomViewStore.isInitialEventHighlighted()) {
+            console.log(`RoomView: onRoomLoaded with initialEventId ${initialEventId}`);
+            // Đợi một chút để đảm bảo timeline được render
+            setTimeout(() => {
+                this.scrollToEventWithHighlight(initialEventId);
+            }, 600); // Reduced delay for smoother experience
+        }
+
         defaultDispatcher.dispatch<ActionPayload>({ action: Action.RoomLoaded });
     };
 
@@ -1422,6 +1466,287 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
             this.setState({ liveTimeline: room.getLiveTimeline() });
         }
     };
+
+    private scrollToEventWithHighlight = (eventId: string, retryCount = 0): void => {
+        console.log(`Attempting to scroll to event ${eventId}, retry: ${retryCount}`);
+        
+        // Check if event exists in room first
+        const room = this.state.room;
+        if (room && !room.findEventById(eventId)) {
+            console.log(`Event ${eventId} not found in room, may need to fetch`);
+            // Event might not be loaded yet, try to fetch it
+            if (this.context.client) {
+                this.context.client.fetchRoomEvent(room.roomId, eventId).then(() => {
+                    console.log(`Fetched event ${eventId}, retrying scroll`);
+                    // Force timeline refresh after fetching
+                    const timeline = room.getLiveTimeline();
+                    if (timeline) {
+                        // Trigger timeline refresh by resetting state
+                        this.setState({ liveTimeline: timeline });
+                    }
+                    setTimeout(() => {
+                        this.scrollToEventWithHighlight(eventId, retryCount);
+                    }, 300);
+                }).catch((err) => {
+                    console.log(`Failed to fetch event ${eventId}:`, err);
+                });
+            }
+            return;
+        }
+        
+        // Tìm element của tin nhắn và scroll đến đó
+        const eventElement = document.querySelector(`[data-event-id="${eventId}"]`);
+        if (eventElement) {
+            console.log(`Found event element for ${eventId}, scrolling to center...`);
+            
+            // Wait for any ongoing animations to complete
+            const waitForStableLayout = () => {
+                return new Promise<void>((resolve) => {
+                    // Check if search panel is closing
+                    const searchPanel = document.querySelector('.mx_SearchPanel');
+                    const isSearchClosing = searchPanel && 
+                        window.getComputedStyle(searchPanel).transition !== 'none';
+                    
+                    if (isSearchClosing) {
+                        // Wait for search panel animation to complete
+                        setTimeout(resolve, 500);
+                    } else {
+                        // Wait for any other layout changes
+                        setTimeout(resolve, 100);
+                    }
+                });
+            };
+            
+            waitForStableLayout().then(() => {
+                // Find the scrollable container with improved detection
+                const timelineContainer = this.findScrollContainer(eventElement);
+                
+                if (timelineContainer) {
+                    this.performAccurateScroll(eventElement, timelineContainer, eventId);
+                } else {
+                    // Fallback to standard scrollIntoView
+                    this.fallbackScroll(eventElement, eventId);
+                }
+            });
+            
+        } else {
+            console.log(`Event element not found for ${eventId}, retry: ${retryCount}`);
+            
+            if (retryCount < 5) {
+                // Force timeline refresh before retry
+                const room = this.state.room;
+                if (room) {
+                    const timeline = room.getLiveTimeline();
+                    if (timeline) {
+                        // Trigger timeline refresh by resetting state
+                        this.setState({ liveTimeline: timeline });
+                    }
+                }
+                
+                // Retry with exponential backoff
+                const delay = Math.min(300 * Math.pow(1.5, retryCount), 1200);
+                setTimeout(() => {
+                    this.scrollToEventWithHighlight(eventId, retryCount + 1);
+                }, delay);
+            } else {
+                // Final fallback: sử dụng MessagePanel scroll method
+                console.log(`Final fallback for ${eventId}`);
+                this.messagePanel?.scrollToEventIfNeeded(eventId);
+                
+                // Try to add highlight effect after a short delay
+                setTimeout(() => {
+                    const fallbackElement = document.querySelector(`[data-event-id="${eventId}"]`);
+                    if (fallbackElement) {
+                        console.log(`Found fallback element for ${eventId}`);
+                        fallbackElement.classList.add('mx_EventTile_highlight');
+                        setTimeout(() => {
+                            fallbackElement.classList.remove('mx_EventTile_highlight');
+                        }, 3000);
+                    } else {
+                        console.log(`Still no element found for ${eventId} after all retries`);
+                    }
+                }, 100);
+            }
+        }
+    };
+
+    private findScrollContainer(eventElement: Element): Element | null {
+        // Try multiple strategies to find the correct scroll container
+        const strategies = [
+            () => eventElement.closest('.mx_ScrollPanel'),
+            () => eventElement.closest('.mx_RoomView_timeline'),
+            () => document.querySelector('.mx_ScrollPanel'),
+            () => document.querySelector('.mx_RoomView_timeline'),
+            () => eventElement.closest('[data-scroll-container]'),
+        ];
+        
+        for (const strategy of strategies) {
+            const container = strategy();
+            if (container && container.scrollHeight > container.clientHeight) {
+                console.log(`Found scroll container:`, container.className);
+                return container;
+            }
+        }
+        
+        console.log(`No suitable scroll container found`);
+        return null;
+    }
+
+    private performAccurateScroll(eventElement: Element, timelineContainer: Element, eventId: string): void {
+        // Get accurate measurements after layout is stable
+        const containerRect = timelineContainer.getBoundingClientRect();
+        const elementRect = eventElement.getBoundingClientRect();
+        
+        // Calculate the actual visible area of the container
+        const containerTop = containerRect.top;
+        const containerBottom = containerRect.bottom;
+        const containerHeight = containerBottom - containerTop;
+        const containerCenter = containerTop + (containerHeight / 2);
+        
+        // Calculate element position relative to container
+        const elementTop = elementRect.top;
+        const elementBottom = elementRect.bottom;
+        const elementHeight = elementBottom - elementTop;
+        const elementCenter = elementTop + (elementHeight / 2);
+        
+        // Calculate scroll offset to center the element
+        const scrollOffset = elementCenter - containerCenter;
+        
+        console.log(`Accurate scroll calculation:`, {
+            containerTop,
+            containerBottom,
+            containerHeight,
+            containerCenter,
+            elementTop,
+            elementBottom,
+            elementHeight,
+            elementCenter,
+            scrollOffset,
+            currentScrollTop: timelineContainer.scrollTop
+        });
+        
+        // Perform smooth scroll animation
+        const startTime = performance.now();
+        const startScrollTop = timelineContainer.scrollTop;
+        const duration = Math.min(Math.abs(scrollOffset) * 0.3, 600); // Faster, more responsive
+        
+        const animateScroll = (currentTime: number) => {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Use easeOutQuart for smoother animation
+            const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+            const currentScrollTop = startScrollTop + (scrollOffset * easeOutQuart);
+            
+            timelineContainer.scrollTop = currentScrollTop;
+            
+            if (progress < 1) {
+                requestAnimationFrame(animateScroll);
+            } else {
+                // Animation complete, add highlight and verify position
+                this.addHighlightAndVerify(eventElement, eventId, timelineContainer);
+            }
+        };
+        
+        requestAnimationFrame(animateScroll);
+    }
+
+    private fallbackScroll(eventElement: Element, eventId: string): void {
+        console.log(`Using fallback scroll for ${eventId}`);
+        
+        // Use scrollIntoView with more precise options
+        eventElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+            inline: 'nearest'
+        });
+        
+        // Add highlight and verify after animation
+        setTimeout(() => {
+            this.addHighlightAndVerify(eventElement, eventId);
+        }, 500);
+    }
+
+    private addHighlightAndVerify(eventElement: Element, eventId: string, timelineContainer?: Element): void {
+        // Add highlight effect
+        eventElement.classList.add('mx_EventTile_highlight');
+        
+        // Verify positioning after a short delay
+        setTimeout(() => {
+            const rect = eventElement.getBoundingClientRect();
+            const viewportHeight = window.innerHeight;
+            const elementHeight = rect.height;
+            const elementTop = rect.top;
+            const elementCenter = elementTop + (elementHeight / 2);
+            
+            // Use container bounds if available, otherwise use viewport
+            let centerReference: number;
+            let tolerance: number;
+            
+            if (timelineContainer) {
+                const containerRect = timelineContainer.getBoundingClientRect();
+                centerReference = containerRect.top + (containerRect.height / 2);
+                tolerance = 50; // Stricter tolerance for container-based centering
+            } else {
+                centerReference = viewportHeight / 2;
+                tolerance = 100; // More lenient for viewport-based centering
+            }
+            
+            const isCentered = Math.abs(elementCenter - centerReference) < tolerance;
+            
+            console.log(`Event ${eventId} positioning verification:`, {
+                elementTop,
+                elementHeight,
+                elementCenter,
+                centerReference,
+                tolerance,
+                isCentered,
+                rect
+            });
+            
+            if (!isCentered) {
+                console.log(`Event ${eventId} not properly centered, performing correction scroll`);
+                // Perform a gentle correction scroll
+                eventElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center',
+                    inline: 'nearest'
+                });
+            }
+        }, 200); // Shorter delay for faster response
+        
+        // Remove highlight after animation
+        setTimeout(() => {
+            eventElement.classList.remove('mx_EventTile_highlight');
+        }, 3000);
+    }
+
+    private waitForLayoutStabilization(): Promise<void> {
+        return new Promise<void>((resolve) => {
+            // Check for various layout-affecting elements
+            const searchPanel = document.querySelector('.mx_SearchPanel');
+            const rightPanel = document.querySelector('.mx_RightPanel');
+            const roomHeader = document.querySelector('.mx_RoomHeader');
+            
+            // Check if any panels are animating
+            const isAnimating = [searchPanel, rightPanel, roomHeader].some(panel => {
+                if (!panel) return false;
+                const style = window.getComputedStyle(panel);
+                return style.transition !== 'none' || style.transform !== 'none';
+            });
+            
+            if (isAnimating) {
+                console.log('Layout is animating, waiting for stabilization...');
+                // Wait for animations to complete
+                setTimeout(() => {
+                    this.waitForLayoutStabilization().then(resolve);
+                }, 200);
+            } else {
+                // Wait a bit more to ensure DOM is fully updated
+                setTimeout(resolve, 150);
+            }
+        });
+    }
 
     private getRoomTombstone(room = this.state.room): MatrixEvent | undefined {
         return room?.currentState.getStateEvents(EventType.RoomTombstone, "") ?? undefined;
@@ -1732,6 +2057,43 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
 
     private onSearchWithExplicitTerm = (term: string, scope = SearchScope.Room): void => {
         this.onSearchInternal(term, scope, true);
+    };
+
+    private onRemoveSenderFilter = (): void => {
+        // Lấy từ khóa hiện tại (loại bỏ phần sender:)
+        const currentTerm = this.state.search?.term || "";
+        const senderMatch = currentTerm.match(/sender:([^\s]+)(?:\s+(.*))?/);
+        
+        if (senderMatch) {
+            const keyword = senderMatch[2]?.trim();
+            
+            if (keyword) {
+                // Có cả sender filter và keyword -> chuyển về tìm kiếm theo keyword với tất cả user
+                // Reset selectedSender và tìm kiếm với skipAutoSenderLogic = true
+                this.setState({ selectedSender: "all" }, () => {
+                    this.onSearchInternal(keyword, this.state.search?.scope || SearchScope.Room, true);
+                });
+            } else {
+                // Chỉ có sender filter -> đóng search mode
+                this.onCancelSearchClickWithoutFocus();
+            }
+        } else {
+            // Trường hợp user được chọn từ UI dropdown (không có sender: trong term)
+            // Cần kiểm tra xem có keyword nào khác không
+            const hasOtherKeywords = currentTerm.trim() && !currentTerm.includes("sender:");
+            
+            if (hasOtherKeywords) {
+                // Có keyword khác -> giữ keyword, chỉ tắt sender filter
+                // Reset selectedSender và tìm kiếm lại với keyword gốc
+                this.setState({ selectedSender: "all" }, () => {
+                    // Gọi tìm kiếm với skipAutoSenderLogic = true để tránh tự động thêm sender:
+                    this.onSearchInternal(currentTerm, this.state.search?.scope || SearchScope.Room, true);
+                });
+            } else {
+                // Không có keyword -> đóng search mode
+                this.onCancelSearchClickWithoutFocus();
+            }
+        }
     };
 
     private onSearchInternal = (term: string, scope = SearchScope.Room, skipAutoSenderLogic = false): void => {
@@ -2597,6 +2959,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                         senders={this.state.searchSenders}
                         selectedSender={this.state.selectedSender}
                         onSenderChange={this.onSenderChange}
+                        onRemoveSenderFilter={this.onRemoveSenderFilter}
                     />
                 );
             }
@@ -2788,6 +3151,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                 searchTerm={this.state.search?.term ?? ""}
                 onInitializeFilter={this.initializeSearchWithFilter}
                 selectedSender={this.state.timelineRenderingType === TimelineRenderingType.Search ? this.state.selectedSender : undefined}
+                onRemoveSenderFilter={this.onRemoveSenderFilter}
             />
         ) : undefined;
 

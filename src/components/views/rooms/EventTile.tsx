@@ -157,6 +157,9 @@ export interface EventTileProps {
     // is this the focused event
     isSelectedEvent?: boolean;
 
+    // the ID of the event that is currently highlighted (for jump-to-message)
+    highlightedEventId?: string;
+
     resizeObserver?: ResizeObserver;
 
     // a list of read-receipts we should show. Each object has a 'roomMember' and 'ts'.
@@ -666,6 +669,14 @@ export class UnwrappedEventTile extends React.Component<EventTileProps, IState> 
         if (this.context.timelineRenderingType === TimelineRenderingType.Notification) return false;
         if (this.context.timelineRenderingType === TimelineRenderingType.ThreadsList) return false;
 
+        // Không highlight reply trong timeline bình thường, chỉ highlight khi jump-to-message
+        if (this.props.isSelectedEvent && this.props.highlightedEventId) {
+            // Chỉ highlight event gốc được jump-to, không highlight reply của nó
+            if (this.props.mxEvent.getId() !== this.props.highlightedEventId) {
+                return false;
+            }
+        }
+
         const cli = MatrixClientPeg.safeGet();
         const actions = cli.getPushActionsForEvent(this.props.mxEvent.replacingEvent() || this.props.mxEvent);
         // get the actions for the previous version of the event too if it is an edit
@@ -690,6 +701,16 @@ export class UnwrappedEventTile extends React.Component<EventTileProps, IState> 
         }
 
         return !!(actions?.tweaks.highlight || previousActions?.tweaks.highlight);
+    }
+
+    /**
+     * Check if this event is a reply event
+     * @returns boolean
+     */
+    private isReplyEvent(): boolean {
+        // Check if this event has a parent event (is a reply)
+        const parentEventId = this.props.mxEvent.replyEventId;
+        return !!parentEventId;
     }
 
     private onSenderProfileClick = (): void => {
@@ -1002,7 +1023,7 @@ export class UnwrappedEventTile extends React.Component<EventTileProps, IState> 
             mx_EventTile_12hr: this.props.isTwelveHour,
             // Note: we keep the `sending` state class for tests, not for our styles
             mx_EventTile_sending: !isEditing && isSending,
-            mx_EventTile_highlight: this.shouldHighlight(),
+            mx_EventTile_highlight: this.shouldHighlight() && !this.isReplyEvent(),
             mx_EventTile_selected: this.props.isSelectedEvent || this.state.contextMenu,
             mx_EventTile_continuation:
                 isContinuation || eventType === EventType.CallInvite || ElementCall.CALL_EVENT_TYPE.matches(eventType),
@@ -1227,6 +1248,10 @@ export class UnwrappedEventTile extends React.Component<EventTileProps, IState> 
                     isQuoteExpanded={isQuoteExpanded}
                     setQuoteExpanded={this.setQuoteExpanded}
                     getRelationsForEvent={this.props.getRelationsForEvent}
+                    highlights={this.props.highlights}
+                    highlightLink={this.props.highlightLink}
+                    isSelectedEvent={this.props.isSelectedEvent}
+                    highlightedEventId={this.props.highlightedEventId}
                 />
             );
         }

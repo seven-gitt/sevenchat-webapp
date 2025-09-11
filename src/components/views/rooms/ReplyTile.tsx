@@ -36,6 +36,8 @@ interface IProps {
     highlightLink?: string;
     toggleExpandedQuote?: () => void;
     getRelationsForEvent?: GetRelationsForEvent;
+    isSelectedEvent?: boolean;
+    highlightedEventId?: string;
 }
 
 export default class ReplyTile extends React.PureComponent<IProps> {
@@ -193,7 +195,11 @@ export default class ReplyTile extends React.PureComponent<IProps> {
                             isSeeingThroughMessageHiddenForModeration,
 
                             // appease TS
-                            highlights: this.props.highlights,
+                            // Chỉ highlight khi đây là jump-to-message (isSelectedEvent = true)
+                            // VÀ đây là event gốc được highlight, không phải reply của nó
+                            highlights: this.props.isSelectedEvent && 
+                                       this.props.mxEvent.getId() === this.props.highlightedEventId ? 
+                                       this.props.highlights : undefined,
                             highlightLink: this.props.highlightLink,
                             permalinkCreator: this.props.permalinkCreator,
                             showHiddenEvents: false,

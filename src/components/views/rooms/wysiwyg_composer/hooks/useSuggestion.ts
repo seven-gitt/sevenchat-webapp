@@ -12,6 +12,7 @@ import { type SyntheticEvent, useState, type SetStateAction } from "react";
 import { logger } from "matrix-js-sdk/src/logger";
 
 import { isNotNull } from "../../../../../Typeguards";
+import { IS_MAC } from "../../../../../Keyboard";
 
 /**
  * Information about the current state of the `useSuggestion` hook.
@@ -73,7 +74,15 @@ export function useSuggestion(
 
     // We create a `selectionchange` handler here because we need to know when the user has moved the cursor,
     // we can not depend on input events only
-    const onSelect = (): void => processSelectionChange(editorRef, setSuggestionData, isAutoReplaceEmojiEnabled);
+    // Add debounce for macOS to handle different event processing timing
+    const onSelect = (): void => {
+        if (IS_MAC) {
+            // Use debounce for macOS to prevent rapid fire events
+            setTimeout(() => processSelectionChange(editorRef, setSuggestionData, isAutoReplaceEmojiEnabled), 10);
+        } else {
+            processSelectionChange(editorRef, setSuggestionData, isAutoReplaceEmojiEnabled);
+        }
+    };
 
     const handleMention = (href: string, displayName: string, attributes: AllowedMentionAttributes): void =>
         processMention(href, displayName, attributes, suggestionData, setSuggestionData, setText);
@@ -118,6 +127,9 @@ export function processSelectionChange(
         !selection.isCollapsed ||
         selection.anchorNode?.nodeName !== "#text"
     ) {
+        if (IS_MAC) {
+            logger.log("## macOS Debug ## processSelectionChange: Early return - invalid selection state");
+        }
         setSuggestionData(null);
         return;
     }
@@ -127,6 +139,9 @@ export function processSelectionChange(
 
     // if we have no text content, return, clearing the suggestion state
     if (currentNode.textContent === null) {
+        if (IS_MAC) {
+            logger.log("## macOS Debug ## processSelectionChange: No text content");
+        }
         setSuggestionData(null);
         return;
     }
@@ -142,8 +157,15 @@ export function processSelectionChange(
 
     // if we have not found a suggestion, return, clearing the suggestion state
     if (foundSuggestion === null) {
+        if (IS_MAC) {
+            logger.log("## macOS Debug ## processSelectionChange: No suggestion found");
+        }
         setSuggestionData(null);
         return;
+    }
+
+    if (IS_MAC) {
+        logger.log(`## macOS Debug ## processSelectionChange: Found suggestion - ${foundSuggestion.mappedSuggestion.keyChar}${foundSuggestion.mappedSuggestion.text} (type: ${foundSuggestion.mappedSuggestion.type})`);
     }
 
     setSuggestionData({

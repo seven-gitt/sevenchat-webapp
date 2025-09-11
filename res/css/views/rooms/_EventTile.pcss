@@ -1492,21 +1492,58 @@ $left-gutter: 64px;
     }
 }
 
-/* Flash animation for reply navigation */
-@keyframes simple-flash {
+/* Smooth flash animation for reply navigation */
+@keyframes smooth-flash {
     0% {
-        background-color: rgba(0, 123, 255, 0.3);
+        background-color: rgba(0, 123, 255, 0.2);
+        box-shadow: 0 0 8px rgba(0, 123, 255, 0.2);
+        transform: scale(1);
     }
-    30% {
+    20% {
         background-color: rgba(0, 123, 255, 0.25);
+        box-shadow: 0 0 12px rgba(0, 123, 255, 0.25);
+        transform: scale(1.01);
+    }
+    40% {
+        background-color: rgba(0, 123, 255, 0.2);
+        box-shadow: 0 0 10px rgba(0, 123, 255, 0.2);
+        transform: scale(1);
     }
     60% {
         background-color: rgba(0, 123, 255, 0.15);
+        box-shadow: 0 0 6px rgba(0, 123, 255, 0.15);
+        transform: scale(1);
     }
     80% {
         background-color: rgba(0, 123, 255, 0.08);
+        box-shadow: 0 0 3px rgba(0, 123, 255, 0.08);
+        transform: scale(1);
     }
     100% {
         background-color: transparent;
+        box-shadow: none;
+        transform: scale(1);
     }
+}
+
+/* Highlight effect for search navigation */
+.mx_EventTile_highlight {
+    animation: smooth-flash 2.5s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 8px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform, background-color, box-shadow;
+}
+
+/* Enhanced highlight for better visibility */
+.mx_EventTile_highlight .mx_EventTile_line {
+    background-color: rgba(0, 123, 255, 0.1) !important;
+    border-radius: 8px;
+}
+
+/* Ensure highlight is visible on all layouts */
+.mx_EventTile_highlight[data-layout="bubble"] .mx_EventTileBubble,
+.mx_EventTile_highlight[data-layout="group"] .mx_EventTile_line,
+.mx_EventTile_highlight[data-layout="irc"] .mx_EventTile_line {
+    background-color: rgba(0, 123, 255, 0.1) !important;
+    border-radius: 8px;
 }

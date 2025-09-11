@@ -56,6 +56,7 @@ interface RoomProps extends BaseProps {
     searchTerm?: string;
     onInitializeFilter?: () => void;
     selectedSender?: string;
+    onRemoveSenderFilter?: () => void;
 }
 
 type Props = XOR<RoomlessProps, RoomProps>;

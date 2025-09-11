@@ -312,6 +312,15 @@ export default class MessagePanel extends React.Component<IProps, IState> {
             });
         }
 
+        // Nếu highlightedEventId thay đổi và có giá trị, scroll đến event đó
+        if (
+            prevProps.highlightedEventId !== this.props.highlightedEventId &&
+            this.props.highlightedEventId
+        ) {
+            console.log(`MessagePanel: highlightedEventId changed to ${this.props.highlightedEventId}`);
+            this.scrollToEventWithRetry(this.props.highlightedEventId);
+        }
+
         const pendingEditItem = this.pendingEditItem;
         if (!this.props.editState && this.props.room && pendingEditItem) {
             const event = this.props.room.findEventById(pendingEditItem);
@@ -441,11 +450,130 @@ export default class MessagePanel extends React.Component<IProps, IState> {
         const node = this.getNodeForEventId(eventId);
         if (node) {
             node.scrollIntoView({
-                block: "nearest",
-                behavior: "instant",
+                block: "center",
+                behavior: "smooth",
             });
         }
     }
+
+    private scrollToEventWithRetry = (eventId: string, retryCount = 0): void => {
+        console.log(`MessagePanel: Attempting to scroll to event ${eventId}, retry: ${retryCount}`);
+        
+        // Đợi một chút để đảm bảo DOM được render
+        setTimeout(() => {
+            const node = this.getNodeForEventId(eventId);
+            if (node) {
+                console.log(`MessagePanel: Found node for ${eventId}, scrolling to center...`);
+                
+                // Use a more gentle scroll animation for MessagePanel
+                const startTime = performance.now();
+                const startScrollTop = node.scrollTop || 0;
+                const container = node.closest('.mx_ScrollPanel') || node.parentElement;
+                
+                if (container) {
+                    const containerRect = container.getBoundingClientRect();
+                    const nodeRect = node.getBoundingClientRect();
+                    const containerCenter = containerRect.height / 2;
+                    const nodeCenter = nodeRect.top - containerRect.top + (nodeRect.height / 2);
+                    const scrollOffset = nodeCenter - containerCenter;
+                    
+                    const duration = Math.min(Math.abs(scrollOffset) * 0.4, 600); // Max 600ms
+                    
+                    const animateScroll = (currentTime: number) => {
+                        const elapsed = currentTime - startTime;
+                        const progress = Math.min(elapsed / duration, 1);
+                        
+                        // Use easeOutQuart for very smooth animation
+                        const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+                        const currentScrollTop = startScrollTop + (scrollOffset * easeOutQuart);
+                        
+                        container.scrollTop = currentScrollTop;
+                        
+                        if (progress < 1) {
+                            requestAnimationFrame(animateScroll);
+                        }
+                    };
+                    
+                    requestAnimationFrame(animateScroll);
+                } else {
+                    // Fallback
+                    node.scrollIntoView({
+                        block: "center",
+                        behavior: "smooth",
+                        inline: "nearest"
+                    });
+                }
+                
+                // Thêm highlight effect
+                const eventElement = document.querySelector(`[data-event-id="${eventId}"]`);
+                if (eventElement) {
+                    eventElement.classList.add('mx_EventTile_highlight');
+                    
+                    // Ensure the element is visible by checking if it's in viewport
+                    // Wait for animation to complete before checking
+                    setTimeout(() => {
+                        const rect = eventElement.getBoundingClientRect();
+                        const viewportHeight = window.innerHeight;
+                        const elementHeight = rect.height;
+                        const elementTop = rect.top;
+                        const elementBottom = rect.bottom;
+                        
+                        // Check if element is centered in viewport (with some tolerance)
+                        const centerTolerance = 80; // Increased tolerance for smoother experience
+                        const viewportCenter = viewportHeight / 2;
+                        const elementCenter = elementTop + (elementHeight / 2);
+                        const isCentered = Math.abs(elementCenter - viewportCenter) < centerTolerance;
+                        
+                        console.log(`MessagePanel: Event ${eventId} positioning:`, {
+                            elementTop,
+                            elementBottom,
+                            elementHeight,
+                            viewportHeight,
+                            viewportCenter,
+                            elementCenter,
+                            isCentered,
+                            rect
+                        });
+                        
+                        if (!isCentered) {
+                            console.log(`MessagePanel: Event ${eventId} not centered, re-scrolling...`);
+                            // Use a gentler re-scroll
+                            eventElement.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center',
+                                inline: 'nearest'
+                            });
+                        }
+                    }, 350); // Increased delay to allow animation to complete
+                    
+                    setTimeout(() => {
+                        eventElement.classList.remove('mx_EventTile_highlight');
+                    }, 3000);
+                }
+            } else {
+                console.log(`MessagePanel: Node not found for ${eventId}, retry: ${retryCount}`);
+                
+                if (retryCount < 3) {
+                    // Retry with increasing delay
+                    this.scrollToEventWithRetry(eventId, retryCount + 1);
+                } else {
+                    console.log(`MessagePanel: Final fallback for ${eventId}`);
+                    // Final fallback: try direct DOM query
+                    const eventElement = document.querySelector(`[data-event-id="${eventId}"]`);
+                    if (eventElement) {
+                        eventElement.scrollIntoView({
+                            block: "center",
+                            behavior: "smooth",
+                        });
+                        eventElement.classList.add('mx_EventTile_highlight');
+                        setTimeout(() => {
+                            eventElement.classList.remove('mx_EventTile_highlight');
+                        }, 3000);
+                    }
+                }
+            }
+        }, 100 * (retryCount + 1)); // Increasing delay: 100ms, 200ms, 300ms
+    };
 
     private isUnmounting = (): boolean => {
         return this.unmounted;
@@ -813,6 +941,7 @@ export default class MessagePanel extends React.Component<IProps, IState> {
                 lastInSection={lastInSection}
                 lastSuccessful={wrappedEvent.lastSuccessfulWeSent}
                 isSelectedEvent={highlight}
+                highlightedEventId={this.props.highlightedEventId}
                 getRelationsForEvent={this.props.getRelationsForEvent}
                 showReactions={this.props.showReactions}
                 layout={this.props.layout}

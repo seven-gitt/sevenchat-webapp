@@ -45,6 +45,11 @@ interface IProps {
     isQuoteExpanded?: boolean;
     setQuoteExpanded: (isExpanded: boolean) => void;
     getRelationsForEvent?: GetRelationsForEvent;
+    // Props for highlighting
+    highlights?: string[];
+    highlightLink?: string;
+    isSelectedEvent?: boolean;
+    highlightedEventId?: string;
 }
 
 interface IState {
@@ -266,6 +271,10 @@ export default class ReplyChain extends React.Component<IProps, IState> {
                         permalinkCreator={this.props.permalinkCreator}
                         toggleExpandedQuote={() => this.props.setQuoteExpanded(!this.props.isQuoteExpanded)}
                         getRelationsForEvent={this.props.getRelationsForEvent}
+                        highlights={this.props.highlights}
+                        highlightLink={this.props.highlightLink}
+                        isSelectedEvent={this.props.isSelectedEvent}
+                        highlightedEventId={this.props.highlightedEventId}
                     />
                 </blockquote>
             );

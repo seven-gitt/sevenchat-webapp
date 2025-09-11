@@ -46,7 +46,12 @@ export default class ReplyPreview extends React.Component<IProps> {
                             onClick={() => cancelQuoting(this.context.timelineRenderingType)}
                         />
                     </div>
-                    <ReplyTile mxEvent={this.props.replyToEvent} permalinkCreator={this.props.permalinkCreator} />
+                    <ReplyTile 
+                        mxEvent={this.props.replyToEvent} 
+                        permalinkCreator={this.props.permalinkCreator}
+                        isSelectedEvent={false}
+                        highlightedEventId={undefined}
+                    />
                 </div>
             </div>
         );

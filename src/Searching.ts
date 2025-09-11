@@ -24,8 +24,9 @@ import {
 import { type ISearchArgs } from "./indexing/BaseEventIndexManager";
 import EventIndexPeg from "./indexing/EventIndexPeg";
 import { isNotUndefined } from "./Typeguards";
+import { createUserFilter } from "./utils";
 
-const SEARCH_LIMIT = 500; // Giảm xuống 500 để cân bằng hiệu suất và kết quả
+export const SEARCH_LIMIT = 500; // Giảm xuống 500 để cân bằng hiệu suất và kết quả
 const FAST_SEARCH_LIMIT = 100; // Limit thấp hơn cho tìm kiếm nhanh
 const MAX_SEARCH_STRATEGIES = 5; // Giới hạn số strategies để tránh chậm
 
@@ -1080,19 +1081,20 @@ async function serverSideSearch(
         // Nếu đang tìm trong 1 phòng cụ thể, tự dựng kết quả từ timeline phòng để đảm bảo luôn hiển thị được
         if (roomId) {
             try {
-                // Ưu tiên gọi server search phân trang để gom toàn bộ tin nhắn của sender trong phòng
+                // Ưu tiên sử dụng UserFilter để gom toàn bộ tin nhắn của sender trong phòng
                 try {
-                    console.log(`serverSideSearch: Calling fetchAllSenderMessagesServer with keyword="${term}"`);
-                    const full = await fetchAllSenderMessagesServer(client, senderId, roomId, abortSignal, term);
+                    console.log(`serverSideSearch: Using UserFilter with keyword="${term}"`);
+                    const userFilter = createUserFilter(client);
+                    const full = await userFilter.filterMessagesByUser(senderId, roomId, term, abortSignal);
                     const count = full.response?.search_categories?.room_events?.results?.length || 0;
                     if (count > 0) {
-                        console.log(`serverSideSearch: fetchAllSenderMessagesServer found ${count} results`);
+                        console.log(`serverSideSearch: UserFilter found ${count} results`);
                         // Diagnostic cross-check for the room created at 2025-08-20
                         await debugVerifyCoverage(client, senderId, roomId, abortSignal);
                         return full;
                     }
                 } catch (e) {
-                    console.warn('Server paginated sender search failed, fallback to timeline scan:', e);
+                    console.warn('UserFilter search failed, fallback to timeline scan:', e);
                 }
 
                 // Fallback: quét full timeline để đảm bảo không sót (đặc biệt phòng mã hóa)
@@ -2165,97 +2167,32 @@ async function localSearch(
         }
         console.log(`=== END SENDER FILTERING DEBUG ===`);
         
-        // Nếu chỉ có sender filter (không có keyword) thì QUÉT TOÀN BỘ TIMELINE phòng để lấy tất cả tin nhắn của user
+        // Nếu chỉ có sender filter (không có keyword) thì sử dụng UserFilter class
         if (actualSearchTerm === "*" && roomId) {
             try {
-                console.log("LocalSearch: Sender-only filter detected, scanning full room timeline for all messages of user");
-                const room = (client as any).getRoom?.(roomId);
-                // Sử dụng unfiltered timeline set để tránh bỏ sót events bị ẩn bởi filters
-                const timelineSet = (room as any)?.getUnfilteredTimelineSet?.() || room?.getLiveTimelineSet?.();
-                const timeline = timelineSet?.getLiveTimeline?.();
-                const results: any[] = [];
-                const seenEventIds = new Set<string>();
-                const PAGE = 500; // Tăng kích thước trang
-                let paginationCount = 0;
-                const MAX_PAGINATION = 1000; // Giới hạn số lần phân trang
-
-                const collectFrom = (eventsArr: any[]) => {
-                    let collected = 0;
-                    for (let i = eventsArr.length - 1; i >= 0; i--) {
-                        const ev = eventsArr[i];
-                        const eventId = ev?.getId?.() || ev?.event_id || ev?.event?.event_id;
-                        if (!eventId || seenEventIds.has(eventId)) continue;
-                        
-                        // Bỏ qua tin nhắn đã xóa (redacted messages)
-                        if (ev.isRedacted?.()) {
-                            continue;
-                        }
-                        
-                        const type = ev?.getType?.();
-                        const isMessageLike = type === 'm.room.message' || type === 'm.room.encrypted' || type === 'm.sticker';
-                        
-                        if (isMessageLike && ev.getSender?.() === senderFilter) {
-                            results.push({
-                                rank: 1,
-                                result: ev.event || ev,
-                                context: { events_before: [], events_after: [] },
-                            });
-                            seenEventIds.add(eventId);
-                            collected++;
-                        }
-                    }
-                    return collected;
-                };
-
-                const initialEvents = timeline?.getEvents?.() || [];
-                collectFrom(initialEvents);
-
-                // Phân trang để lấy toàn bộ lịch sử
-                while (paginationCount < MAX_PAGINATION) {
-                    const prevSeen = seenEventIds.size;
-                    const hasMoreToken = !!timeline?.getPaginationToken?.("b");
-                    const hasOlderNeighbour = !!timeline?.getNeighbouringTimeline?.("b");
+                console.log("LocalSearch: Sender-only filter detected, using UserFilter for all messages of user");
+                
+                // Sử dụng UserFilter class để xử lý lọc theo user
+                const userFilter = createUserFilter(client);
+                const userFilterResult = await userFilter.filterMessagesByUser(senderFilter, roomId, "", undefined);
+                
+                if (userFilterResult?.response?.search_categories?.room_events?.results?.length) {
+                    localResult.results = userFilterResult.response.search_categories.room_events.results;
+                    localResult.count = userFilterResult.response.search_categories.room_events.results.length;
+                    console.log(`LocalSearch: UserFilter collected ${localResult.count} messages from user ${senderFilter}`);
                     
-                    if (!hasMoreToken && !hasOlderNeighbour) {
-                        break;
+                    if (roomId === DEBUG_ROOM_ID) {
+                        console.log(`[Debug ${DEBUG_ROOM_ID}] UserFilter - final count: ${localResult.count}`);
                     }
-                    
-                    try {
-                        paginationCount++;
-                        // eslint-disable-next-line @typescript-eslint/await-thenable
-                        await (client as any).paginateEventTimeline?.(timeline, { backwards: true, limit: PAGE });
-                        const pageEvents = timeline?.getEvents?.() || [];
-                        const pageCollected = collectFrom(pageEvents);
-                        
-                        if (roomId === DEBUG_ROOM_ID && paginationCount % 20 === 0) {
-                            console.log(`[Debug ${DEBUG_ROOM_ID}] Local sender scan - page ${paginationCount}: ${pageEvents.length} events, +${pageCollected} for ${senderFilter}, total: ${results.length}`);
-                        }
-                        
-                        // Nếu không thu thập được thêm events nào, có thể đã hết
-                        if (seenEventIds.size === prevSeen) {
-                            if (roomId === DEBUG_ROOM_ID) {
-                                console.log(`[Debug ${DEBUG_ROOM_ID}] Local sender scan - no new events collected, stopping`);
-                            }
-                            break;
-                        }
-                    } catch (e) {
-                        console.warn(`LocalSearch: paginateEventTimeline failed at page ${paginationCount}:`, e);
-                        // Thử tiếp tục thay vì dừng ngay lập tức
-                        if (paginationCount < 10) {
-                            continue;
-                        }
-                        break;
-                    }
-                }
-
-                localResult.results = results;
-                localResult.count = results.length;
-                console.log(`LocalSearch: Collected ${results.length} messages from user ${senderFilter} via full timeline scan (${paginationCount} pages)`);
-                if (roomId === DEBUG_ROOM_ID) {
-                    console.log(`[Debug ${DEBUG_ROOM_ID}] Local sender scan - final count: ${results.length}`);
+                } else {
+                    console.log("LocalSearch: UserFilter returned no results");
+                    localResult.results = [];
+                    localResult.count = 0;
                 }
             } catch (e) {
-                console.log("LocalSearch: Full timeline sender scan failed:", e);
+                console.log("LocalSearch: UserFilter failed:", e);
+                localResult.results = [];
+                localResult.count = 0;
             }
         }
     }

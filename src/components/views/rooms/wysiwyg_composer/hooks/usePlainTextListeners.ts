@@ -102,6 +102,20 @@ export function usePlainTextListeners(
         (event: SyntheticEvent<HTMLDivElement, InputEvent | ClipboardEvent>) => {
             if (isDivElement(event.target)) {
                 setText(event.target.innerHTML);
+                // For macOS, also trigger suggestion processing on input events
+                // as selectionchange might not be reliable
+                if (IS_MAC) {
+                    setTimeout(() => {
+                        const selection = document.getSelection();
+                        if (selection && selection.isCollapsed && selection.anchorNode?.nodeName === "#text") {
+                            // Trigger suggestion processing for macOS
+                            // We need to access the suggestion state setter from useSuggestion hook
+                            // This is a workaround for macOS timing issues
+                            const event = new Event('selectionchange');
+                            document.dispatchEvent(event);
+                        }
+                    }, 5);
+                }
             }
         },
         [setText],
