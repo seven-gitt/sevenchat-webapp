@@ -1469,257 +1469,58 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
 
     private scrollToEventWithHighlight = (eventId: string, retryCount = 0): void => {
         console.log(`Attempting to scroll to event ${eventId}, retry: ${retryCount}`);
-        
-        // Check if event exists in room first
+
         const room = this.state.room;
-        if (room && !room.findEventById(eventId)) {
-            console.log(`Event ${eventId} not found in room, may need to fetch`);
-            // Event might not be loaded yet, try to fetch it
-            if (this.context.client) {
-                this.context.client.fetchRoomEvent(room.roomId, eventId).then(() => {
-                    console.log(`Fetched event ${eventId}, retrying scroll`);
-                    // Force timeline refresh after fetching
-                    const timeline = room.getLiveTimeline();
-                    if (timeline) {
-                        // Trigger timeline refresh by resetting state
-                        this.setState({ liveTimeline: timeline });
-                    }
+
+        this.waitForLayoutStabilization().then(() => {
+            // Nếu messagePanel có API chuẩn bị jump, tải ngữ cảnh trước để cuộn nền
+            const prepare = (this.messagePanel as any)?.prepareJumpToEvent as ((id: string) => Promise<void>) | undefined;
+            if (prepare) {
+                prepare.call(this.messagePanel, eventId).then(() => {
+                    // Sau khi tải xong, cuộn đúng vị trí qua API chuẩn
+                    this.messagePanel?.scrollToEventIfNeeded(eventId);
+                    // Highlight nhẹ
                     setTimeout(() => {
-                        this.scrollToEventWithHighlight(eventId, retryCount);
-                    }, 300);
+                        const el = document.querySelector(`[data-event-id="${eventId}"]`);
+                        if (el) {
+                            el.classList.add('mx_EventTile_highlight');
+                            setTimeout(() => el.classList.remove('mx_EventTile_highlight'), 3000);
+                        }
+                    }, 150);
+                }).catch(() => {
+                    // Fallback nếu prepare thất bại
+                    this.messagePanel?.scrollToEventIfNeeded(eventId);
+                });
+                return;
+            }
+
+            // Fallback: cuộn trực tiếp nếu không có prepare
+            this.messagePanel?.scrollToEventIfNeeded(eventId);
+
+            // Nếu event chưa có trong room (chưa load), thử fetch một lần rồi thử lại
+            if (room && !room.findEventById(eventId)) {
+                if (retryCount >= 1) return;
+                this.context.client?.fetchRoomEvent(room.roomId, eventId).then(() => {
+                    const tl = room.getLiveTimeline();
+                    if (tl) this.setState({ liveTimeline: tl });
+                    setTimeout(() => this.scrollToEventWithHighlight(eventId, retryCount + 1), 250);
                 }).catch((err) => {
                     console.log(`Failed to fetch event ${eventId}:`, err);
                 });
+                return;
             }
-            return;
-        }
-        
-        // Tìm element của tin nhắn và scroll đến đó
-        const eventElement = document.querySelector(`[data-event-id="${eventId}"]`);
-        if (eventElement) {
-            console.log(`Found event element for ${eventId}, scrolling to center...`);
-            
-            // Wait for any ongoing animations to complete
-            const waitForStableLayout = () => {
-                return new Promise<void>((resolve) => {
-                    // Check if search panel is closing
-                    const searchPanel = document.querySelector('.mx_SearchPanel');
-                    const isSearchClosing = searchPanel && 
-                        window.getComputedStyle(searchPanel).transition !== 'none';
-                    
-                    if (isSearchClosing) {
-                        // Wait for search panel animation to complete
-                        setTimeout(resolve, 500);
-                    } else {
-                        // Wait for any other layout changes
-                        setTimeout(resolve, 100);
-                    }
-                });
-            };
-            
-            waitForStableLayout().then(() => {
-                // Find the scrollable container with improved detection
-                const timelineContainer = this.findScrollContainer(eventElement);
-                
-                if (timelineContainer) {
-                    this.performAccurateScroll(eventElement, timelineContainer, eventId);
-                } else {
-                    // Fallback to standard scrollIntoView
-                    this.fallbackScroll(eventElement, eventId);
+
+            setTimeout(() => {
+                const el = document.querySelector(`[data-event-id="${eventId}"]`);
+                if (el) {
+                    el.classList.add('mx_EventTile_highlight');
+                    setTimeout(() => el.classList.remove('mx_EventTile_highlight'), 3000);
                 }
-            });
-            
-        } else {
-            console.log(`Event element not found for ${eventId}, retry: ${retryCount}`);
-            
-            if (retryCount < 5) {
-                // Force timeline refresh before retry
-                const room = this.state.room;
-                if (room) {
-                    const timeline = room.getLiveTimeline();
-                    if (timeline) {
-                        // Trigger timeline refresh by resetting state
-                        this.setState({ liveTimeline: timeline });
-                    }
-                }
-                
-                // Retry with exponential backoff
-                const delay = Math.min(300 * Math.pow(1.5, retryCount), 1200);
-                setTimeout(() => {
-                    this.scrollToEventWithHighlight(eventId, retryCount + 1);
-                }, delay);
-            } else {
-                // Final fallback: sử dụng MessagePanel scroll method
-                console.log(`Final fallback for ${eventId}`);
-                this.messagePanel?.scrollToEventIfNeeded(eventId);
-                
-                // Try to add highlight effect after a short delay
-                setTimeout(() => {
-                    const fallbackElement = document.querySelector(`[data-event-id="${eventId}"]`);
-                    if (fallbackElement) {
-                        console.log(`Found fallback element for ${eventId}`);
-                        fallbackElement.classList.add('mx_EventTile_highlight');
-                        setTimeout(() => {
-                            fallbackElement.classList.remove('mx_EventTile_highlight');
-                        }, 3000);
-                    } else {
-                        console.log(`Still no element found for ${eventId} after all retries`);
-                    }
-                }, 100);
-            }
-        }
+            }, 150);
+        });
     };
 
-    private findScrollContainer(eventElement: Element): Element | null {
-        // Try multiple strategies to find the correct scroll container
-        const strategies = [
-            () => eventElement.closest('.mx_ScrollPanel'),
-            () => eventElement.closest('.mx_RoomView_timeline'),
-            () => document.querySelector('.mx_ScrollPanel'),
-            () => document.querySelector('.mx_RoomView_timeline'),
-            () => eventElement.closest('[data-scroll-container]'),
-        ];
-        
-        for (const strategy of strategies) {
-            const container = strategy();
-            if (container && container.scrollHeight > container.clientHeight) {
-                console.log(`Found scroll container:`, container.className);
-                return container;
-            }
-        }
-        
-        console.log(`No suitable scroll container found`);
-        return null;
-    }
-
-    private performAccurateScroll(eventElement: Element, timelineContainer: Element, eventId: string): void {
-        // Get accurate measurements after layout is stable
-        const containerRect = timelineContainer.getBoundingClientRect();
-        const elementRect = eventElement.getBoundingClientRect();
-        
-        // Calculate the actual visible area of the container
-        const containerTop = containerRect.top;
-        const containerBottom = containerRect.bottom;
-        const containerHeight = containerBottom - containerTop;
-        const containerCenter = containerTop + (containerHeight / 2);
-        
-        // Calculate element position relative to container
-        const elementTop = elementRect.top;
-        const elementBottom = elementRect.bottom;
-        const elementHeight = elementBottom - elementTop;
-        const elementCenter = elementTop + (elementHeight / 2);
-        
-        // Calculate scroll offset to center the element
-        const scrollOffset = elementCenter - containerCenter;
-        
-        console.log(`Accurate scroll calculation:`, {
-            containerTop,
-            containerBottom,
-            containerHeight,
-            containerCenter,
-            elementTop,
-            elementBottom,
-            elementHeight,
-            elementCenter,
-            scrollOffset,
-            currentScrollTop: timelineContainer.scrollTop
-        });
-        
-        // Perform smooth scroll animation
-        const startTime = performance.now();
-        const startScrollTop = timelineContainer.scrollTop;
-        const duration = Math.min(Math.abs(scrollOffset) * 0.3, 600); // Faster, more responsive
-        
-        const animateScroll = (currentTime: number) => {
-            const elapsed = currentTime - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            
-            // Use easeOutQuart for smoother animation
-            const easeOutQuart = 1 - Math.pow(1 - progress, 4);
-            const currentScrollTop = startScrollTop + (scrollOffset * easeOutQuart);
-            
-            timelineContainer.scrollTop = currentScrollTop;
-            
-            if (progress < 1) {
-                requestAnimationFrame(animateScroll);
-            } else {
-                // Animation complete, add highlight and verify position
-                this.addHighlightAndVerify(eventElement, eventId, timelineContainer);
-            }
-        };
-        
-        requestAnimationFrame(animateScroll);
-    }
-
-    private fallbackScroll(eventElement: Element, eventId: string): void {
-        console.log(`Using fallback scroll for ${eventId}`);
-        
-        // Use scrollIntoView with more precise options
-        eventElement.scrollIntoView({
-            behavior: 'smooth',
-            block: 'center',
-            inline: 'nearest'
-        });
-        
-        // Add highlight and verify after animation
-        setTimeout(() => {
-            this.addHighlightAndVerify(eventElement, eventId);
-        }, 500);
-    }
-
-    private addHighlightAndVerify(eventElement: Element, eventId: string, timelineContainer?: Element): void {
-        // Add highlight effect
-        eventElement.classList.add('mx_EventTile_highlight');
-        
-        // Verify positioning after a short delay
-        setTimeout(() => {
-            const rect = eventElement.getBoundingClientRect();
-            const viewportHeight = window.innerHeight;
-            const elementHeight = rect.height;
-            const elementTop = rect.top;
-            const elementCenter = elementTop + (elementHeight / 2);
-            
-            // Use container bounds if available, otherwise use viewport
-            let centerReference: number;
-            let tolerance: number;
-            
-            if (timelineContainer) {
-                const containerRect = timelineContainer.getBoundingClientRect();
-                centerReference = containerRect.top + (containerRect.height / 2);
-                tolerance = 50; // Stricter tolerance for container-based centering
-            } else {
-                centerReference = viewportHeight / 2;
-                tolerance = 100; // More lenient for viewport-based centering
-            }
-            
-            const isCentered = Math.abs(elementCenter - centerReference) < tolerance;
-            
-            console.log(`Event ${eventId} positioning verification:`, {
-                elementTop,
-                elementHeight,
-                elementCenter,
-                centerReference,
-                tolerance,
-                isCentered,
-                rect
-            });
-            
-            if (!isCentered) {
-                console.log(`Event ${eventId} not properly centered, performing correction scroll`);
-                // Perform a gentle correction scroll
-                eventElement.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'center',
-                    inline: 'nearest'
-                });
-            }
-        }, 200); // Shorter delay for faster response
-        
-        // Remove highlight after animation
-        setTimeout(() => {
-            eventElement.classList.remove('mx_EventTile_highlight');
-        }, 3000);
-    }
+    
 
     private waitForLayoutStabilization(): Promise<void> {
         return new Promise<void>((resolve) => {
@@ -2232,17 +2033,12 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                     });
                 } else {
                     // Chưa có sender filter trong term
-                    // Ưu tiên lọc frontend thay vì gọi lại backend để giữ được nhiều kết quả hơn
-                    if (currentTerm.trim()) {
-                        // Có keyword, chỉ cập nhật selectedSender để lọc frontend
-                        this.setState({ selectedSender: senderId });
-                    } else {
-                        // Không có keyword, thêm sender filter và gọi backend
-                        const newSearchTerm = `sender:${senderId}`;
-                        this.setState({ selectedSender: senderId }, () => {
-                            this.onSearchWithExplicitTerm(newSearchTerm, this.state.search?.scope ?? SearchScope.Room);
-                        });
-                    }
+                    // Luôn thêm sender filter vào term và gọi lại backend để phân trang đầy đủ
+                    const trimmed = currentTerm.trim();
+                    const newSearchTerm = trimmed ? `sender:${senderId} ${trimmed}` : `sender:${senderId}`;
+                    this.setState({ selectedSender: senderId }, () => {
+                        this.onSearchWithExplicitTerm(newSearchTerm, this.state.search?.scope ?? SearchScope.Room);
+                    });
                 }
             }
         } else {

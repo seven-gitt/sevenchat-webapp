@@ -1434,7 +1434,14 @@ class TimelinePanel extends React.Component<IProps, IState> {
      *
      * @param {boolean?} scrollIntoView whether to scroll the event into view.
      */
-    private loadTimeline(eventId?: string, pixelOffset?: number, offsetBase?: number, scrollIntoView = true): void {
+    public prepareJumpToEvent(eventId: string): Promise<void> {
+        // Load around the event without scrolling; resolve when loaded
+        return new Promise((resolve) => {
+            this.loadTimeline(eventId, 0, 0.5, false, resolve);
+        });
+    }
+
+    private loadTimeline(eventId?: string, pixelOffset?: number, offsetBase?: number, scrollIntoView = true, afterLoaded?: () => void): void {
         const cli = MatrixClientPeg.safeGet();
         this.timelineWindow = new TimelineWindow(cli, this.props.timelineSet, { windowLimit: this.props.timelineCap });
 
@@ -1470,6 +1477,8 @@ class TimelinePanel extends React.Component<IProps, IState> {
                     if (scrollIntoView) {
                         this.scrollIntoView(eventId, pixelOffset, offsetBase);
                     }
+
+                    afterLoaded?.();
 
                     if (this.props.sendReadReceiptOnLoad) {
                         this.sendReadReceipts().catch((err) => {

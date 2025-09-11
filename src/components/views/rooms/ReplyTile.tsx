@@ -100,25 +100,14 @@ export default class ReplyTile extends React.PureComponent<IProps> {
                         metricsTrigger: undefined, // room doesn't change
                     });
 
-                    // Add a small delay to ensure the room is loaded before scrolling and highlighting
+                    // Để TimelinePanel xử lý cuộn chính xác; chỉ thêm highlight nhẹ
                     setTimeout(() => {
-                        // Try to scroll to the highlighted message
                         const eventElement = document.querySelector(`[data-event-id="${this.props.mxEvent.getId()}"]`);
                         if (eventElement) {
-                            eventElement.scrollIntoView({
-                                behavior: 'smooth',
-                                block: 'center'
-                            });
-                            
-                            // Add a simple flash effect
                             eventElement.classList.add('mx_EventTile_highlight');
-                            
-                            // Remove the highlight class after animation completes
-                            setTimeout(() => {
-                                eventElement.classList.remove('mx_EventTile_highlight');
-                            }, 3000);
+                            setTimeout(() => eventElement.classList.remove('mx_EventTile_highlight'), 3000);
                         }
-                    }, 500);
+                    }, 300);
                 }
             }
         }
