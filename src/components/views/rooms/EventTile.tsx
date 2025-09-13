@@ -692,10 +692,20 @@ export class UnwrappedEventTile extends React.Component<EventTileProps, IState> 
             return false;
         }
 
-        // Tắt highlight cho @All mentions để tránh làm phiền user
+        // Tắt highlight cho tất cả mentions để tránh làm phiền user
         const content = this.props.mxEvent.getContent();
         if (content?.body && typeof content.body === 'string') {
             if (content.body.includes('@All') || content.body.includes('@room')) {
+                return false;
+            }
+        }
+        
+        // Tắt highlight cho mentions cá nhân (@tôi)
+        const mentions = content?.["m.mentions"];
+        if (mentions?.user_ids && Array.isArray(mentions.user_ids)) {
+            const cli = MatrixClientPeg.safeGet();
+            const currentUserId = cli.credentials.userId;
+            if (currentUserId && mentions.user_ids.includes(currentUserId)) {
                 return false;
             }
         }
