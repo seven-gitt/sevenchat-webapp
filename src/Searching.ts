@@ -371,11 +371,6 @@ function calculateRelevanceScore(searchTerm: string, content: string): number {
     
     let relevanceScore = 0;
     
-    // Exact match gets highest score
-    if (lcContent.includes(lcSearchTerm)) {
-        relevanceScore += 100;
-    }
-    
     // Partial word matching - tìm từ chứa search term như "sagua" trong "Saguaro"
     const searchWords = lcSearchTerm.split(/\s+/).filter(word => word.length > 0);
     const contentWords = lcContent.split(/\s+/).filter(word => word.length > 0);
@@ -385,15 +380,74 @@ function calculateRelevanceScore(searchTerm: string, content: string): number {
         contentWords.some(contentWord => contentWord === searchWord)
     );
     
-    // Kiểm tra partial word match (search word là substring của content word)
+    // Exact match gets highest score
+    if (lcContent.includes(lcSearchTerm)) {
+        relevanceScore += 100;
+    }
+    
+    // Exact word match gets high score
+    if (hasExactWordMatch) {
+        relevanceScore += 80;
+    }
+    
+    // Cải thiện partial word match để xử lý domain names và từ có dấu chấm
     const hasPartialWordMatch = searchWords.some(searchWord => 
-        contentWords.some(contentWord => contentWord.includes(searchWord))
+        contentWords.some(contentWord => {
+            // Exact match
+            if (contentWord === searchWord) return true;
+            
+            // Partial match (search word là substring của content word)
+            if (contentWord.includes(searchWord)) return true;
+            
+            // Reverse partial match (content word là substring của search word)
+            if (searchWord.includes(contentWord) && contentWord.length >= 3) return true;
+            
+            // Special handling for domain-like words (có dấu chấm)
+            if (contentWord.includes('.') && searchWord.includes('.')) {
+                // So sánh từng phần domain
+                const contentParts = contentWord.split('.');
+                const searchParts = searchWord.split('.');
+                
+                // Kiểm tra nếu tất cả search parts có trong content parts
+                return searchParts.every(searchPart => 
+                    contentParts.some(contentPart => 
+                        contentPart.includes(searchPart) || searchPart.includes(contentPart)
+                    )
+                );
+            }
+            
+            // Special handling: nếu content word có dấu chấm và search word không có
+            // Đây là trường hợp quan trọng cho "Tradelle" trong "Tradelle.io"
+            if (contentWord.includes('.') && !searchWord.includes('.')) {
+                const contentParts = contentWord.split('.');
+                // Tăng độ nhạy: chỉ cần một phần domain chứa search word
+                return contentParts.some(part => {
+                    // Loại bỏ extension (như .io, .com) và so sánh phần chính
+                    const cleanPart = part.replace(/\.(io|com|net|org|co|uk|de|fr|jp|cn|vn)$/i, '');
+                    return cleanPart.includes(searchWord) || searchWord.includes(cleanPart) || 
+                           part.includes(searchWord) || searchWord.includes(part);
+                });
+            }
+            
+            // Special handling: nếu search word có dấu chấm và content word không có
+            if (!contentWord.includes('.') && searchWord.includes('.')) {
+                const searchParts = searchWord.split('.');
+                return searchParts.some(part => contentWord.includes(part) || part.includes(contentWord));
+            }
+            
+            return false;
+        })
     );
     
     // Kiểm tra reverse partial match (content word là substring của search word)
     const hasReversePartialMatch = searchWords.some(searchWord => 
         contentWords.some(contentWord => searchWord.includes(contentWord) && contentWord.length >= 3)
     );
+    
+    // Tăng điểm cho partial word match, đặc biệt cho domain names
+    if (hasPartialWordMatch) {
+        relevanceScore += 60; // Tăng từ 50 lên 60
+    }
     
     if (hasExactWordMatch) {
         relevanceScore += searchWords.length * 15; // Cao hơn cho exact match
@@ -467,8 +521,8 @@ function calculateRelevanceScore(searchTerm: string, content: string): number {
 // Enhanced search with relevance scoring
 function enhancedSearchWithRelevance(searchTerm: string, content: string): boolean {
     const relevanceScore = calculateRelevanceScore(searchTerm, content);
-    // Giảm threshold để cho phép nhiều partial matches hơn
-    const threshold = searchTerm.length >= 4 ? 10 : 15; // Threshold thấp hơn cho search term dài
+    // Giảm threshold đáng kể để cho phép nhiều partial matches hơn
+    const threshold = searchTerm.length >= 4 ? 5 : 8; // Threshold thấp hơn nhiều để bao gồm domain names
     return relevanceScore >= threshold;
 }
 
@@ -480,6 +534,11 @@ function extractUrlComponents(text: string): string[] {
     const urlRegex = /https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/gi;
     const urls = text.match(urlRegex) || [];
     
+    // Cũng tìm các domain names không có protocol (như tradelle.io, google.com)
+    const domainRegex = /\b[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}\b/gi;
+    const domains = text.match(domainRegex) || [];
+    
+    // Xử lý URLs
     urls.forEach(url => {
         try {
             const urlObj = new URL(url);
@@ -523,6 +582,36 @@ function extractUrlComponents(text: string): string[] {
         } catch (error) {
             // Nếu không parse được URL, thêm toàn bộ URL
             components.push(url);
+        }
+    });
+    
+    // Xử lý domain names (không có protocol)
+    domains.forEach(domain => {
+        // Thêm toàn bộ domain
+        components.push(domain);
+        
+        // Thêm các phần của domain
+        const domainParts = domain.split('.');
+        components.push(...domainParts.filter(part => part.length > 1));
+        
+        // Thêm các subdomain parts nếu có dấu gạch ngang
+        domainParts.forEach(part => {
+            if (part.includes('-') || part.includes('_')) {
+                const subParts = part.split(/[-_]/);
+                components.push(...subParts.filter(subPart => subPart.length > 1));
+            }
+        });
+        
+        // Thêm các combination của domain parts (ví dụ: "tradelle" từ "tradelle.io")
+        if (domainParts.length >= 2) {
+            // Thêm main domain name (phần đầu tiên)
+            components.push(domainParts[0]);
+            
+            // Thêm domain với extension (ví dụ: "tradelle.io" từ "www.tradelle.io")
+            if (domainParts.length > 2) {
+                const mainDomain = domainParts.slice(1).join('.');
+                components.push(mainDomain);
+            }
         }
     });
     
@@ -597,8 +686,69 @@ function searchInTimeline(
                                 messageWords.some((messageWord: string) => messageWord === queryWord)
                             );
                             
+                            // Enhanced partial matching for domain names and complex terms
+                            const hasEnhancedPartialMatch = queryWords.some((queryWord: string) => 
+                                messageWords.some((messageWord: string) => {
+                                    // Exact match
+                                    if (messageWord === queryWord) return true;
+                                    
+                                    // Partial match (query word is substring of message word)
+                                    if (messageWord.includes(queryWord)) return true;
+                                    
+                                    // Special handling for domain names (e.g., "Tradelle" in "Tradelle.io")
+                                    if (messageWord.includes('.') && !queryWord.includes('.')) {
+                                        const parts = messageWord.split('.');
+                                        return parts.some(part => {
+                                            const cleanPart = part.replace(/\.(io|com|net|org|co|uk|de|fr|jp|cn|vn)$/i, '');
+                                            return cleanPart.includes(queryWord) || queryWord.includes(cleanPart) || 
+                                                   part.includes(queryWord) || queryWord.includes(part);
+                                        });
+                                    }
+                                    
+                                    return false;
+                                })
+                            );
+                            
+                            // Cải thiện partial word matching để xử lý domain names và từ có dấu chấm
                             const hasPartialWordMatch = queryWords.some((queryWord: string) => 
-                                messageWords.some((messageWord: string) => messageWord.includes(queryWord))
+                                messageWords.some((messageWord: string) => {
+                                    // Exact match
+                                    if (messageWord === queryWord) return true;
+                                    
+                                    // Partial match (query word là substring của message word)
+                                    if (messageWord.includes(queryWord)) return true;
+                                    
+                                    // Reverse partial match (message word là substring của query word)
+                                    if (queryWord.includes(messageWord) && messageWord.length >= 3) return true;
+                                    
+                                    // Special handling for domain-like words (có dấu chấm)
+                                    if (messageWord.includes('.') && queryWord.includes('.')) {
+                                        // So sánh từng phần domain
+                                        const messageParts = messageWord.split('.');
+                                        const queryParts = queryWord.split('.');
+                                        
+                                        // Kiểm tra nếu tất cả query parts có trong message parts
+                                        return queryParts.every(queryPart => 
+                                            messageParts.some(messagePart => 
+                                                messagePart.includes(queryPart) || queryPart.includes(messagePart)
+                                            )
+                                        );
+                                    }
+                                    
+                                    // Special handling: nếu message word có dấu chấm và query word không có
+                                    if (messageWord.includes('.') && !queryWord.includes('.')) {
+                                        const messageParts = messageWord.split('.');
+                                        return messageParts.some(part => part.includes(queryWord) || queryWord.includes(part));
+                                    }
+                                    
+                                    // Special handling: nếu query word có dấu chấm và message word không có
+                                    if (!messageWord.includes('.') && queryWord.includes('.')) {
+                                        const queryParts = queryWord.split('.');
+                                        return queryParts.some(part => messageWord.includes(part) || part.includes(messageWord));
+                                    }
+                                    
+                                    return false;
+                                })
                             );
                             
                             // Chỉ chấp nhận partial match nếu query đủ dài (>= 3 chars)
@@ -610,7 +760,10 @@ function searchInTimeline(
                                 component.toLowerCase().includes(lcSearchTerm)
                             );
                             
-                            if (hasExactMatch || hasExactWordMatch || isValidPartialMatch || hasUrlMatch) {
+                            // Enhanced partial match validation
+                            const isValidEnhancedPartialMatch = lcSearchTerm.length >= 3 && hasEnhancedPartialMatch;
+                            
+                            if (hasExactMatch || hasExactWordMatch || isValidPartialMatch || isValidEnhancedPartialMatch || hasUrlMatch) {
                                 return { found: true, message: content.body };
                             }
                         }
@@ -1287,7 +1440,10 @@ async function serverSideSearch(
                                     component.toLowerCase().includes(lcTerm)
                                 );
                                 
-                                if (!hasExactMatch && !hasUrlMatch) {
+                                // Kiểm tra enhanced partial matching
+                                const hasEnhancedMatch = enhancedSearchWithRelevance(lcTerm, bodyText);
+                                
+                                if (!hasExactMatch && !hasUrlMatch && !hasEnhancedMatch) {
                                     continue; // không khớp keyword
                                 }
                             }
@@ -1874,6 +2030,27 @@ async function localSearch(
             `*${actualSearchTerm}`,  // Suffix matching
         ];
         
+        // Thêm các wildcard terms đặc biệt cho domain names
+        if (actualSearchTerm.includes('.')) {
+            // Nếu search term có dấu chấm, thêm các biến thể
+            const domainParts = actualSearchTerm.split('.');
+            if (domainParts.length >= 2) {
+                const mainDomain = domainParts[0];
+                const extension = domainParts.slice(1).join('.');
+                wildcardTerms.push(
+                    `*${mainDomain}*`, // Tìm "tradelle" trong "tradelle.io"
+                    `${mainDomain}*`,  // Prefix matching cho main domain
+                    `*${extension}*`,  // Tìm extension
+                );
+            }
+        } else {
+            // Nếu search term không có dấu chấm, thêm các biến thể với dấu chấm
+            wildcardTerms.push(
+                `*${actualSearchTerm}.*`, // Tìm "tradelle" trong "tradelle.io"
+                `${actualSearchTerm}.*`,  // Prefix matching với extension
+            );
+        }
+        
         for (const wildcardTerm of wildcardTerms) {
             const wildcardArgs = { ...searchArgs, search_term: wildcardTerm };
             try {
@@ -1912,6 +2089,34 @@ async function localSearch(
                 const substring = actualSearchTerm.substring(i, i + 3);
                 if (substring.length >= 3) {
                     broadSearchTerms.push(substring);
+                }
+            }
+        }
+        
+        // Thêm logic đặc biệt cho domain names
+        if (actualSearchTerm.includes('.')) {
+            const domainParts = actualSearchTerm.split('.');
+            if (domainParts.length >= 2) {
+                const mainDomain = domainParts[0];
+                const extension = domainParts.slice(1).join('.');
+                
+                // Thêm main domain nếu đủ dài
+                if (mainDomain.length >= 3) {
+                    broadSearchTerms.push(mainDomain);
+                }
+                
+                // Thêm extension nếu đủ dài
+                if (extension.length >= 3) {
+                    broadSearchTerms.push(extension);
+                }
+            }
+        } else {
+            // Nếu không có dấu chấm, thêm các biến thể có thể có dấu chấm
+            if (actualSearchTerm.length >= 4) {
+                // Thử thêm các extension phổ biến
+                const commonExtensions = ['io', 'com', 'net', 'org', 'co'];
+                for (const ext of commonExtensions) {
+                    broadSearchTerms.push(`${actualSearchTerm}.${ext}`);
                 }
             }
         }
