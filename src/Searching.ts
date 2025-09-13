@@ -1454,7 +1454,7 @@ async function serverSideSearch(
             }
         }
 
-        const searchStrategies = [
+        let searchStrategies = [
             { term: base, description: "exact" },
             { term: withoutProtocol, description: "without protocol" },
             { term: domainOnly, description: "domain only" },
@@ -1463,7 +1463,22 @@ async function serverSideSearch(
             { term: fragment, description: "fragment" },
             ...searchTerms.map((t: string) => ({ term: t, description: "keyword/domain search" })),
             ...additionalStrategies,
-        ].slice(0, dynamicLimits.strategies); // Giới hạn số strategies
+        ];
+
+        // Ưu tiên biến thể có ích (ví dụ: domain) và loại bỏ phần tử trùng/tương đương với term gốc
+        // Điều này tránh trường hợp các mục đầu tiên đều bằng với term gốc và bị skip, khiến không chiến lược nào chạy.
+        const seenTerms = new Set<string>();
+        const filteredStrategies = [] as { term: string; description: string }[];
+        for (const s of searchStrategies) {
+            if (!s.term) continue;
+            if (s.term === term) continue; // bỏ biến thể trùng term gốc
+            if (seenTerms.has(s.term)) continue; // bỏ trùng lặp
+            seenTerms.add(s.term);
+            filteredStrategies.push(s);
+        }
+
+        // Cắt theo giới hạn sau khi đã lọc, đảm bảo luôn còn ít nhất 1 biến thể hữu ích (vd: `${term}.com`)
+        searchStrategies = filteredStrategies.slice(0, dynamicLimits.strategies);
 
         // let bestResponse = null;
         // let bestQuery: ISearchRequestBody | null = null;

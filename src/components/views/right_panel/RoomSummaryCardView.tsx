@@ -222,11 +222,13 @@ const RoomSummaryCardView: React.FC<IProps> = ({
 
             const currentRoomId = SdkContextClass.instance.roomViewStore.getRoomId();
             if (currentRoomId === roomIdForJumpRequest) {
-                // Thoát chế độ tìm kiếm (nếu đang bật) để đảm bảo nhảy trên timeline chính
+                // Exit search mode (if enabled) to ensure jump on main timeline
                 onSearchCancel?.();
-                // Đánh dấu để mở lại dropdown sau khi timeline re-render (RightPanel có thể remount)
+                // Mark to reopen dropdown after timeline re-render (RightPanel may remount)
                 (window as any).__reopenDateDropdown = true;
-                // Lưu pixelOffset mong muốn; sẽ tinh chỉnh lại bằng DOM ngay sau khi render
+                // Mark to adjust scroll after jump to date
+                (window as any).__shouldAdjustDateHeader = true;
+                // Save desired pixelOffset; will fine-tune with DOM after render
                 RoomScrollStateStore.setScrollState(roomIdForJumpRequest, { focussedEvent: eventId, pixelOffset: 0 });
                 dispatcher.dispatch({
                     action: Action.ViewRoom,
@@ -237,7 +239,7 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                     metricsTrigger: undefined,
                 });
 
-                // Căn chính xác header ngày tương ứng với eventId vừa nhảy đến
+                // Align date header precisely corresponding to the eventId just jumped to
                 const alignHeader = () => {
                     const scrollNode = document.querySelector('.mx_ScrollPanel') as HTMLElement | null;
                     const targetNode = document.querySelector(`[data-scroll-token="${CSS.escape(eventId)}"]`) as HTMLElement | null;
@@ -249,7 +251,7 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                     }
                     if (chosen) scrollNode.scrollTop = chosen.offsetTop;
                 };
-                // Gọi nhiều nhịp để đảm bảo sau khi timeline render xong
+                // Call multiple times to ensure after timeline render is complete
                 window.requestAnimationFrame(alignHeader);
                 setTimeout(alignHeader, 80);
                 setTimeout(alignHeader, 200);
@@ -288,36 +290,41 @@ const RoomSummaryCardView: React.FC<IProps> = ({
             }, 0);
         }
         
-        // Lưu focus state cho lần render tiếp theo
+        // Save focus state for next render
         lastFocusState.current = wasInputFocused;
     }, [searchTerm, vm.searchInputRef]);
     
-    // Effect để bảo vệ focus khi component re-render do các props khác
+    // Effect to protect focus when component re-renders due to other props
     useEffect(() => {
-        // Nếu có yêu cầu mở lại dropdown lịch sau khi remount, thực hiện ngay
+        // If there's a request to reopen date dropdown after remount, do it immediately
         if ((window as any).__reopenDateDropdown) {
             setShowDateFilter(true);
             (window as any).__reopenDateDropdown = false;
         }
-        // Sau khi timeline ổn định, cố gắng căn header ngày sát top
-        const adjustToDateHeader = () => {
-            const scrollNode = document.querySelector('.mx_ScrollPanel') as HTMLElement | null;
-            const headers = Array.from(document.querySelectorAll('.mx_DateSeparator_dateContent')) as HTMLElement[];
-            if (!scrollNode || !headers.length) return;
-            const currentTop = scrollNode.scrollTop;
-            let candidate: HTMLElement | null = null;
-            for (const h of headers) {
-                if (h.offsetTop >= currentTop - 4) { candidate = h; break; }
-            }
-            if (candidate) scrollNode.scrollTop = candidate.offsetTop;
-        };
-        setTimeout(adjustToDateHeader, 60);
-        window.requestAnimationFrame(adjustToDateHeader);
-        setTimeout(adjustToDateHeader, 180);
-        // Kiểm tra xem có phải input đang được focus không
+        // Only auto-adjust scroll when specifically requested (e.g., after date jump)
+        // Remove automatic scroll adjustment to prevent unwanted scrolling when opening right panel
+        const shouldAdjustScroll = (window as any).__shouldAdjustDateHeader;
+        if (shouldAdjustScroll) {
+            (window as any).__shouldAdjustDateHeader = false;
+            const adjustToDateHeader = () => {
+                const scrollNode = document.querySelector('.mx_ScrollPanel') as HTMLElement | null;
+                const headers = Array.from(document.querySelectorAll('.mx_DateSeparator_dateContent')) as HTMLElement[];
+                if (!scrollNode || !headers.length) return;
+                const currentTop = scrollNode.scrollTop;
+                let candidate: HTMLElement | null = null;
+                for (const h of headers) {
+                    if (h.offsetTop >= currentTop - 4) { candidate = h; break; }
+                }
+                if (candidate) scrollNode.scrollTop = candidate.offsetTop;
+            };
+            setTimeout(adjustToDateHeader, 60);
+            window.requestAnimationFrame(adjustToDateHeader);
+            setTimeout(adjustToDateHeader, 180);
+        }
+        // Check if input is currently focused
         const isInputFocused = vm.searchInputRef.current === document.activeElement;
         
-        // Nếu input đã mất focus nhưng trước đó đang được focus, khôi phục lại
+        // If input lost focus but was previously focused, restore it
         if (!isInputFocused && lastFocusState.current) {
             setTimeout(() => {
                 if (vm.searchInputRef.current && document.activeElement !== vm.searchInputRef.current) {
@@ -326,11 +333,11 @@ const RoomSummaryCardView: React.FC<IProps> = ({
             }, 10);
         }
         
-        // Cập nhật focus state
+        // Update focus state
         lastFocusState.current = isInputFocused;
     });
 
-    // Đóng dropdown khi click bên ngoài
+    // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (showUserFilter) {
@@ -449,7 +456,7 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                         onChange={(e) => {
                             const raw = e.currentTarget.value;
                             setSearchValue(raw);
-                            // Nếu đang chọn một người gửi, luôn kết hợp thành truy vấn duy nhất
+                            // If selecting a sender, always combine into single query
                             const term = selectedSender && selectedSender !== "all"
                                 ? `sender:${selectedSender}${raw ? ` ${raw}` : ""}`
                                 : raw;
@@ -462,12 +469,12 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                         autoFocus={focusRoomSearch}
                         onKeyDown={vm.onUpdateSearchInput}
                         style={{ 
-                            paddingRight: "76px", // Tạo không gian cho 2 nút filter (user + date)
+                            paddingRight: "76px", // Create space for 2 filter buttons (user + date)
                             flex: 1
                         }}
                     />
                     
-                    {/* Nhóm icon filter bên trong ô tìm kiếm: User filter + Date filter */}
+                    {/* Filter icon group inside search box: User filter + Date filter */}
                     <div style={{ 
                         position: "absolute", 
                         right: "8px", 

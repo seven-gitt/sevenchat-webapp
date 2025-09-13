@@ -37,7 +37,7 @@ interface IProps {
 
 export default class MainSplit extends React.Component<IProps> {
     public static defaultProps = {
-        defaultSize: 320,
+        defaultSize: 400,
     };
 
     private onResizeStart = (): void => {
@@ -99,7 +99,7 @@ export default class MainSplit extends React.Component<IProps> {
                 <Resizable
                     key={this.props.sizeKey}
                     defaultSize={this.loadSidePanelSize()}
-                    minWidth={320}
+                    minWidth={380}
                     maxWidth="50%"
                     enable={{
                         top: false,

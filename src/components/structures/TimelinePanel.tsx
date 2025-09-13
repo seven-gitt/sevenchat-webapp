@@ -1207,18 +1207,18 @@ class TimelinePanel extends React.Component<IProps, IState> {
 
     /* jump down to the bottom of this room, where new events are arriving */
     public jumpToLiveTimeline = (): void => {
-        // Luôn cuộn xuống đáy ngay lập tức để phản hồi tức thời cho 1 lần bấm
+        // Always scroll to bottom immediately for instant response to single click
         this.messagePanel.current?.scrollToBottom();
 
-        // Nếu còn có thể forward-paginate, reload timeline ở nền để đồng bộ
-        // nhưng vẫn giữ vị trí cuối sau khi load xong.
+        // If we can still forward-paginate, reload timeline in background to sync
+        // but keep the bottom position after loading is complete.
         if (this.timelineWindow?.canPaginate(EventTimeline.FORWARDS)) {
             this.setState({ canBackPaginate: false });
             this.loadTimeline(undefined, undefined, undefined, true);
             return;
         }
 
-        // Nếu đã ở live timeline, cập nhật state nhẹ để đảm bảo UI đúng
+        // If already at live timeline, update state lightly to ensure correct UI
         this.setState({
             canForwardPaginate: false,
             timelineLoading: false,
@@ -1396,7 +1396,11 @@ class TimelinePanel extends React.Component<IProps, IState> {
                 this.messagePanel.current.scrollToEvent(eventId, pixelOffset, offsetBase);
             } else {
                 debuglog("TimelinePanel scrolling to bottom");
-                this.messagePanel.current.scrollToBottom();
+                // Ensure scroll to bottom of timeline (newest messages)
+                // with a small delay to ensure DOM has rendered
+                setTimeout(() => {
+                    this.messagePanel.current?.scrollToBottom();
+                }, 100);
             }
         };
 
@@ -1583,38 +1587,65 @@ class TimelinePanel extends React.Component<IProps, IState> {
     private getEvents(): Pick<IState, "events" | "liveEvents"> {
         const events = this.timelineWindow!.getEvents();
 
+        // Ensure events are sorted in correct chronological order (oldest -> newest)
+        // This is important to avoid displaying messages in wrong order
+        const sortedEvents = [...events].sort((a, b) => {
+            const tsA = a.getTs();
+            const tsB = b.getTs();
+            if (tsA === tsB) {
+                // If timestamps are the same, sort by index in timeline
+                return events.indexOf(a) - events.indexOf(b);
+            }
+            return tsA - tsB;
+        });
+
+        // Debug log to track message ordering
+        if (sortedEvents.length > 0 && events.length > 0) {
+            const firstEvent = sortedEvents[0];
+            const lastEvent = sortedEvents[sortedEvents.length - 1];
+            debuglog("TimelinePanel: Event ordering", {
+                totalEvents: sortedEvents.length,
+                firstEventTime: new Date(firstEvent.getTs()).toLocaleString(),
+                lastEventTime: new Date(lastEvent.getTs()).toLocaleString(),
+                firstEventId: firstEvent.getId(),
+                lastEventId: lastEvent.getId()
+            });
+        }
+
         // We want the last event to be decrypted first
         const client = MatrixClientPeg.safeGet();
-        for (let i = events.length - 1; i >= 0; --i) {
-            client.decryptEventIfNeeded(events[i]);
+        for (let i = sortedEvents.length - 1; i >= 0; --i) {
+            client.decryptEventIfNeeded(sortedEvents[i]);
         }
 
         // Hold onto the live events separately. The read receipt and read marker
         // should use this list, so that they don't advance into pending events.
-        const liveEvents = [...events];
+        const liveEvents = [...sortedEvents];
 
         // if we're at the end of the live timeline, append the pending events
         if (!this.timelineWindow!.canPaginate(EventTimeline.FORWARDS)) {
             const pendingEvents = this.props.timelineSet.getPendingEvents();
-            events.push(
-                ...pendingEvents.filter((event) => {
-                    const { shouldLiveInRoom, threadId } = this.props.timelineSet.room!.eventShouldLiveIn(
-                        event,
-                        pendingEvents,
-                    );
+            const filteredPendingEvents = pendingEvents.filter((event) => {
+                const { shouldLiveInRoom, threadId } = this.props.timelineSet.room!.eventShouldLiveIn(
+                    event,
+                    pendingEvents,
+                );
 
-                    if (this.context.timelineRenderingType === TimelineRenderingType.Thread) {
-                        return threadId === this.context.threadId;
-                    }
-                    {
-                        return shouldLiveInRoom;
-                    }
-                }),
-            );
+                if (this.context.timelineRenderingType === TimelineRenderingType.Thread) {
+                    return threadId === this.context.threadId;
+                }
+                {
+                    return shouldLiveInRoom;
+                }
+            });
+            
+            // Sort pending events by time and add to the end
+            const sortedPendingEvents = filteredPendingEvents.sort((a, b) => a.getTs() - b.getTs());
+            sortedEvents.push(...sortedPendingEvents);
         }
 
         return {
-            events,
+            events: sortedEvents,
             liveEvents,
         };
     }
