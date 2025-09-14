@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import BaseCard from "./BaseCard";
 import { _t } from "../../../languageHandler";
 import { type Room, type MatrixEvent, type RoomMember, Direction } from "matrix-js-sdk/src/matrix";
@@ -10,17 +10,14 @@ interface Props {
     onClose: () => void;
 }
 
-// Regex để nhận diện URL có protocol (bao gồm cả port)
-const URL_WITH_PROTOCOL_REGEX = /https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/gi;
-// Regex để nhận diện domain pattern (ví dụ: example.com, sub.example.com)
-// Chỉ nhận diện domain có ít nhất 2 phần và phần cuối có ít nhất 2 ký tự
-// Loại bỏ các pattern số tiền (ví dụ: 168.000, 1.000.000)
-// Cải thiện để nhận diện tốt hơn các domain phức tạp
-const DOMAIN_REGEX = /\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\b(?:\/[\w\-._~:/?#[\]@!$&'()*+,;=%]*)?/gi;
-// Regex để nhận diện domain với port (ví dụ: localhost:3000, example.com:8080)
-const DOMAIN_WITH_PORT_REGEX = /\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?:\d{1,5}\b(?:\/[\w\-._~:/?#[\]@!$&'()*+,;=%]*)?/gi;
-// Regex để nhận diện IP address với port (ví dụ: 192.168.1.1:8080, [::1]:3000)
-const IP_WITH_PORT_REGEX = /\b(?:\d{1,3}\.){3}\d{1,3}:\d{1,5}\b(?:\/[\w\-._~:/?#[\]@!$&'()*+,;=%]*)?/gi;
+// Regex tối ưu hóa để nhận diện URL có protocol
+const URL_WITH_PROTOCOL_REGEX = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+// Regex đơn giản hóa để nhận diện domain pattern
+const DOMAIN_REGEX = /\b[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}\b/gi;
+// Regex để nhận diện domain với port
+const DOMAIN_WITH_PORT_REGEX = /\b[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}:\d{1,5}\b/gi;
+// Regex để nhận diện IP address với port
+const IP_WITH_PORT_REGEX = /\b(?:\d{1,3}\.){3}\d{1,3}:\d{1,5}\b/gi;
 
 interface UrlInfo {
     original: string;
@@ -66,84 +63,63 @@ function extractUrlsFromEvent(ev: MatrixEvent): UrlInfo[] {
     }
     
     const urls: UrlInfo[] = [];
+    const body = content.body;
     
-    // Tìm URL có protocol
-    const protocolMatches = content.body.match(URL_WITH_PROTOCOL_REGEX) || [];
+    // Tìm URL có protocol trước (ưu tiên cao nhất)
+    const protocolMatches = body.match(URL_WITH_PROTOCOL_REGEX) || [];
+    const protocolDomains = new Set<string>();
+    
     protocolMatches.forEach(url => {
-        // Lọc bỏ các URL của file media
         if (!isMediaUrl(url)) {
             urls.push({ original: url, processed: url });
+            // Lưu hostname để tránh trùng lặp
+            try {
+                protocolDomains.add(new URL(url).hostname);
+            } catch {
+                // Ignore invalid URLs
+            }
         }
     });
     
-    // Tìm domain patterns và loại bỏ những cái đã có protocol
-    const domainMatches = content.body.match(DOMAIN_REGEX) || [];
-    const domainWithPortMatches = content.body.match(DOMAIN_WITH_PORT_REGEX) || [];
-    const ipWithPortMatches = content.body.match(IP_WITH_PORT_REGEX) || [];
-    const protocolDomains = new Set(protocolMatches.map(url => {
-        try {
-            return new URL(url).hostname;
-        } catch {
-            return url;
-        }
-    }));
-    
-    // Thêm domain không có protocol
-    domainMatches.forEach(domain => {
-        if (!protocolDomains.has(domain)) {
-            // Kiểm tra xem có phải là domain hợp lệ không
-            if (domain.includes('.') && !domain.startsWith('.')) {
-                // Loại bỏ các pattern số tiền
-                if (!isCurrencyAmount(domain)) {
-                    // Kiểm tra thêm các trường hợp đặc biệt
-                    const cleanDomain = domain.replace(/\/$/, ''); // Loại bỏ trailing slash
-                    
-                    // Kiểm tra xem có phải là domain thực sự không (có ít nhất 2 phần)
-                    const parts = cleanDomain.split('.');
-                    if (parts.length >= 2 && parts.every(part => part.length > 0)) {
-                        const fullUrl = 'https://' + cleanDomain;
-                        if (!isMediaUrl(fullUrl)) {
-                            urls.push({ original: cleanDomain, processed: fullUrl });
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    // Thêm domain với port
-    domainWithPortMatches.forEach(domainWithPort => {
-        if (!protocolDomains.has(domainWithPort)) {
-            // Kiểm tra xem có phải là domain với port hợp lệ không
-            if (domainWithPort.includes(':') && !domainWithPort.startsWith('.')) {
-                // Loại bỏ các pattern số tiền
-                if (!isCurrencyAmount(domainWithPort)) {
-                    const cleanDomainWithPort = domainWithPort.replace(/\/$/, ''); // Loại bỏ trailing slash
-                    const fullUrl = 'https://' + cleanDomainWithPort;
+    // Tìm domain patterns (chỉ nếu chưa có protocol)
+    if (protocolMatches.length === 0) {
+        const domainMatches = body.match(DOMAIN_REGEX) || [];
+        const domainWithPortMatches = body.match(DOMAIN_WITH_PORT_REGEX) || [];
+        const ipWithPortMatches = body.match(IP_WITH_PORT_REGEX) || [];
+        
+        // Xử lý domain thường
+        domainMatches.forEach(domain => {
+            if (!isCurrencyAmount(domain) && domain.includes('.') && !domain.startsWith('.')) {
+                const parts = domain.split('.');
+                if (parts.length >= 2 && parts.every(part => part.length > 0)) {
+                    const fullUrl = 'https://' + domain;
                     if (!isMediaUrl(fullUrl)) {
-                        urls.push({ original: cleanDomainWithPort, processed: fullUrl });
+                        urls.push({ original: domain, processed: fullUrl });
                     }
                 }
             }
-        }
-    });
+        });
 
-    // Thêm IP address với port
-    ipWithPortMatches.forEach(ipWithPort => {
-        if (!protocolDomains.has(ipWithPort)) {
-            // Kiểm tra xem có phải là IP với port hợp lệ không
-            if (ipWithPort.includes(':') && !ipWithPort.startsWith('.')) {
-                // Loại bỏ các pattern số tiền
-                if (!isCurrencyAmount(ipWithPort)) {
-                    const cleanIpWithPort = ipWithPort.replace(/\/$/, ''); // Loại bỏ trailing slash
-                    const fullUrl = 'http://' + cleanIpWithPort; // Sử dụng http cho IP addresses
-                    if (!isMediaUrl(fullUrl)) {
-                        urls.push({ original: cleanIpWithPort, processed: fullUrl });
-                    }
+        // Xử lý domain với port
+        domainWithPortMatches.forEach(domainWithPort => {
+            if (!isCurrencyAmount(domainWithPort) && domainWithPort.includes(':')) {
+                const fullUrl = 'https://' + domainWithPort;
+                if (!isMediaUrl(fullUrl)) {
+                    urls.push({ original: domainWithPort, processed: fullUrl });
                 }
             }
-        }
-    });
+        });
+
+        // Xử lý IP với port
+        ipWithPortMatches.forEach(ipWithPort => {
+            if (!isCurrencyAmount(ipWithPort) && ipWithPort.includes(':')) {
+                const fullUrl = 'http://' + ipWithPort;
+                if (!isMediaUrl(fullUrl)) {
+                    urls.push({ original: ipWithPort, processed: fullUrl });
+                }
+            }
+        });
+    }
     
     return urls;
 }
@@ -229,6 +205,9 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
     const [selectedSender, setSelectedSender] = useState<string>("all");
     const [urlEvents, setUrlEvents] = useState<Array<{ ev: MatrixEvent; urls: UrlInfo[] }>>([]);
     const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [hasMoreUrls, setHasMoreUrls] = useState<boolean>(true);
+    const [loadingMore, setLoadingMore] = useState<boolean>(false);
+    const [displayLimit, setDisplayLimit] = useState<number>(50);
     const isUnmountedRef = useRef(false);
 
     useEffect(() => {
@@ -240,7 +219,7 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
         };
     }, [room.roomId]);
 
-    // Thu thập toàn bộ link trong lịch sử phòng bằng cách phân trang ngược
+    // Thu thập link trong lịch sử phòng với progressive loading
     useEffect(() => {
         let cancelled = false;
         const run = async (): Promise<void> => {
@@ -257,7 +236,8 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
                     
                     // Nếu không có event mới, sử dụng cache
                     if (!latestEvent || cached.lastEventId === latestEvent.getId()) {
-                        setUrlEvents(cached.data);
+                        setUrlEvents(cached.data.slice(0, displayLimit));
+                        setHasMoreUrls(cached.data.length > displayLimit);
                         setIsLoading(false);
                         console.log(`Using cached URLs for room ${room.roomId} (${cached.data.length} URLs)`);
                         return;
@@ -272,7 +252,8 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
                         // Không có URL mới, cập nhật cache và sử dụng
                         cached.lastEventId = latestEvent.getId() || null;
                         cached.lastUpdate = Date.now();
-                        setUrlEvents(cached.data);
+                        setUrlEvents(cached.data.slice(0, displayLimit));
+                        setHasMoreUrls(cached.data.length > displayLimit);
                         setIsLoading(false);
                         console.log(`No new URLs found, using cached data for room ${room.roomId}`);
                         return;
@@ -281,6 +262,7 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
                 
                 setIsLoading(true);
                 setUrlEvents([]);
+                setHasMoreUrls(true);
 
                 // Sử dụng Map để dedupe theo eventId + urlProcessed
                 const aggregated: Map<string, { ev: MatrixEvent; urls: UrlInfo[] }> = new Map();
@@ -315,10 +297,19 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
                     collectFromEvents(neighbouringEvents);
                 }
 
-                // Paginate ngược để lấy toàn bộ lịch sử phòng
+                // Hiển thị ngay những URL đã tìm thấy
+                if (aggregated.size > 0) {
+                    const initialList = Array.from(aggregated.values())
+                        .sort((a, b) => (b.ev.getTs() - a.ev.getTs()))
+                        .slice(0, displayLimit);
+                    setUrlEvents(initialList);
+                    setIsLoading(false);
+                }
+
+                // Paginate ngược để lấy thêm lịch sử (giới hạn 10 trang để tăng tốc)
                 let currentTimeline = liveTimeline;
                 let hasMoreEvents = true;
-                const maxPages = 50; // Giới hạn để tránh vòng lặp vô hạn
+                const maxPages = 10; // Giảm từ 50 xuống 10 để tăng tốc
                 let pageCount = 0;
 
                 while (hasMoreEvents && pageCount < maxPages && !cancelled && !isUnmountedRef.current) {
@@ -336,11 +327,12 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
                                 collectFromEvents(newEvents);
                                 pageCount++;
                                 
-                                // Cập nhật UI với progress
-                                if (pageCount % 5 === 0) {
+                                // Cập nhật UI với progress mỗi 2 trang
+                                if (pageCount % 2 === 0) {
                                     const list = Array.from(aggregated.values())
                                         .sort((a, b) => (b.ev.getTs() - a.ev.getTs()));
-                                    setUrlEvents(list);
+                                    setUrlEvents(list.slice(0, displayLimit));
+                                    setHasMoreUrls(list.length > displayLimit);
                                 }
                             } else {
                                 hasMoreEvents = false;
@@ -357,7 +349,6 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
                 if (cancelled || isUnmountedRef.current) return;
 
                 // Chuyển Map -> mảng và sắp xếp theo thời gian giảm dần (mới nhất trước)
-                // để hiển thị các link mới nhất lên đầu
                 const list = Array.from(aggregated.values())
                     .sort((a, b) => (b.ev.getTs() - a.ev.getTs()));
                 
@@ -370,7 +361,8 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
                 });
                 
                 console.log(`Cached ${list.length} URLs for room ${room.roomId}`);
-                setUrlEvents(list);
+                setUrlEvents(list.slice(0, displayLimit));
+                setHasMoreUrls(list.length > displayLimit);
                 
             } finally {
                 if (!cancelled && !isUnmountedRef.current) setIsLoading(false);
@@ -384,7 +376,7 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
         return () => {
             cancelled = true;
         };
-    }, [client, room]);
+    }, [client, room, displayLimit]);
 
     // Lấy danh sách người gửi có gửi URL
     const senders = useMemo(() => {
@@ -398,6 +390,24 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
         });
         return Array.from(map.entries());
     }, [urlEvents, room]);
+
+    // Hàm để tải thêm URL
+    const loadMoreUrls = useCallback(() => {
+        if (loadingMore || !hasMoreUrls) return;
+        
+        setLoadingMore(true);
+        const cacheKey = room.roomId;
+        const cached = urlCache.get(cacheKey);
+        
+        if (cached && cached.data.length > displayLimit) {
+            const newLimit = displayLimit + 50;
+            setDisplayLimit(newLimit);
+            setUrlEvents(cached.data.slice(0, newLimit));
+            setHasMoreUrls(cached.data.length > newLimit);
+        }
+        
+        setLoadingMore(false);
+    }, [loadingMore, hasMoreUrls, displayLimit, room.roomId]);
 
     // Lọc theo người gửi nếu đã chọn
     const filteredUrlEvents = selectedSender === "all"
@@ -477,6 +487,32 @@ const UrlsPanel: React.FC<Props> = ({ room, onClose }) => {
                             ))
                         ))}
                     </ul>
+                    
+                    {/* Nút Load More */}
+                    {hasMoreUrls && (
+                        <div style={{textAlign: 'center', marginTop: 16, paddingTop: 16, borderTop: '1px solid #eee'}}>
+                            <button
+                                onClick={loadMoreUrls}
+                                disabled={loadingMore}
+                                style={{
+                                    padding: '8px 16px',
+                                    backgroundColor: '#1976d2',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: 4,
+                                    cursor: loadingMore ? 'not-allowed' : 'pointer',
+                                    opacity: loadingMore ? 0.6 : 1,
+                                    fontSize: 14,
+                                    fontWeight: 500
+                                }}
+                            >
+                                {loadingMore ? 'Đang tải...' : 'Tải thêm'}
+                            </button>
+                            <div style={{fontSize: 12, color: '#888', marginTop: 8}}>
+                                Hiển thị {filteredUrlEvents.length} URL gần nhất
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </BaseCard>
