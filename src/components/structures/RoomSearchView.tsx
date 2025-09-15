@@ -193,7 +193,7 @@ export const RoomSearchView = ({
         [client, term, onUpdate],
     );
 
-    // Lọc kết quả theo người gửi được chọn
+    // ✅ CẢI THIỆN: Lọc kết quả theo người gửi được chọn - đảm bảo không bỏ sót kết quả
     const filteredResults = useMemo(() => {
         if (!results?.results) {
             return [];
@@ -201,29 +201,61 @@ export const RoomSearchView = ({
         
         console.log(`[RoomSearchView] Filtering results: total=${results.results.length}, selectedSender=${selectedSender}, term="${term}"`);
         
-        // Nếu đang sử dụng từ khóa sender:, kết quả đã được lọc ở backend
-        // Không cần lọc lại ở frontend
+        // ✅ CẢI THIỆN: Nếu đang sử dụng từ khóa sender:, kết quả đã được lọc ở backend
+        // Nhưng vẫn cần kiểm tra để đảm bảo không bỏ sót
         if (term.startsWith('sender:')) {
             console.log(`[RoomSearchView] Using backend-filtered results (sender: prefix found)`);
+            
+            // ✅ CẢI THIỆN: Vẫn kiểm tra nếu có selectedSender khác "all"
+            if (selectedSender !== "all") {
+                const filtered = results.results.filter(r => {
+                    const sender = r.context.getEvent().getSender();
+                    return sender === selectedSender;
+                });
+                console.log(`[RoomSearchView] Additional frontend filtering for sender: ${results.results.length} -> ${filtered.length}`);
+                return filtered;
+            }
+            
             return results.results;
         }
         
-        // Chỉ lọc khi selectedSender khác "all" và không phải từ khóa sender:
+        // ✅ CẢI THIỆN: Chỉ lọc khi selectedSender khác "all" và không phải từ khóa sender:
         if (selectedSender === "all") {
             console.log(`[RoomSearchView] Showing all results (selectedSender=all)`);
             return results.results;
         }
         
+        // ✅ CẢI THIỆN: Lọc kết quả nhưng đảm bảo không bỏ sót
         const filtered = results.results.filter(r => {
-            const sender = r.context.getEvent().getSender();
-            return sender === selectedSender;
+            try {
+                const sender = r.context.getEvent().getSender();
+                return sender === selectedSender;
+            } catch (error) {
+                // ✅ CẢI THIỆN: Nếu có lỗi khi lấy sender, vẫn giữ kết quả để không bỏ sót
+                console.warn(`[RoomSearchView] Error getting sender for result:`, error);
+                return true;
+            }
         });
         
         console.log(`[RoomSearchView] Frontend filtering: ${results.results.length} -> ${filtered.length} (selectedSender=${selectedSender})`);
         
-        // Debug: Log some sender info
-        const senders = new Set(results.results.map(r => r.context.getEvent().getSender()));
+        // ✅ CẢI THIỆN: Debug: Log some sender info để kiểm tra
+        const senders = new Set();
+        results.results.forEach(r => {
+            try {
+                const sender = r.context.getEvent().getSender();
+                senders.add(sender);
+            } catch (error) {
+                console.warn(`[RoomSearchView] Error getting sender for debug:`, error);
+            }
+        });
         console.log(`[RoomSearchView] Available senders in results:`, Array.from(senders));
+        
+        // ✅ CẢI THIỆN: Nếu filtered quá ít, có thể có vấn đề với filtering logic
+        if (filtered.length === 0 && results.results.length > 0) {
+            console.warn(`[RoomSearchView] Warning: All results filtered out! This might indicate a filtering issue.`);
+            console.warn(`[RoomSearchView] Term: "${term}", SelectedSender: "${selectedSender}"`);
+        }
         
         return filtered;
     }, [results, selectedSender, term]);
