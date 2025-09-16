@@ -396,10 +396,26 @@ export const RoomSearchView = ({
 
     // Sử dụng filteredResults để hiển thị kết quả đã lọc
     const searchResults = filteredResults;
-    
-    // Render newest first: iterate from start to end (server already returns
-    // newest-first, so we keep that order instead of reversing it).
-    for (let i = 0; i < (searchResults.length || 0); i++) {
+
+    // Detect provider ordering and iterate so UI is always newest-first.
+    const getResultTs = (idx: number): number => {
+        try {
+            const ev = searchResults[idx]?.context?.getEvent?.();
+            const ts = (searchResults[idx] as any)?.result?.origin_server_ts;
+            return typeof ts === "number" ? ts : ev?.getTs?.() ?? 0;
+        } catch {
+            return 0;
+        }
+    };
+    const len = searchResults.length || 0;
+    const firstTs = len > 0 ? getResultTs(0) : 0;
+    const lastTs = len > 0 ? getResultTs(len - 1) : 0;
+    const ascending = len > 1 ? firstTs <= lastTs : false; // oldest->newest
+    const start = ascending ? len - 1 : 0;
+    const step = ascending ? -1 : 1;
+    const endCheck = (i: number): boolean => (ascending ? i >= 0 : i < len);
+
+    for (let i = start; endCheck(i); i += step) {
         const result = searchResults[i];
 
         const mxEv = result.context.getEvent();
@@ -437,9 +453,10 @@ export const RoomSearchView = ({
 
         // merging two successive search result if the query is present in both of them
         const currentTimeline = result.context.getTimeline();
-        const nextTimeline = i < (searchResults.length || 0) - 1 ? searchResults[i + 1].context.getTimeline() : [];
+        const nextIndex = i + step;
+        const nextTimeline = endCheck(nextIndex) ? searchResults[nextIndex].context.getTimeline() : [];
 
-        if (i < (searchResults.length || 0) - 1 && currentTimeline[currentTimeline.length - 1].getId() == nextTimeline[0].getId()) {
+        if (endCheck(nextIndex) && currentTimeline[currentTimeline.length - 1].getId() == nextTimeline[0].getId()) {
             // if this is the first searchResult we merge then add all values of the current searchResult
             if (mergedTimeline.length == 0) {
                 for (let j = mergedTimeline.length == 0 ? 0 : 1; j < result.context.getTimeline().length; j++) {
@@ -455,7 +472,7 @@ export const RoomSearchView = ({
 
             // add the index of the matching event of the next searchResult
             ourEventsIndexes.push(
-                ourEventsIndexes[ourEventsIndexes.length - 1] + searchResults[i + 1].context.getOurEventIndex() + 1,
+                ourEventsIndexes[ourEventsIndexes.length - 1] + searchResults[nextIndex].context.getOurEventIndex() + 1,
             );
 
             continue;
