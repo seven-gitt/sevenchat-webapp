@@ -33,6 +33,13 @@ export function preparePlatform(): void {
     if (window.electron) {
         logger.log("Using Electron platform");
         PlatformPeg.set(new ElectronPlatform());
+        // Force-disable spell check on startup so it never
+        // comes up enabled on fresh installs or restarts.
+        try {
+            PlatformPeg.get()?.setSpellCheckEnabled(false);
+        } catch (e) {
+            logger.warn("Failed to force-disable spellcheck at startup", e);
+        }
     } else if (window.matchMedia("(display-mode: standalone)").matches) {
         logger.log("Using PWA platform");
         PlatformPeg.set(new PWAPlatform());

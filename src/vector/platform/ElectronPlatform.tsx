@@ -245,7 +245,9 @@ export default class ElectronPlatform extends BasePlatform {
      * spell-checking, otherwise false.
      */
     public supportsSpellCheckSettings(): boolean {
-        return true;
+        // Disable spell-check settings UI entirely for this build.
+        // We also force spellcheck to be disabled at startup from init.tsx.
+        return false;
     }
 
     public allowOverridingNativeContextMenus(): boolean {

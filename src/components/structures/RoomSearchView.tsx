@@ -323,19 +323,36 @@ export const RoomSearchView = ({
         );
     }
 
-    const onSearchResultsFillRequest = async (backwards: boolean): Promise<boolean> => {
-        if (!backwards) {
-            return false;
-        }
-
+    const onSearchResultsFillRequest = async (_backwards: boolean): Promise<boolean> => {
+        // For search results, keep paginating as long as the server indicates
+        // more pages, regardless of scroll direction.
         if (!results.next_batch) {
             debuglog("no more search results");
             return false;
         }
 
-        debuglog("requesting more search results");
-        const searchPromise = searchPagination(client, results);
-        return handleSearchResult(searchPromise);
+        debuglog("requesting more search results (search view)");
+        // Fetch the next page and compute hasMore from the resolved payload to
+        // avoid relying on async state updates.
+        const pagePromise = searchPagination(client, results);
+        const next = await pagePromise;
+        await handleSearchResult(Promise.resolve(next));
+
+        // If filtering by a specific sender, aggressively prefetch subsequent
+        // pages so the list becomes fully scrollable even when many pages don't
+        // contain matching events. This avoids the UX trap where the viewport
+        // appears to “stop” at a certain day until the panel width changes.
+        if (selectedSender && selectedSender !== "all") {
+            let loops = 0;
+            // hard safety cap: 50 pages per fill request
+            while (results.next_batch && loops < 50) {
+                const more = await searchPagination(client, results);
+                await handleSearchResult(Promise.resolve(more));
+                loops++;
+            }
+        }
+
+        return !!results.next_batch;
     };
 
     const ret: JSX.Element[] = [];
@@ -380,7 +397,9 @@ export const RoomSearchView = ({
     // Sử dụng filteredResults để hiển thị kết quả đã lọc
     const searchResults = filteredResults;
     
-    for (let i = (searchResults.length || 0) - 1; i >= 0; i--) {
+    // Render newest first: iterate from start to end (server already returns
+    // newest-first, so we keep that order instead of reversing it).
+    for (let i = 0; i < (searchResults.length || 0); i++) {
         const result = searchResults[i];
 
         const mxEv = result.context.getEvent();
@@ -418,9 +437,9 @@ export const RoomSearchView = ({
 
         // merging two successive search result if the query is present in both of them
         const currentTimeline = result.context.getTimeline();
-        const nextTimeline = i > 0 ? searchResults[i - 1].context.getTimeline() : [];
+        const nextTimeline = i < (searchResults.length || 0) - 1 ? searchResults[i + 1].context.getTimeline() : [];
 
-        if (i > 0 && currentTimeline[currentTimeline.length - 1].getId() == nextTimeline[0].getId()) {
+        if (i < (searchResults.length || 0) - 1 && currentTimeline[currentTimeline.length - 1].getId() == nextTimeline[0].getId()) {
             // if this is the first searchResult we merge then add all values of the current searchResult
             if (mergedTimeline.length == 0) {
                 for (let j = mergedTimeline.length == 0 ? 0 : 1; j < result.context.getTimeline().length; j++) {
@@ -436,7 +455,7 @@ export const RoomSearchView = ({
 
             // add the index of the matching event of the next searchResult
             ourEventsIndexes.push(
-                ourEventsIndexes[ourEventsIndexes.length - 1] + searchResults[i - 1].context.getOurEventIndex() + 1,
+                ourEventsIndexes[ourEventsIndexes.length - 1] + searchResults[i + 1].context.getOurEventIndex() + 1,
             );
 
             continue;
@@ -476,6 +495,8 @@ export const RoomSearchView = ({
             className={"mx_RoomView_searchResultsPanel " + className}
             onFillRequest={onSearchResultsFillRequest}
             resizeNotifier={resizeNotifier}
+            stickyBottom={false}
+            startAtBottom={false}
         >
             <li className="mx_RoomView_scrollheader" />
             {ret}
