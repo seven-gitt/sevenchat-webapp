@@ -33,6 +33,7 @@ interface IState {
 
 export default class MultiImageUploadDialog extends React.Component<IProps, IState> {
     private captionRef = React.createRef<HTMLDivElement>();
+    private autocompleteRef = React.createRef<Autocomplete>();
 
     constructor(props: IProps) {
         super(props);
@@ -65,8 +66,29 @@ export default class MultiImageUploadDialog extends React.Component<IProps, ISta
         }, 0);
     }
 
-    private onCaptionKeyDown = (ev: React.KeyboardEvent): void => {
+    private onCaptionKeyDown = (ev: React.KeyboardEvent<HTMLDivElement>): void => {
         if (ev.key === "Enter" && !ev.shiftKey) {
+            const autocomplete = this.autocompleteRef.current;
+            if (this.state.query) {
+                ev.preventDefault();
+                if (autocomplete) {
+                    const count = autocomplete.countCompletions();
+                    if (count > 0) {
+                        autocomplete.onConfirmCompletion();
+                    } else {
+                        void autocomplete.forceComplete().then((forcedCount) => {
+                            if (forcedCount > 0) {
+                                autocomplete.onConfirmCompletion();
+                            } else {
+                                this.onSendClick();
+                            }
+                        });
+                    }
+                } else {
+                    this.onSendClick();
+                }
+                return;
+            }
             ev.preventDefault();
             this.onSendClick();
         }
@@ -113,7 +135,7 @@ export default class MultiImageUploadDialog extends React.Component<IProps, ISta
             this.setState(
                 {
                     query: q,
-                    selection: { start, end: caret },
+                    selection: { start: q.length, end: q.length, beginning: true },
                 },
                 () => {
                     // Ensure autocomplete list scrolls to bottom
@@ -126,7 +148,9 @@ export default class MultiImageUploadDialog extends React.Component<IProps, ISta
                 },
             );
         } else {
-            this.setState({ query: "", selection: { start: 0, end: 0 } });
+            if (this.state.query !== "") {
+                this.setState({ query: "", selection: { start: 0, end: 0 } });
+            }
         }
     }
 
@@ -354,6 +378,7 @@ export default class MultiImageUploadDialog extends React.Component<IProps, ISta
                         {room && query && (
                             <div className="mx_ImageUploadDialog_autocompleteWrapper">
                                 <Autocomplete
+                                    ref={this.autocompleteRef}
                                     query={query}
                                     onConfirm={this.onAutoCompleteConfirm}
                                     selection={selection}

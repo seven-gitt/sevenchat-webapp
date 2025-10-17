@@ -44,6 +44,7 @@ export default class ImageUploadDialog extends React.Component<IProps, IState> {
     private readonly mimeType: string;
     private captionInputRef = React.createRef<HTMLDivElement>();
     private autocompleteWrapperRef = React.createRef<HTMLDivElement>();
+    private autocompleteRef = React.createRef<Autocomplete>();
 
     public static defaultProps: Partial<IProps> = {
         totalFiles: 1,
@@ -186,11 +187,29 @@ export default class ImageUploadDialog extends React.Component<IProps, IState> {
     };
 
     private onCaptionKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-        // Basic mention autocomplete trigger: if user types '@', we leave focus so global autocompleter can pick up
-        // Note: element-web's autocompleter expects content-editable inputs; here we mimic by not preventing default
-        // and letting providers parse the current value if integrated in future.
+        
         if (event.key === "Enter" && !event.shiftKey) {
-            // Send on Enter, allow Shift+Enter to insert newline
+            const autocomplete = this.autocompleteRef.current;
+            if (this.state.query) {
+                event.preventDefault();
+                if (autocomplete) {
+                    const count = autocomplete.countCompletions();
+                    if (count > 0) {
+                        autocomplete.onConfirmCompletion();
+                    } else {
+                        void autocomplete.forceComplete().then((forcedCount) => {
+                            if (forcedCount > 0) {
+                                autocomplete.onConfirmCompletion();
+                            } else {
+                                this.onSendClick();
+                            }
+                        });
+                    }
+                } else {
+                    this.onSendClick();
+                }
+                return;
+            }
             event.preventDefault();
             this.onSendClick();
         }
@@ -416,6 +435,7 @@ export default class ImageUploadDialog extends React.Component<IProps, IState> {
                         {this.state.room && this.state.query && (
                             <div className="mx_ImageUploadDialog_autocompleteWrapper" ref={this.autocompleteWrapperRef}>
                                 <Autocomplete
+                                    ref={this.autocompleteRef}
                                     query={this.state.query}
                                     onConfirm={this.onAutoCompleteConfirm}
                                     selection={this.state.selection}
