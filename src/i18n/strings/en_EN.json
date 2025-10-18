@@ -3536,6 +3536,7 @@
         "send_button_voice_message": "Send voice message",
         "close_sticker_picker": "Hide stickers",
         "voice_message_button": "Voice Message",
+        "reminder_button": "Reminder",
         "poll_button_no_perms_title": "Permission Required",
         "poll_button_no_perms_description": "You do not have permission to start polls in this room.",
         "poll_button": "Poll",

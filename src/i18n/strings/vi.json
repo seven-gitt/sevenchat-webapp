@@ -555,7 +555,8 @@
         "send_button_voice_message": "Gửi tin nhắn thoại",
         "send_voice_message": "Gửi tin nhắn thoại",
         "stop_voice_message": "Dừng ghi",
-        "voice_message_button": "Tin nhắn thoại"
+        "voice_message_button": "Tin nhắn thoại",
+        "reminder_button": "Nhắc hẹn"
     },
     "create_room": {
         "action_create_room": "Tạo phòng",

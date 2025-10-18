@@ -101,6 +101,7 @@ const MessageComposerButtons: React.FC<IProps> = (props: IProps) => {
             voiceRecordingButton(props, narrow),
             props.showPollsButton ? pollButton(room, props.relation) : null,
             showLocationButton(props, room, matrixClient),
+            reminderButton(),
         ];
     } else {
         mainButtons = [
@@ -121,6 +122,7 @@ const MessageComposerButtons: React.FC<IProps> = (props: IProps) => {
             voiceRecordingButton(props, narrow),
             props.showPollsButton ? pollButton(room, props.relation) : null,
             showLocationButton(props, room, matrixClient),
+            reminderButton(),
         ];
     }
 
@@ -1524,6 +1526,24 @@ function showLocationButton(props: IProps, room: Room, matrixClient: MatrixClien
             menuPosition={props.menuPosition}
         />
     ) : null;
+}
+
+function reminderButton(): ReactElement {
+    const overflowMenuCloser = useContext(OverflowMenuContext);
+
+    const onClick = (): void => {
+        overflowMenuCloser?.();
+    };
+
+    return (
+        <CollapsibleButton
+            key="reminder"
+            className="mx_MessageComposer_button"
+            iconClassName="mx_MessageComposer_reminder"
+            onClick={onClick}
+            title={_t("composer|reminder_button")}
+        />
+    );
 }
 
 interface WysiwygToggleButtonProps {

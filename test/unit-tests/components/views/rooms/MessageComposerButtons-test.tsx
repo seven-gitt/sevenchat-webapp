@@ -14,7 +14,7 @@ import { createTestClient, getRoomContext, mkStubRoom } from "../../../../test-u
 import { type IRoomState } from "../../../../../src/components/structures/RoomView";
 import { MatrixClientPeg } from "../../../../../src/MatrixClientPeg";
 import MessageComposerButtons from "../../../../../src/components/views/rooms/MessageComposerButtons";
-import { ScopedRoomContextProvider } from "../../../../../src/contexts/ScopedRoomContext.tsx";
+import { ScopedRoomContextProvider } from "../../../../../src/contexts/ScopedRoomContext";
 
 describe("MessageComposerButtons", () => {
     // @ts-ignore - we're deliberately not implementing the whole interface here, but
@@ -93,7 +93,7 @@ describe("MessageComposerButtons", () => {
                 "Emoji",
                 "Attachment",
                 "More options",
-                ["Sticker", "Voice Message", "Poll", "Location"],
+                ["Sticker", "Voice Message", "Poll", "Location", "Reminder"],
             ]);
         });
     });
@@ -125,7 +125,11 @@ describe("MessageComposerButtons", () => {
             true,
         );
 
-        expect(getButtonLabels()).toEqual(["Emoji", "More options", ["Attachment", "Sticker", "Poll", "Location"]]);
+        expect(getButtonLabels()).toEqual([
+            "Emoji",
+            "More options",
+            ["Attachment", "Sticker", "Poll", "Location", "Reminder"],
+        ]);
     });
 
     describe("polls button", () => {
@@ -141,7 +145,11 @@ describe("MessageComposerButtons", () => {
                 true,
             );
 
-            expect(getButtonLabels()).toEqual(["Emoji", "More options", ["Attachment", "Sticker", "Poll", "Location"]]);
+            expect(getButtonLabels()).toEqual([
+                "Emoji",
+                "More options",
+                ["Attachment", "Sticker", "Poll", "Location", "Reminder"],
+            ]);
         });
 
         it("should not render when asked not to", () => {
@@ -164,6 +172,7 @@ describe("MessageComposerButtons", () => {
                     "Sticker",
                     // "Poll", // should be hidden
                     "Location",
+                    "Reminder",
                 ],
             ]);
         });
