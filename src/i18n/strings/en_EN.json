@@ -3537,6 +3537,7 @@
         "close_sticker_picker": "Hide stickers",
         "voice_message_button": "Voice Message",
         "reminder_button": "Reminder",
+        "reminder_button": "Reminder",
         "poll_button_no_perms_title": "Permission Required",
         "poll_button_no_perms_description": "You do not have permission to start polls in this room.",
         "poll_button": "Poll",
@@ -3577,6 +3578,21 @@
             "user_description": "Users",
             "user_a11y": "User Autocomplete"
         }
+    },
+    "reminder": {
+        "create_title": "Create reminder",
+        "content_label": "Reminder note",
+        "content_placeholder": "What should we remind you about?",
+        "date_label": "Reminder date",
+        "time_label": "Reminder time",
+        "hours_label": "Hours",
+        "minutes_label": "Minutes",
+        "repeat_label": "Repeat",
+        "repeat_none": "Do not repeat",
+        "repeat_daily": "Repeat daily",
+        "repeat_weekly": "Repeat weekly",
+        "repeat_monthly": "Repeat monthly",
+        "create_action": "Create reminder"
     },
     "spaces": {
         "error_no_permission_invite": "You do not have permissions to invite people to this space",

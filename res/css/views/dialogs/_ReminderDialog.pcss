@@ -1,0 +1,168 @@
+.mx_ReminderDialog {
+    width: min(520px, 90vw);
+}
+
+.mx_ReminderDialog_form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.mx_ReminderDialog_section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mx_ReminderDialog_label {
+    font-weight: 600;
+    color: var(--cpd-color-text-primary);
+}
+
+.mx_ReminderDialog_textarea,
+.mx_ReminderDialog_dateInput,
+.mx_ReminderDialog_select {
+    width: 100%;
+    border-radius: 10px;
+    border: 1px solid var(--cpd-color-border-interactive-secondary);
+    padding: 10px 12px;
+    background: var(--cpd-color-bg-subtle-secondary);
+    color: var(--cpd-color-text-primary);
+    font: inherit;
+    resize: vertical;
+}
+
+.mx_ReminderDialog_textarea {
+    min-height: 88px;
+}
+
+.mx_ReminderDialog_textarea:focus,
+.mx_ReminderDialog_dateInput:focus,
+.mx_ReminderDialog_select:focus {
+    outline: none;
+    border-color: var(--cpd-color-border-interactive-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--cpd-color-border-interactive-primary) 20%, transparent);
+}
+
+.mx_ReminderDialog_timeHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.mx_ReminderDialog_timePickerWrapper {
+    position: relative;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.mx_ReminderDialog_timeDisplay {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 999px;
+    background: var(--cpd-color-bg-subtle-secondary);
+    color: var(--cpd-color-text-primary);
+    font-weight: 600;
+    font: inherit;
+    cursor: pointer;
+}
+
+.mx_ReminderDialog_timeDisplay:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px
+        color-mix(in srgb, var(--cpd-color-border-interactive-primary) 20%, transparent);
+}
+
+.mx_ReminderDialog_timeDisplay[aria-expanded="true"] {
+    background: var(--cpd-color-bg-subtle-tertiary);
+}
+
+.mx_ReminderDialog_timeIcon {
+    width: 16px;
+    height: 16px;
+    background: currentColor;
+    mask: url("$(res)/img/element-icons/room/composer/reminder.svg") no-repeat center / contain;
+}
+
+.mx_ReminderDialog_timePicker {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 16px;
+    background: var(--cpd-color-bg-subtle-secondary);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+    z-index: 1;
+    min-width: max(240px, 100%);
+}
+
+.mx_ReminderDialog_timeColumn {
+    flex: 1;
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    scrollbar-width: thin;
+}
+
+.mx_ReminderDialog_timeColumn::-webkit-scrollbar {
+    width: 6px;
+}
+
+.mx_ReminderDialog_timeColumn::-webkit-scrollbar-thumb {
+    background: var(--cpd-color-bg-subtle-tertiary);
+    border-radius: 999px;
+}
+
+.mx_ReminderDialog_timeOption {
+    border: none;
+    border-radius: 10px;
+    padding: 8px 0;
+    font: inherit;
+    background: transparent;
+    color: var(--cpd-color-text-secondary);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.mx_ReminderDialog_timeOption:hover,
+.mx_ReminderDialog_timeOption:focus {
+    outline: none;
+    background: color-mix(in srgb, var(--cpd-color-bg-subtle-tertiary) 70%, transparent);
+    color: var(--cpd-color-text-primary);
+}
+
+.mx_ReminderDialog_timeOption--active {
+    background: var(--cpd-color-bg-accent-tertiary);
+    color: var(--cpd-color-text-on-solid-primary);
+    font-weight: 600;
+}
+
+.mx_ReminderDialog_select {
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--cpd-color-text-secondary) 50%),
+        linear-gradient(135deg, var(--cpd-color-text-secondary) 50%, transparent 50%),
+        linear-gradient(to right, transparent, transparent);
+    background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 13px) calc(50% - 3px), calc(100% - 2.5em) 50%;
+    background-size: 6px 6px, 6px 6px, 1px 1px;
+    background-repeat: no-repeat;
+    padding-right: 40px;
+}
+
+.mx_ReminderDialog_select:focus {
+    background-image: linear-gradient(45deg, transparent 50%, var(--cpd-color-text-primary) 50%),
+        linear-gradient(135deg, var(--cpd-color-text-primary) 50%, transparent 50%),
+        linear-gradient(to right, transparent, transparent);
+}
+
+.mx_ReminderDialog_select option {
+    color: initial;
+    background: var(--cpd-color-bg-canvas-default);
+}

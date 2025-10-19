@@ -49,6 +49,7 @@ import { useTheme } from "../../../hooks/useTheme";
 import { type ImageInfo } from "matrix-js-sdk/src/types";
 import stickerRepository, { type Sticker } from "../../../utils/StickerRepository";
 import { gifOptimizer } from "../../../utils/GifOptimizer";
+import ReminderDialog from "../dialogs/ReminderDialog";
 
 interface IProps {
     addContent: (content: string) => boolean;
@@ -102,6 +103,7 @@ const MessageComposerButtons: React.FC<IProps> = (props: IProps) => {
             props.showPollsButton ? pollButton(room, props.relation) : null,
             showLocationButton(props, room, matrixClient),
             reminderButton(),
+            <ReminderButton key="reminder_button" />,
         ];
     } else {
         mainButtons = [
@@ -123,6 +125,7 @@ const MessageComposerButtons: React.FC<IProps> = (props: IProps) => {
             props.showPollsButton ? pollButton(room, props.relation) : null,
             showLocationButton(props, room, matrixClient),
             reminderButton(),
+            <ReminderButton key="reminder_button" />,
         ];
     }
 
@@ -1461,6 +1464,24 @@ function voiceRecordingButton(props: IProps, narrow: boolean): ReactElement | nu
 function pollButton(room: Room, relation?: IEventRelation): ReactElement {
     return <PollButton key="polls" room={room} relation={relation} />;
 }
+
+const ReminderButton: React.FC = () => {
+    const overflowMenuCloser = useContext(OverflowMenuContext);
+
+    const onClick = (): void => {
+        overflowMenuCloser?.();
+        Modal.createDialog(ReminderDialog, {});
+    };
+
+    return (
+        <CollapsibleButton
+            className="mx_MessageComposer_button"
+            iconClassName="mx_MessageComposer_reminder"
+            onClick={onClick}
+            title={_t("composer|reminder_button")}
+        />
+    );
+};
 
 interface IPollButtonProps {
     room: Room;

@@ -558,6 +558,21 @@
         "voice_message_button": "Tin nhắn thoại",
         "reminder_button": "Nhắc hẹn"
     },
+    "reminder": {
+        "create_title": "Tạo nhắc hẹn",
+        "content_label": "Nội dung nhắc hẹn",
+        "content_placeholder": "Nhập nội dung cần nhắc…",
+        "date_label": "Ngày nhắc hẹn",
+        "time_label": "Giờ nhắc hẹn",
+        "hours_label": "Giờ",
+        "minutes_label": "Phút",
+        "repeat_label": "Lặp lại",
+        "repeat_none": "Không lặp lại",
+        "repeat_daily": "Lặp lại hằng ngày",
+        "repeat_weekly": "Lặp lại hằng tuần",
+        "repeat_monthly": "Lặp lại hằng tháng",
+        "create_action": "Tạo nhắc hẹn"
+    },
     "create_room": {
         "action_create_room": "Tạo phòng",
         "action_create_video_room": "Tạo phòng truyền hình",
