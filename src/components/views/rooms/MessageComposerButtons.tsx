@@ -102,7 +102,6 @@ const MessageComposerButtons: React.FC<IProps> = (props: IProps) => {
             voiceRecordingButton(props, narrow),
             props.showPollsButton ? pollButton(room, props.relation) : null,
             showLocationButton(props, room, matrixClient),
-            reminderButton(),
             <ReminderButton key="reminder_button" />,
         ];
     } else {
@@ -124,7 +123,6 @@ const MessageComposerButtons: React.FC<IProps> = (props: IProps) => {
             voiceRecordingButton(props, narrow),
             props.showPollsButton ? pollButton(room, props.relation) : null,
             showLocationButton(props, room, matrixClient),
-            reminderButton(),
             <ReminderButton key="reminder_button" />,
         ];
     }
