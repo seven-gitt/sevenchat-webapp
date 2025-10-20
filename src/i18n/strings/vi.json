@@ -571,7 +571,18 @@
         "repeat_daily": "Lặp lại hằng ngày",
         "repeat_weekly": "Lặp lại hằng tuần",
         "repeat_monthly": "Lặp lại hằng tháng",
-        "create_action": "Tạo nhắc hẹn"
+        "create_action": "Tạo nhắc hẹn",
+        "author_you": "Bạn",
+        "created_summary": "%(author)s tạo nhắc hẹn mới %(content)s - %(date)s lúc %(time)s.",
+        "view_details": "Xem chi tiết",
+        "detail_title": "Chi tiết nhắc hẹn",
+        "edit_title": "Chỉnh sửa nhắc hẹn",
+        "edit_action": "Chỉnh sửa nhắc hẹn",
+        "update_action": "Cập nhật nhắc hẹn",
+        "send_error_title": "Không thể tạo nhắc hẹn",
+        "send_error_description": "Vui lòng thử lại sau.",
+        "update_error_title": "Không thể cập nhật nhắc hẹn",
+        "update_error_description": "Vui lòng thử lại sau."
     },
     "create_room": {
         "action_create_room": "Tạo phòng",

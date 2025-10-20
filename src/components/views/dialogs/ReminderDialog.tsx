@@ -19,17 +19,14 @@ import BaseDialog from "./BaseDialog";
 import DialogButtons from "../elements/DialogButtons";
 import { _t } from "../../../languageHandler";
 
-type ReminderRepeat = "none" | "daily" | "weekly" | "monthly";
-
-export interface IReminderResult {
-    content: string;
-    datetime: string;
-    repeat: ReminderRepeat;
-}
+import type { ReminderPayload, ReminderRepeat } from "../../../reminders/index";
 
 interface IProps {
     onFinished(ok?: false): void;
-    onFinished(ok: true, result: IReminderResult): void;
+    onFinished(ok: true, result: ReminderPayload): void;
+    initialReminder?: ReminderPayload;
+    title?: string;
+    primaryButtonLabel?: string;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, idx) => idx);
@@ -37,6 +34,13 @@ const MINUTES = Array.from({ length: 60 }, (_, idx) => idx);
 
 function padTime(value: number): string {
     return value.toString().padStart(2, "0");
+}
+
+function formatDateForInput(date: Date): string {
+    const year = date.getFullYear();
+    const month = padTime(date.getMonth() + 1);
+    const day = padTime(date.getDate());
+    return `${year}-${month}-${day}`;
 }
 
 function getDefaultDate(): string {
@@ -47,13 +51,23 @@ function getDefaultDate(): string {
     return `${year}-${month}-${day}`;
 }
 
-const ReminderDialog: React.FC<IProps> = ({ onFinished }) => {
-    const now = useMemo(() => new Date(), []);
-    const [content, setContent] = useState("");
-    const [date, setDate] = useState<string>(() => getDefaultDate());
-    const [hour, setHour] = useState<number>(now.getHours());
-    const [minute, setMinute] = useState<number>(now.getMinutes());
-    const [repeat, setRepeat] = useState<ReminderRepeat>("none");
+const ReminderDialog: React.FC<IProps> = ({
+    onFinished,
+    initialReminder,
+    title,
+    primaryButtonLabel,
+}) => {
+    const initialDate = useMemo(
+        () => (initialReminder ? new Date(initialReminder.datetime) : new Date()),
+        [initialReminder?.datetime],
+    );
+    const [content, setContent] = useState(initialReminder?.content ?? "");
+    const [date, setDate] = useState<string>(() =>
+        initialReminder ? formatDateForInput(initialDate) : getDefaultDate(),
+    );
+    const [hour, setHour] = useState<number>(initialDate.getHours());
+    const [minute, setMinute] = useState<number>(initialDate.getMinutes());
+    const [repeat, setRepeat] = useState<ReminderRepeat>(initialReminder?.repeat ?? "none");
     const [isTimePickerOpen, setIsTimePickerOpen] = useState(false);
 
     const timeDisplayRef = useRef<HTMLButtonElement | null>(null);
@@ -63,6 +77,9 @@ const ReminderDialog: React.FC<IProps> = ({ onFinished }) => {
     const canSubmit = content.trim().length > 0;
 
     const formattedTime = useMemo(() => `${padTime(hour)}:${padTime(minute)}`, [hour, minute]);
+
+    const dialogTitle = title ?? _t("reminder|create_title");
+    const primaryButtonText = primaryButtonLabel ?? _t("reminder|create_action");
 
     useEffect(() => {
         if (!isTimePickerOpen) {
@@ -107,7 +124,7 @@ const ReminderDialog: React.FC<IProps> = ({ onFinished }) => {
         <BaseDialog
             className="mx_ReminderDialog"
             onFinished={onFinished}
-            title={_t("reminder|create_title")}
+            title={dialogTitle}
             fixedWidth={false}
         >
             <form onSubmit={onSubmit} className="mx_ReminderDialog_form">
@@ -220,7 +237,7 @@ const ReminderDialog: React.FC<IProps> = ({ onFinished }) => {
                 </div>
             </form>
             <DialogButtons
-                primaryButton={_t("reminder|create_action")}
+                primaryButton={primaryButtonText}
                 onPrimaryButtonClick={onSubmit}
                 onCancel={onCancel}
                 hasCancel={true}

@@ -14,6 +14,7 @@ import {
     THREAD_RELATION_TYPE,
     M_POLL_START,
 } from "matrix-js-sdk/src/matrix";
+import { logger } from "matrix-js-sdk/src/logger";
 import React, {
     type JSX,
     createContext,
@@ -50,6 +51,7 @@ import { type ImageInfo } from "matrix-js-sdk/src/types";
 import stickerRepository, { type Sticker } from "../../../utils/StickerRepository";
 import { gifOptimizer } from "../../../utils/GifOptimizer";
 import ReminderDialog from "../dialogs/ReminderDialog";
+import { sendReminderMessage } from "../../../reminders/index";
 
 interface IProps {
     addContent: (content: string) => boolean;
@@ -102,7 +104,12 @@ const MessageComposerButtons: React.FC<IProps> = (props: IProps) => {
             voiceRecordingButton(props, narrow),
             props.showPollsButton ? pollButton(room, props.relation) : null,
             showLocationButton(props, room, matrixClient),
-            <ReminderButton key="reminder_button" />,
+            <ReminderButton
+                key="reminder_button"
+                room={room}
+                matrixClient={matrixClient}
+                relation={props.relation}
+            />,
         ];
     } else {
         mainButtons = [
@@ -123,7 +130,12 @@ const MessageComposerButtons: React.FC<IProps> = (props: IProps) => {
             voiceRecordingButton(props, narrow),
             props.showPollsButton ? pollButton(room, props.relation) : null,
             showLocationButton(props, room, matrixClient),
-            <ReminderButton key="reminder_button" />,
+            <ReminderButton
+                key="reminder_button"
+                room={room}
+                matrixClient={matrixClient}
+                relation={props.relation}
+            />,
         ];
     }
 
@@ -1463,12 +1475,34 @@ function pollButton(room: Room, relation?: IEventRelation): ReactElement {
     return <PollButton key="polls" room={room} relation={relation} />;
 }
 
-const ReminderButton: React.FC = () => {
+interface ReminderButtonProps {
+    room: Room;
+    matrixClient: MatrixClient;
+    relation?: IEventRelation;
+}
+
+const ReminderButton: React.FC<ReminderButtonProps> = ({ room, matrixClient, relation }) => {
     const overflowMenuCloser = useContext(OverflowMenuContext);
 
     const onClick = (): void => {
         overflowMenuCloser?.();
-        Modal.createDialog(ReminderDialog, {});
+        const threadId =
+            relation?.rel_type === THREAD_RELATION_TYPE.name ? relation.event_id ?? null : null;
+        const { finished } = Modal.createDialog(ReminderDialog, {});
+
+        finished.then(async ([confirmed, reminder]) => {
+            if (!confirmed || !reminder) return;
+
+            try {
+                await sendReminderMessage(matrixClient, room.roomId, reminder, { threadId });
+            } catch (error) {
+                logger.error("Failed to send reminder", error);
+                Modal.createDialog(ErrorDialog, {
+                    title: _t("reminder|send_error_title"),
+                    description: _t("reminder|send_error_description"),
+                });
+            }
+        });
     };
 
     return (

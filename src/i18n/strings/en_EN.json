@@ -3592,7 +3592,18 @@
         "repeat_daily": "Repeat daily",
         "repeat_weekly": "Repeat weekly",
         "repeat_monthly": "Repeat monthly",
-        "create_action": "Create reminder"
+        "create_action": "Create reminder",
+        "author_you": "You",
+        "created_summary": "%(author)s created a new reminder %(content)s - %(date)s at %(time)s.",
+        "view_details": "View details",
+        "detail_title": "Reminder details",
+        "edit_title": "Edit reminder",
+        "edit_action": "Edit reminder",
+        "update_action": "Update reminder",
+        "send_error_title": "We couldn't create the reminder",
+        "send_error_description": "Please try again.",
+        "update_error_title": "We couldn't update the reminder",
+        "update_error_description": "Please try again."
     },
     "spaces": {
         "error_no_permission_invite": "You do not have permissions to invite people to this space",
