@@ -69,7 +69,7 @@
         "feature_voice_messages": true
     },
     
-    "default_theme": "dark",
+    "default_theme": "light",
     "default_country_code": "VN",
     
     
@@ -79,7 +79,7 @@
         "language": "vi",
         
         
-        "theme": "dark",
+        "theme": "light",
         "use_system_theme": false,
         "custom_themes": [],   
         
