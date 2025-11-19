@@ -582,7 +582,13 @@
         "send_error_title": "Không thể tạo nhắc hẹn",
         "send_error_description": "Vui lòng thử lại sau.",
         "update_error_title": "Không thể cập nhật nhắc hẹn",
-        "update_error_description": "Vui lòng thử lại sau."
+        "update_error_description": "Vui lòng thử lại sau.",
+        "due_toast_title": "%(roomName)s - Nhắc hẹn",
+        "due_toast_description": "Đến hạn %(date)s lúc %(time)s.",
+        "due_notification_title": "%(roomName)s - Nhắc hẹn",
+        "due_notification_body": "%(content)s - %(date)s lúc %(time)s.",
+        "due_card_heading": "Nhắc hẹn đến hạn",
+        "due_card_repeat": "Lặp lại %(repeat)s"
     },
     "create_room": {
         "action_create_room": "Tạo phòng",

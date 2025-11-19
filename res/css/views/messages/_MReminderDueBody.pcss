@@ -1,0 +1,78 @@
+/*
+Copyright 2025 New Vector Ltd.
+
+SPDX-License-Identifier: AGPL-3.0-only OR GPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE files in the repository root for full details.
+*/
+
+.mx_MReminderDueBody {
+    display: flex;
+    justify-content: center;
+    gap: var(--cpd-space-6x);
+    padding: var(--cpd-space-6x) var(--cpd-space-8x);
+    background: transparent;
+
+    .mx_MReminderDueBody_date {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-width: 72px;
+        padding: var(--cpd-space-4x) var(--cpd-space-2x);
+        border-radius: var(--cpd-space-3x);
+        background-color: var(--cpd-color-bg-subtle-secondary);
+        text-transform: uppercase;
+        color: var(--cpd-color-text-secondary);
+
+        .mx_MReminderDueBody_weekday {
+            font: var(--cpd-font-body-sm-semibold);
+        }
+
+        .mx_MReminderDueBody_day {
+            font: var(--cpd-font-heading-lg-semibold);
+            color: var(--cpd-color-text-primary);
+            margin: var(--cpd-space-2x) 0;
+        }
+
+        .mx_MReminderDueBody_month {
+            font: var(--cpd-font-body-sm-regular);
+        }
+    }
+
+    .mx_MReminderDueBody_content {
+        display: flex;
+        flex-direction: column;
+        gap: var(--cpd-space-3x);
+        padding: var(--cpd-space-4x) var(--cpd-space-6x);
+        border-radius: var(--cpd-space-3x);
+        background-color: var(--cpd-color-bg-canvas-raised);
+        box-shadow: 0px 4px 16px rgb(0 0 0 / 0.08);
+        max-width: 420px;
+        text-align: start;
+    }
+
+    .mx_MReminderDueBody_heading {
+        font: var(--cpd-font-body-md-semibold);
+        color: var(--cpd-color-text-secondary);
+        text-transform: uppercase;
+    }
+
+    .mx_MReminderDueBody_summary {
+        font: var(--cpd-font-body-lg-semibold);
+        color: var(--cpd-color-text-primary);
+        word-break: break-word;
+    }
+
+    .mx_MReminderDueBody_meta,
+    .mx_MReminderDueBody_repeat {
+        font: var(--cpd-font-body-sm-regular);
+        color: var(--cpd-color-text-secondary);
+        display: flex;
+        align-items: center;
+        gap: var(--cpd-space-2x);
+    }
+
+    .mx_MReminderDueBody_button {
+        align-self: flex-start;
+    }
+}

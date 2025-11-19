@@ -27,6 +27,7 @@ interface Props {
     room: Room;
     threadId?: string | null;
     showTwelveHourTime?: boolean;
+    replacingEventId?: string;
 }
 
 const ReminderDetailDialog: React.FC<Props> = ({
@@ -37,6 +38,7 @@ const ReminderDetailDialog: React.FC<Props> = ({
     room,
     threadId = null,
     showTwelveHourTime = false,
+    replacingEventId,
 }) => {
     const repeatLabels = useMemo<Record<ReminderRepeat, string>>(
         () => ({
@@ -72,7 +74,7 @@ const ReminderDetailDialog: React.FC<Props> = ({
             try {
                 await sendReminderMessage(matrixClient, room.roomId, updatedReminder, {
                     threadId,
-                    replacingEventId: mxEvent.getId() ?? undefined,
+                    replacingEventId: replacingEventId ?? mxEvent.getId() ?? undefined,
                 });
                 onFinished(true);
             } catch (error) {

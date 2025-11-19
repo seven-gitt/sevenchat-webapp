@@ -3603,7 +3603,13 @@
         "send_error_title": "We couldn't create the reminder",
         "send_error_description": "Please try again.",
         "update_error_title": "We couldn't update the reminder",
-        "update_error_description": "Please try again."
+        "update_error_description": "Please try again.",
+        "due_toast_title": "%(roomName)s - Reminder",
+        "due_toast_description": "Due %(date)s at %(time)s.",
+        "due_notification_title": "%(roomName)s - Reminder",
+        "due_notification_body": "%(content)s - %(date)s at %(time)s.",
+        "due_card_heading": "Reminder due",
+        "due_card_repeat": "Repeats %(repeat)s"
     },
     "spaces": {
         "error_no_permission_invite": "You do not have permissions to invite people to this space",

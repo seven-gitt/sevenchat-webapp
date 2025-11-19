@@ -57,6 +57,7 @@ const MReminderBody: React.FC<IBodyProps> = ({ mxEvent }) => {
             room,
             threadId: mxEvent.getThread()?.id ?? null,
             showTwelveHourTime: roomContext.showTwelveHourTimestamps,
+            replacingEventId: mxEvent.getId() ?? undefined,
         });
     };
 
