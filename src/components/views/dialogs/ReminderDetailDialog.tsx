@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR GPL-3.0-only OR LicenseRef-Element-Com
 Please see LICENSE files in the repository root for full details.
 */
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { logger } from "matrix-js-sdk/src/logger";
 import { type MatrixClient, type MatrixEvent, type Room } from "matrix-js-sdk/src/matrix";
 
@@ -49,6 +49,7 @@ const ReminderDetailDialog: React.FC<Props> = ({
         }),
         [],
     );
+    const [busy, setBusy] = useState(false);
     const reminderDate = useMemo(() => new Date(reminder.datetime), [reminder.datetime]);
     const formattedDate = useMemo(
         () => formatFullDateNoTime(reminderDate),
@@ -87,6 +88,25 @@ const ReminderDetailDialog: React.FC<Props> = ({
         });
     };
 
+    const onDelete = async (): Promise<void> => {
+        const targetEventId = replacingEventId ?? mxEvent.getId() ?? undefined;
+        if (!targetEventId) return;
+
+        setBusy(true);
+        try {
+            await matrixClient.redactEvent(room.roomId, targetEventId);
+            onFinished(true);
+        } catch (error) {
+            logger.error("Failed to delete reminder", error);
+            Modal.createDialog(ErrorDialog, {
+                title: _t("reminder|delete_error_title"),
+                description: _t("reminder|delete_error_description"),
+            });
+        } finally {
+            setBusy(false);
+        }
+    };
+
     return (
         <BaseDialog
             className="mx_ReminderDetailDialog"
@@ -115,9 +135,18 @@ const ReminderDetailDialog: React.FC<Props> = ({
             <DialogButtons
                 primaryButton={_t("reminder|edit_action")}
                 onPrimaryButtonClick={onEdit}
-                onCancel={onClose}
-                cancelButton={_t("action|close")}
-            />
+                hasCancel={false}
+                disabled={busy}
+            >
+                <button
+                    type="button"
+                    className="danger"
+                    onClick={onDelete}
+                    disabled={busy}
+                >
+                    {_t("reminder|delete_action")}
+                </button>
+            </DialogButtons>
         </BaseDialog>
     );
 };

@@ -17,11 +17,12 @@ import { logger } from "matrix-js-sdk/src/logger";
 
 import {
     getReminderFromEvent,
+    getReminderDueFromEvent,
+    REMINDER_DUE_MSGTYPE,
     type ReminderPayload,
     type ReminderRepeat,
     sendReminderDueMessage,
 } from ".";
-import { showReminderToast } from "../toasts/ReminderToast";
 import Modal from "../Modal";
 import ReminderDetailDialog from "../components/views/dialogs/ReminderDetailDialog";
 import SettingsStore from "../settings/SettingsStore";
@@ -31,6 +32,11 @@ import { _t } from "../languageHandler";
 import { formatFullDateNoTime, formatTime } from "../DateUtils";
 
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+const SENT_CACHE_KEY = "sevenchat_sent_reminder_due";
+const SENT_CACHE_LIMIT = 200;
+const SENT_CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+const SEND_LOCK_PREFIX = "sevenchat_reminder_due_lock";
+const SEND_LOCK_TTL_MS = 1000 * 60 * 10; // 10 minutes
 
 interface ScheduledReminder {
     key: string;
@@ -57,8 +63,12 @@ export class ReminderScheduler {
 
     private client?: MatrixClient;
     private scheduled = new Map<string, ScheduledReminder>();
+    private sentDue = new Set<string>();
+    private readonly tabId = `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    private constructor() {}
+    private constructor() {
+        this.loadSentCache();
+    }
 
     public start(client: MatrixClient): void {
         if (this.client === client) return;
@@ -140,6 +150,22 @@ export class ReminderScheduler {
         const existingEntry = this.findEntryByEvent(event);
         if (existingEntry && existingEntry.key !== key) {
             this.scheduled.delete(existingEntry.key);
+        }
+
+        const room = this.client?.getRoom(roomId);
+        const originalEventId = event.getId() ?? event.getTxnId() ?? undefined;
+
+        // If the reminder is already overdue and we can see an existing due card, avoid re-sending after reload.
+        if (
+            reminder.repeat === "none" &&
+            originalEventId &&
+            room &&
+            reminder.datetime &&
+            new Date(reminder.datetime).getTime() <= Date.now() &&
+            this.findExistingReminderDue(room, reminder, new Date(), originalEventId)
+        ) {
+            this.unscheduleReminder(key);
+            return;
         }
 
         const entry = existingEntry ?? this.scheduled.get(key) ?? {
@@ -273,25 +299,29 @@ export class ReminderScheduler {
         const occurrence = entry.nextOccurrence;
         entry.lastOccurrence = occurrence;
 
-        const toastKey = `reminder_due_${key}`;
-        showReminderToast({
-            toastKey,
-            room,
-            reminder: entry.reminder,
-            occurrence,
-            onViewDetails: () => this.openReminderDetails(entry, room),
-        });
+        const originalEventId = entry.event.getId() ?? entry.event.getTxnId() ?? undefined;
+        const signature = this.makeDueSignature(entry.reminder, occurrence, room.roomId, originalEventId);
+
+        const shouldSend = await this.shouldSendReminderDue(room, entry.reminder, occurrence, originalEventId, signature);
+        if (shouldSend) {
+            this.rememberSentReminderDue(signature);
+            try {
+                await sendReminderDueMessage(client, room.roomId, entry.reminder, occurrence, {
+                    threadId: entry.threadId,
+                    originalEventId,
+                });
+            } catch (error) {
+                logger.error("Failed to send reminder due message", error);
+            }
+        } else {
+            logger.info("Skipping duplicate reminder due message", {
+                roomId: room.roomId,
+                originalEventId,
+                signature,
+            });
+        }
 
         this.showDesktopNotification(room, entry.reminder, occurrence);
-
-        try {
-            await sendReminderDueMessage(client, room.roomId, entry.reminder, occurrence, {
-                threadId: entry.threadId,
-                originalEventId: entry.event.getId() ?? entry.event.getTxnId() ?? undefined,
-            });
-        } catch (error) {
-            logger.error("Failed to send reminder due message", error);
-        }
 
         if (entry.reminder.repeat === "none") {
             this.unscheduleReminder(key);
@@ -394,6 +424,113 @@ export class ReminderScheduler {
         return updated;
     }
 
+    private matchesReminderDue(
+        event: MatrixEvent,
+        reminder: ReminderPayload,
+        occurrence: Date,
+        originalEventId?: string,
+    ): boolean {
+        if (event.getType() !== REMINDER_DUE_MSGTYPE) return false;
+        const reminderDue = getReminderDueFromEvent(event);
+        if (!reminderDue) return false;
+
+        if (originalEventId && reminderDue.originalEventId === originalEventId) {
+            return true;
+        }
+
+        const triggeredAtMatch = reminderDue.triggeredAt
+            ? Math.abs(new Date(reminderDue.triggeredAt).getTime() - occurrence.getTime()) <= 60_000
+            : false;
+
+        // Fallback matching when original_event_id is missing or mismatched
+        return (
+            triggeredAtMatch ||
+            reminderDue.content === reminder.content &&
+            reminderDue.datetime === reminder.datetime &&
+            reminderDue.repeat === reminder.repeat
+        );
+    }
+
+    private findExistingReminderDue(
+        room: Room,
+        reminder: ReminderPayload,
+        occurrence: Date,
+        originalEventId?: string,
+    ): MatrixEvent | undefined {
+        const timelineEvents = room.getLiveTimeline()?.getEvents() ?? [];
+        const pendingEvents = room.getPendingEvents() ?? [];
+        const allEvents = [...timelineEvents, ...pendingEvents];
+        return allEvents.find((event) => this.matchesReminderDue(event, reminder, occurrence, originalEventId));
+    }
+
+    private waitForIncomingReminderDue(
+        room: Room,
+        reminder: ReminderPayload,
+        occurrence: Date,
+        originalEventId?: string,
+        timeoutMs = 1500,
+    ): Promise<boolean> {
+        // Give other devices a short window to deliver the due card before we send ours.
+        return new Promise((resolve) => {
+            let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+            const onTimeline = (
+                event: MatrixEvent,
+                eventRoom?: Room,
+                toStartOfTimeline?: boolean,
+                removed?: boolean,
+                data?: IRoomTimelineData,
+            ): void => {
+                if (eventRoom?.roomId !== room.roomId || toStartOfTimeline || removed || !data?.liveEvent) {
+                    return;
+                }
+                if (this.matchesReminderDue(event, reminder, occurrence, originalEventId)) {
+                    cleanup(true);
+                }
+            };
+
+            const cleanup = (found: boolean): void => {
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                    timeoutId = undefined;
+                }
+                room.removeListener(RoomEvent.Timeline, onTimeline);
+                resolve(found);
+            };
+
+            room.on(RoomEvent.Timeline, onTimeline);
+            timeoutId = window.setTimeout(() => {
+                cleanup(false);
+            }, timeoutMs);
+        });
+    }
+
+    private async shouldSendReminderDue(
+        room: Room,
+        reminder: ReminderPayload,
+        occurrence: Date,
+        originalEventId: string | undefined,
+        signature: string,
+    ): Promise<boolean> {
+        if (this.hasSentReminderDue(signature)) {
+            return false;
+        }
+
+        if (this.findExistingReminderDue(room, reminder, occurrence, originalEventId)) {
+            return false;
+        }
+
+        const foundDuringWait = await this.waitForIncomingReminderDue(room, reminder, occurrence, originalEventId);
+        if (foundDuringWait) return false;
+
+        if (!this.acquireSendLock(signature)) {
+            return false;
+        }
+
+        // One last check in case the event arrived right after the timeout.
+        return !this.findExistingReminderDue(room, reminder, occurrence, originalEventId);
+    }
+
     private getEventKey(event: MatrixEvent): string | undefined {
         return event.getId() ?? event.getTxnId() ?? undefined;
     }
@@ -403,6 +540,88 @@ export class ReminderScheduler {
             if (entry.event === event) return entry;
         }
         return undefined;
+    }
+
+    private makeDueSignature(
+        reminder: ReminderPayload,
+        occurrence: Date,
+        roomId: string,
+        originalEventId?: string,
+    ): string {
+        return [
+            roomId,
+            originalEventId ?? "no-id",
+            reminder.content,
+            reminder.datetime,
+            reminder.repeat,
+            occurrence.toISOString(),
+        ].join("|");
+    }
+
+    private hasSentReminderDue(signature: string): boolean {
+        return this.sentDue.has(signature);
+    }
+
+    private rememberSentReminderDue(signature: string): void {
+        this.sentDue.add(signature);
+        this.persistSentCache();
+    }
+
+    private makeLockKey(signature: string): string {
+        return `${SEND_LOCK_PREFIX}:${signature}`;
+    }
+
+    private acquireSendLock(signature: string): boolean {
+        try {
+            if (!window?.localStorage) return true;
+            const key = this.makeLockKey(signature);
+            const raw = window.localStorage.getItem(key);
+            const now = Date.now();
+            if (raw) {
+                const parsed = JSON.parse(raw) as { tabId: string; ts: number };
+                if (parsed.ts && now - parsed.ts < SEND_LOCK_TTL_MS) {
+                    // Any fresh lock (even from this tab) means the send already happened or is in-flight.
+                    return false;
+                }
+            }
+            window.localStorage.setItem(key, JSON.stringify({ tabId: this.tabId, ts: now }));
+            return true;
+        } catch (error) {
+            logger.warn("Failed to use reminder due lock", error);
+            return true; // fail open: still try to send, but our existing checks remain
+        }
+    }
+
+    private loadSentCache(): void {
+        try {
+            if (!window?.localStorage) return;
+            const raw = window.localStorage.getItem(SENT_CACHE_KEY);
+            if (!raw) return;
+            const parsed = JSON.parse(raw) as Array<[string, number]>;
+            const now = Date.now();
+            parsed.forEach(([sig, ts]) => {
+                if (now - ts < SENT_CACHE_TTL_MS) {
+                    this.sentDue.add(sig);
+                }
+            });
+        } catch (error) {
+            logger.warn("Failed to load reminder due cache", error);
+        }
+    }
+
+    private persistSentCache(): void {
+        try {
+            if (!window?.localStorage) return;
+            const now = Date.now();
+            const entries: Array<[string, number]> = [];
+            for (const sig of this.sentDue) {
+                entries.push([sig, now]);
+            }
+            const trimmed = entries.slice(-SENT_CACHE_LIMIT);
+            window.localStorage.setItem(SENT_CACHE_KEY, JSON.stringify(trimmed));
+        } catch (error) {
+            logger.warn("Failed to persist reminder due cache", error);
+        }
     }
 }
 

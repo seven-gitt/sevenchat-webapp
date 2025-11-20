@@ -14,6 +14,7 @@ import {
 
 import { formatFullDateNoTime, formatTime } from "../DateUtils";
 import { doMaybeLocalRoomAction } from "../utils/local-room";
+import { _t } from "../languageHandler";
 
 export type ReminderRepeat = "none" | "daily" | "weekly" | "monthly";
 
@@ -100,7 +101,11 @@ const createReminderFallback = (reminder: ReminderPayload): string => {
     const formattedDate = formatFullDateNoTime(date);
     const formattedTime = formatTime(date);
 
-    return `Reminder: ${reminder.content} - ${formattedDate} ${formattedTime}`;
+    return _t("reminder|fallback_created", {
+        content: reminder.content,
+        date: formattedDate,
+        time: formattedTime,
+    });
 };
 
 const createReminderDueFallback = (
@@ -111,7 +116,11 @@ const createReminderDueFallback = (
     const formattedDate = formatFullDateNoTime(occurrence);
     const formattedTime = formatTime(occurrence);
 
-    return `Reminder due: ${reminder.content} - ${formattedDate} ${formattedTime}`;
+    return _t("reminder|fallback_due", {
+        content: reminder.content,
+        date: formattedDate,
+        time: formattedTime,
+    });
 };
 
 const buildReminderContent = (reminder: ReminderPayload): ReminderMessageContent => ({

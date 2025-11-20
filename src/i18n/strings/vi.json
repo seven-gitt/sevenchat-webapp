@@ -571,6 +571,8 @@
         "repeat_daily": "Lặp lại hằng ngày",
         "repeat_weekly": "Lặp lại hằng tuần",
         "repeat_monthly": "Lặp lại hằng tháng",
+        "fallback_created": "Nhắc hẹn: %(content)s - %(date)s lúc %(time)s.",
+        "fallback_due": "Nhắc hẹn đến hạn: %(content)s - %(date)s lúc %(time)s.",
         "create_action": "Tạo nhắc hẹn",
         "author_you": "Bạn",
         "created_summary": "%(author)s tạo nhắc hẹn mới %(content)s - %(date)s lúc %(time)s.",
@@ -579,12 +581,15 @@
         "edit_title": "Chỉnh sửa nhắc hẹn",
         "edit_action": "Chỉnh sửa nhắc hẹn",
         "update_action": "Cập nhật nhắc hẹn",
+        "delete_action": "Xóa nhắc hẹn",
         "send_error_title": "Không thể tạo nhắc hẹn",
         "send_error_description": "Vui lòng thử lại sau.",
         "update_error_title": "Không thể cập nhật nhắc hẹn",
         "update_error_description": "Vui lòng thử lại sau.",
         "due_toast_title": "%(roomName)s - Nhắc hẹn",
         "due_toast_description": "Đến hạn %(date)s lúc %(time)s.",
+        "delete_error_title": "Không thể xóa nhắc hẹn",
+        "delete_error_description": "Vui lòng thử lại sau.",
         "due_notification_title": "%(roomName)s - Nhắc hẹn",
         "due_notification_body": "%(content)s - %(date)s lúc %(time)s.",
         "due_card_heading": "Nhắc hẹn đến hạn",
@@ -3415,3 +3420,4 @@
     },
     "m.sticker|sent_self": "Bạn đã gửi một sticker."
 }
+

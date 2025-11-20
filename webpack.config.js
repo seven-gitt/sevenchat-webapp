@@ -252,6 +252,10 @@ module.exports = (env, argv) => {
                 // there is no need for webpack to parse them - they can just be
                 // included as-is.
                 /highlight\.js[\\/]lib[\\/]languages/,
+
+                // maplibre-gl ships a gigantic prebundled UMD that confuses webpack's parser.
+                // We don't need webpack to traverse it for dependencies, so just skip parsing.
+                /maplibre-gl[\\/]dist[\\/]maplibre-gl\.js/,
             ],
             rules: [
                 {
