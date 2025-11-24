@@ -13,10 +13,13 @@ Please see LICENSE files in the repository root for full details.
 // Populate this class with the details of your customisations when copying it.
 
 import { type ComponentVisibilityCustomisations as IComponentVisibilityCustomisations } from "@element-hq/element-web-module-api";
+import { UIComponent } from "../settings/UIFeature";
 
 // A real customisation module will define and export one or more of the
 // customisation points that make up the interface above.
 export const ComponentVisibilityCustomisations: IComponentVisibilityCustomisations = {
-    // while we don't specify the functions here, their defaults are described
-    // in their pseudo-implementations above.
+    shouldShowComponent: (component) => {
+        if (component === UIComponent.CreateSpaces) return false;
+        return true;
+    },
 };
