@@ -285,6 +285,17 @@ Please see LICENSE files in the repository root for full details.
         }
 
         --backgroundColor: $eventbubble-self-bg;
+
+        /* Align own stickers/timestamps to the right edge */
+        .mx_EventTile_line.mx_EventTile_sticker {
+            align-items: flex-end;
+
+            > a,
+            .mx_MessageActionBar + .mx_MessageTimestamp {
+                margin-left: auto;
+                align-self: flex-end;
+            }
+        }
     }
 
     .mx_EventTile_line {
@@ -333,11 +344,18 @@ Please see LICENSE files in the repository root for full details.
         }
 
         &.mx_EventTile_sticker {
+            flex-direction: column;
+            align-items: flex-start; /* default for received stickers */
+
             > a, /* timestamp wrapper anchor */
             .mx_MessageActionBar + .mx_MessageTimestamp {
-                /* position timestamps for stickers to the right of the un-bubbled sticker */
-                right: unset;
-                left: 100%;
+                /* stack timestamp below the sticker instead of absolutely positioning it */
+                position: static;
+                padding: 0;
+                margin-top: 5px;
+                margin-left: 25px;
+                align-self: flex-start;
+                order: 2;
             }
 
             .mx_MStickerBody_wrapper {
