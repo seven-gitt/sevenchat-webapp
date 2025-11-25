@@ -472,14 +472,8 @@ export default class MessageContextMenu extends React.Component<IProps, IState> 
             );
         }
 
-        // This is specifically not behind the developerMode flag to give people insight into the Matrix
-        const viewSourceButton = (
-            <IconizedContextMenuOption
-                iconClassName="mx_MessageContextMenu_iconSource"
-                label={_t("timeline|context_menu|view_source")}
-                onClick={this.onViewSourceClick}
-            />
-        );
+        // Temporarily hide "View source" from the context menu (toggle back by re-adding the option below)
+        const viewSourceButton: JSX.Element | undefined = undefined;
 
         let unhidePreviewButton: JSX.Element | undefined;
         if (eventTileOps?.isWidgetHidden()) {
