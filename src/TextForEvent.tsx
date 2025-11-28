@@ -30,15 +30,12 @@ import { isValid3pidInvite } from "./RoomInvite";
 import SettingsStore from "./settings/SettingsStore";
 import { ALL_RULE_TYPES, ROOM_RULE_TYPES, SERVER_RULE_TYPES, USER_RULE_TYPES } from "./mjolnir/BanList";
 import { WIDGET_LAYOUT_EVENT_TYPE } from "./stores/widgets/WidgetLayoutStore";
-import { RightPanelPhases } from "./stores/right-panel/RightPanelStorePhases";
 import defaultDispatcher from "./dispatcher/dispatcher";
 import { RoomSettingsTab } from "./components/views/dialogs/RoomSettingsDialog";
 import AccessibleButton from "./components/views/elements/AccessibleButton";
-import RightPanelStore from "./stores/right-panel/RightPanelStore";
-import { highlightEvent, isLocationEvent } from "./utils/EventUtils";
+import { isLocationEvent } from "./utils/EventUtils";
 import { ElementCall } from "./models/Call";
 import { getSenderName } from "./utils/event/getSenderName";
-import PosthogTrackers from "./PosthogTrackers";
 
 function getRoomMemberDisplayname(client: MatrixClient, event: MatrixEvent, userId = event.getSender()): string {
     const roomId = event.getRoomId();
@@ -584,111 +581,13 @@ function textForPowerEvent(event: MatrixEvent, client: MatrixClient): (() => str
         });
 }
 
-const onPinnedMessagesClick = (): void => {
-    PosthogTrackers.trackInteraction("PinnedMessageStateEventClick");
-    RightPanelStore.instance.setCard({ phase: RightPanelPhases.PinnedMessages }, false);
-};
-
-function textForPinnedEvent(event: MatrixEvent, client: MatrixClient, allowJSX: boolean): (() => Renderable) | null {
-    const senderName = getSenderName(event);
-    const roomId = event.getRoomId()!;
-
-    const pinned = event.getContent<{ pinned: string[] }>().pinned ?? [];
-    const previouslyPinned: string[] = event.getPrevContent().pinned ?? [];
-    const newlyPinned = pinned.filter((item) => previouslyPinned.indexOf(item) < 0);
-    const newlyUnpinned = previouslyPinned.filter((item) => pinned.indexOf(item) < 0);
-
-    if (newlyPinned.length === 1 && newlyUnpinned.length === 0) {
-        // A single message was pinned, include a link to that message.
-        if (allowJSX) {
-            const messageId = newlyPinned.pop()!;
-
-            return () => (
-                <span>
-                    {_t(
-                        "timeline|m.room.pinned_events|pinned_link",
-                        { senderName },
-                        {
-                            a: (sub) => (
-                                <AccessibleButton
-                                    kind="link_inline"
-                                    onClick={() => {
-                                        PosthogTrackers.trackInteraction("PinnedMessageStateEventClick");
-                                        highlightEvent(roomId, messageId);
-                                    }}
-                                >
-                                    {sub}
-                                </AccessibleButton>
-                            ),
-                            b: (sub) => (
-                                <AccessibleButton kind="link_inline" onClick={onPinnedMessagesClick}>
-                                    {sub}
-                                </AccessibleButton>
-                            ),
-                        },
-                    )}
-                </span>
-            );
-        }
-
-        return () => _t("timeline|m.room.pinned_events|pinned", { senderName });
-    }
-
-    if (newlyUnpinned.length === 1 && newlyPinned.length === 0) {
-        // A single message was unpinned, include a link to that message.
-        if (allowJSX) {
-            const messageId = newlyUnpinned.pop()!;
-
-            return () => (
-                <span>
-                    {_t(
-                        "timeline|m.room.pinned_events|unpinned_link",
-                        { senderName },
-                        {
-                            a: (sub) => (
-                                <AccessibleButton
-                                    kind="link_inline"
-                                    onClick={() => {
-                                        PosthogTrackers.trackInteraction("PinnedMessageStateEventClick");
-                                        highlightEvent(roomId, messageId);
-                                    }}
-                                >
-                                    {sub}
-                                </AccessibleButton>
-                            ),
-                            b: (sub) => (
-                                <AccessibleButton kind="link_inline" onClick={onPinnedMessagesClick}>
-                                    {sub}
-                                </AccessibleButton>
-                            ),
-                        },
-                    )}
-                </span>
-            );
-        }
-
-        return () => _t("timeline|m.room.pinned_events|unpinned", { senderName });
-    }
-
-    if (allowJSX) {
-        return () => (
-            <span>
-                {_t(
-                    "timeline|m.room.pinned_events|changed_link",
-                    { senderName },
-                    {
-                        a: (sub) => (
-                            <AccessibleButton kind="link_inline" onClick={onPinnedMessagesClick}>
-                                {sub}
-                            </AccessibleButton>
-                        ),
-                    },
-                )}
-            </span>
-        );
-    }
-
-    return () => _t("timeline|m.room.pinned_events|changed", { senderName });
+function textForPinnedEvent(
+    _event: MatrixEvent,
+    _client: MatrixClient,
+    _allowJSX: boolean,
+    _showHiddenEvents?: boolean,
+): (() => Renderable) | null {
+    return null;
 }
 
 function textForWidgetEvent(event: MatrixEvent): (() => string) | null {
