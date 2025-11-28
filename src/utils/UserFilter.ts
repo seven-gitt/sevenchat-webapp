@@ -273,6 +273,7 @@ export class UserFilter {
 
         const initialEvents = timeline?.getEvents?.() || [];
         collectFrom(initialEvents);
+        let lastTimelineEventCount = initialEvents.length;
 
         // Paginate with retry mechanism
         while (paginationCount < MAX_PAGINATION) {
@@ -309,15 +310,16 @@ export class UserFilter {
                 
                 const pageEvents = timeline?.getEvents?.() || [];
                 const pageCollected = collectFrom(pageEvents);
-                
+
                 if (paginationCount % 10 === 0) {
                     console.log(`UserFilter: Local scan - page ${paginationCount}: ${pageEvents.length} events, +${pageCollected} for ${senderFilter}, total: ${results.length}`);
                 }
-                
-                if (seenEventIds.size === prevSeen) {
-                    console.log(`UserFilter: Local scan - no new events collected, stopping`);
+                const currentTimelineEventCount = pageEvents.length;
+                if (currentTimelineEventCount <= lastTimelineEventCount && pageCollected === 0) {
+                    console.log(`UserFilter: Local scan - timeline did not grow and no new results, stopping pagination`);
                     break;
                 }
+                lastTimelineEventCount = currentTimelineEventCount;
             } catch (e) {
                 console.warn(`UserFilter: paginateEventTimeline failed at page ${paginationCount}:`, e);
                 break;

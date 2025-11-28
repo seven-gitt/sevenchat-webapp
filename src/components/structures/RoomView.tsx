@@ -133,6 +133,7 @@ import { PinnedMessageBanner } from "../views/rooms/PinnedMessageBanner";
 import { ScopedRoomContextProvider, useScopedRoomContext } from "../../contexts/ScopedRoomContext";
 import { DeclineAndBlockInviteDialog } from "../views/dialogs/DeclineAndBlockInviteDialog";
 import { type FocusMessageSearchPayload } from "../../dispatcher/payloads/FocusMessageSearchPayload";
+import { type JumpToEventInRoomPayload } from "../../dispatcher/payloads/JumpToEventInRoomPayload";
 
 const DEBUG = false;
 const PREVENT_MULTIPLE_JITSI_WITHIN = 30_000;
@@ -251,6 +252,7 @@ export interface IRoomState {
     promptAskToJoin: boolean;
 
     viewRoomOpts: ViewRoomOpts;
+    timelineChromeOffset: number;
 }
 
 interface LocalRoomViewProps {
@@ -438,6 +440,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
             promptAskToJoin: false,
             viewRoomOpts: { buttons: [] },
             isRoomEncrypted: null,
+            timelineChromeOffset: 0,
         };
     }
 
@@ -948,6 +951,9 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
 
         this.context.legacyCallHandler.on(LegacyCallHandlerEvent.CallState, this.onCallState);
         window.addEventListener("beforeunload", this.onPageUnload);
+
+        // Measure chrome offsets once the view is mounted so jumps can account for banners/header padding.
+        this.updateTimelineChromeOffset();
     }
 
     public shouldComponentUpdate(nextProps: IRoomProps, nextState: IRoomState): boolean {
@@ -974,6 +980,8 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                 atEndOfLiveTimeline: this.messagePanel.isAtEndOfLiveTimeline(),
             });
         }
+
+        this.updateTimelineChromeOffset();
     }
 
     public componentWillUnmount(): void {
@@ -1197,11 +1205,18 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                         
                         // Wait a bit more for timeline to refresh
                         setTimeout(() => {
-                            this.scrollToEventWithHighlight(payload.event_id);
+                            void this.scrollToEventWithHighlight(payload.event_id);
                         }, 200);
                     });
                 }
                 break;
+            case Action.JumpToEventInRoom: {
+                const { room_id: roomId, event_id: eventId } = payload as JumpToEventInRoomPayload;
+                if (!this.unmounted && roomId === this.state.roomId && eventId) {
+                    void this.scrollToEventWithHighlight(eventId);
+                }
+                break;
+            }
             case "MatrixActions.sync":
                 if (!this.state.matrixClientIsReady) {
                     const isReadyNow = Boolean(this.context.client?.isInitialSyncComplete());
@@ -1453,7 +1468,7 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
             console.log(`RoomView: onRoomLoaded with initialEventId ${initialEventId}`);
             // Đợi một chút để đảm bảo timeline được render
             setTimeout(() => {
-                this.scrollToEventWithHighlight(initialEventId);
+                void this.scrollToEventWithHighlight(initialEventId);
             }, 600); // Reduced delay for smoother experience
         }
 
@@ -1467,85 +1482,138 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
         }
     };
 
-    private scrollToEventWithHighlight = (eventId: string, retryCount = 0): void => {
-        console.log(`Attempting to scroll to event ${eventId}, retry: ${retryCount}`);
+    private scrollToEventWithHighlight = async (eventId: string, retryCount = 0): Promise<void> => {
+        if (!eventId || !this.messagePanel) return;
+
+        await this.waitForLayoutStabilization();
 
         const room = this.state.room;
+        const eventIsLoaded = room?.findEventById(eventId);
 
-        this.waitForLayoutStabilization().then(() => {
-            // Nếu messagePanel có API chuẩn bị jump, tải ngữ cảnh trước để cuộn nền
-            const prepare = (this.messagePanel as any)?.prepareJumpToEvent as ((id: string) => Promise<void>) | undefined;
-            if (prepare) {
-                prepare.call(this.messagePanel, eventId).then(() => {
-                    // Sau khi tải xong, cuộn đúng vị trí qua API chuẩn
-                    this.messagePanel?.scrollToEventIfNeeded(eventId);
-                    // Highlight nhẹ
-                    setTimeout(() => {
-                        const el = document.querySelector(`[data-event-id="${eventId}"]`);
-                        if (el) {
-                            el.classList.add('mx_EventTile_highlight');
-                            setTimeout(() => el.classList.remove('mx_EventTile_highlight'), 3000);
-                        }
-                    }, 150);
-                }).catch(() => {
-                    // Fallback nếu prepare thất bại
-                    this.messagePanel?.scrollToEventIfNeeded(eventId);
-                });
+        if (!eventIsLoaded) {
+            try {
+                await this.messagePanel.prepareJumpToEvent(eventId);
+            } catch (err) {
+                logger.warn("Failed to prepare jump", err);
+            }
+        }
+
+        if (room && !room.findEventById(eventId)) {
+            if (retryCount >= 2) return;
+            try {
+                await this.context.client?.fetchRoomEvent(room.roomId, eventId);
+                const tl = room.getLiveTimeline();
+                if (tl) this.setState({ liveTimeline: tl });
+                await this.scrollToEventWithHighlight(eventId, retryCount + 1);
+                return;
+            } catch (err) {
+                logger.warn(`Failed to fetch event ${eventId}`, err);
                 return;
             }
+        }
 
-            // Fallback: cuộn trực tiếp nếu không có prepare
-            this.messagePanel?.scrollToEventIfNeeded(eventId);
+        const chromeOffset = this.getTimelineTopOffset();
+        if (!this.unmounted && chromeOffset !== this.state.timelineChromeOffset) {
+            this.setState({ timelineChromeOffset: chromeOffset });
+        }
 
-            // Nếu event chưa có trong room (chưa load), thử fetch một lần rồi thử lại
-            if (room && !room.findEventById(eventId)) {
-                if (retryCount >= 1) return;
-                this.context.client?.fetchRoomEvent(room.roomId, eventId).then(() => {
-                    const tl = room.getLiveTimeline();
-                    if (tl) this.setState({ liveTimeline: tl });
-                    setTimeout(() => this.scrollToEventWithHighlight(eventId, retryCount + 1), 250);
-                }).catch((err) => {
-                    console.log(`Failed to fetch event ${eventId}:`, err);
-                });
-                return;
-            }
+        if (typeof this.messagePanel.scrollToEvent === "function") {
+            // Offset upwards by the chrome height so the event lands just below banners/header chrome
+            this.messagePanel.scrollToEvent(eventId, -chromeOffset, 0);
+        } else {
+            this.messagePanel.scrollToEventIfNeeded(eventId);
+        }
 
-            setTimeout(() => {
-                const el = document.querySelector(`[data-event-id="${eventId}"]`);
-                if (el) {
-                    el.classList.add('mx_EventTile_highlight');
-                    setTimeout(() => el.classList.remove('mx_EventTile_highlight'), 3000);
-                }
-            }, 150);
-        });
+        window.setTimeout(() => this.nudgeEventBelowChrome(eventId), 60);
     };
 
-    
+
+    private getTimelineTopOffset(): number {
+        const roomView = this.roomView.current;
+        if (!roomView) return 0;
+
+        const pinned = roomView.querySelector<HTMLElement>(".mx_PinnedMessageBanner");
+        const pinnedHeight = pinned ? this.getBoxHeight(pinned) : 0;
+
+        const main = roomView.querySelector<HTMLElement>(".mx_RoomView_timeline");
+        const mainPadding = main ? parseFloat(window.getComputedStyle(main).paddingTop || "0") : 0;
+
+        const topUnread = roomView.querySelector<HTMLElement>(".mx_TopUnreadMessagesBar");
+        const topUnreadHeight = topUnread ? this.getBoxHeight(topUnread) : 0;
+
+        const buffer = 12; // extra breathing room below chrome
+
+        return Math.round(pinnedHeight + mainPadding + topUnreadHeight + buffer);
+    }
+
+    private updateTimelineChromeOffset = (): void => {
+        const offset = this.getTimelineTopOffset();
+        if (offset !== this.state.timelineChromeOffset) {
+            this.setState({ timelineChromeOffset: offset });
+        }
+    };
+
+    private getBoxHeight(element: HTMLElement): number {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        const marginTop = parseFloat(style.marginTop || "0");
+        const marginBottom = parseFloat(style.marginBottom || "0");
+        return rect.height + marginTop + marginBottom;
+    }
+
 
     private waitForLayoutStabilization(): Promise<void> {
+        const selectors = [
+            ".mx_SearchPanel",
+            ".mx_RightPanel",
+            ".mx_RoomHeader",
+            ".mx_PinnedMessageBanner",
+            ".mx_TopUnreadMessagesBar",
+        ];
+
+        const parseDurations = (value: string): number[] =>
+            value
+                .split(",")
+                .map((segment) => parseFloat(segment.trim()))
+                .filter((duration) => !Number.isNaN(duration));
+
+        const hasAnimation = (element?: Element | null): boolean => {
+            if (!element) return false;
+            const style = window.getComputedStyle(element as HTMLElement);
+            return parseDurations(style.transitionDuration).some((duration) => duration > 0) ||
+                parseDurations(style.animationDuration).some((duration) => duration > 0);
+        };
+
+        const getSignature = (): string =>
+            selectors
+                .map((selector) => {
+                    const el = document.querySelector<HTMLElement>(selector);
+                    if (!el) return "0:0";
+                    const rect = el.getBoundingClientRect();
+                    return `${rect.top.toFixed(2)}:${rect.height.toFixed(2)}`;
+                })
+                .join("|");
+
         return new Promise<void>((resolve) => {
-            // Check for various layout-affecting elements
-            const searchPanel = document.querySelector('.mx_SearchPanel');
-            const rightPanel = document.querySelector('.mx_RightPanel');
-            const roomHeader = document.querySelector('.mx_RoomHeader');
-            
-            // Check if any panels are animating
-            const isAnimating = [searchPanel, rightPanel, roomHeader].some(panel => {
-                if (!panel) return false;
-                const style = window.getComputedStyle(panel);
-                return style.transition !== 'none' || style.transform !== 'none';
-            });
-            
-            if (isAnimating) {
-                console.log('Layout is animating, waiting for stabilization...');
-                // Wait for animations to complete
-                setTimeout(() => {
-                    this.waitForLayoutStabilization().then(resolve);
-                }, 200);
-            } else {
-                // Wait a bit more to ensure DOM is fully updated
-                setTimeout(resolve, 150);
-            }
+            let previousSignature = getSignature();
+
+            const check = (): void => {
+                const animating = selectors
+                    .map((selector) => document.querySelector(selector))
+                    .some((element) => hasAnimation(element));
+
+                const signature = getSignature();
+
+                if (animating || signature !== previousSignature) {
+                    previousSignature = signature;
+                    window.setTimeout(check, 150);
+                    return;
+                }
+
+                window.setTimeout(resolve, 100);
+            };
+
+            check();
         });
     }
 
@@ -1815,24 +1883,58 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
         this.updateTopUnreadMessagesBar();
     };
 
-    private resetJumpToEvent = (eventId?: string): void => {
-        if (
-            this.state.initialEventId &&
-            this.state.initialEventScrollIntoView &&
-            this.state.initialEventId === eventId
-        ) {
-            debuglog("Removing scroll_into_view flag from initial event");
-            defaultDispatcher.dispatch<ViewRoomPayload>({
-                action: Action.ViewRoom,
-                room_id: this.getRoomId(),
-                event_id: this.state.initialEventId,
-                highlighted: this.state.isInitialEventHighlighted,
-                scroll_into_view: false,
-                replyingToEvent: this.state.replyToEvent,
-                metricsTrigger: undefined, // room doesn't change
-            });
+    private handleEventScrolledIntoView = (eventId?: string): void => {
+        if (eventId) {
+            this.nudgeEventBelowChrome(eventId);
         }
+        this.resetJumpToEvent(eventId);
     };
+
+    private resetJumpToEvent = (eventId?: string): void => {
+        if (!eventId) return;
+
+        const storeInitialEventId = this.context.roomViewStore.getInitialEventId() ?? undefined;
+        const shouldScroll = this.context.roomViewStore.initialEventScrollIntoView();
+
+        if (!storeInitialEventId || !shouldScroll || storeInitialEventId !== eventId) {
+            return;
+        }
+
+        debuglog("Removing scroll_into_view flag from initial event");
+        defaultDispatcher.dispatch<ViewRoomPayload>({
+            action: Action.ViewRoom,
+            room_id: this.getRoomId(),
+            event_id: storeInitialEventId,
+            highlighted: this.context.roomViewStore.isInitialEventHighlighted(),
+            scroll_into_view: false,
+            replyingToEvent: this.state.replyToEvent,
+            metricsTrigger: undefined, // room doesn't change
+        });
+    };
+
+    private nudgeEventBelowChrome(eventId: string): void {
+        if (!eventId || !this.roomView.current) return;
+
+        const escapeId =
+            typeof CSS !== "undefined" && CSS.escape ? CSS.escape(eventId) : eventId.replace(/"/g, '\\"');
+        const eventElement = this.roomView.current.querySelector<HTMLElement>(`[data-event-id="${escapeId}"]`);
+        if (!eventElement) return;
+
+        // Run after the current frame to ensure layout is final
+        window.requestAnimationFrame(() => {
+            const scrollContainer = eventElement.closest<HTMLElement>(".mx_AutoHideScrollbar");
+            if (!scrollContainer) return;
+
+            const containerTop = scrollContainer.getBoundingClientRect().top;
+            const desiredTop = containerTop + this.state.timelineChromeOffset;
+            const actualTop = eventElement.getBoundingClientRect().top;
+
+            if (actualTop < desiredTop - 2) {
+                const delta = actualTop - desiredTop;
+                scrollContainer.scrollBy({ top: delta });
+            }
+        });
+    }
 
     private injectSticker(url: string, info: object, text: string, threadId: string | null): void {
         const roomId = this.getRoomId();
@@ -2884,6 +2986,12 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
             highlightedEventId = this.state.initialEventId;
         }
 
+        const initialEventPixelOffset =
+            this.state.initialEventPixelOffset ??
+            (this.state.initialEventId && this.state.initialEventScrollIntoView
+                ? -this.state.timelineChromeOffset
+                : undefined);
+
         let messagePanel: JSX.Element | undefined;
         if (!isRoomEncryptionLoading) {
             messagePanel = (
@@ -2898,9 +3006,9 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
                     highlightedEventId={highlightedEventId}
                     eventId={this.state.initialEventId}
                     eventScrollIntoView={this.state.initialEventScrollIntoView}
-                    eventPixelOffset={this.state.initialEventPixelOffset}
+                    eventPixelOffset={initialEventPixelOffset}
                     onScroll={this.onMessageListScroll}
-                    onEventScrolledIntoView={this.resetJumpToEvent}
+                    onEventScrolledIntoView={this.handleEventScrolledIntoView}
                     onReadMarkerUpdated={this.updateTopUnreadMessagesBar}
                     showUrlPreview={this.state.showUrlPreview}
                     className={this.messagePanelClassNames}

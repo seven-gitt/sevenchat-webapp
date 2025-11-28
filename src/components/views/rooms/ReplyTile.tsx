@@ -15,7 +15,7 @@ import { _t } from "../../../languageHandler";
 import dis from "../../../dispatcher/dispatcher";
 import { Action } from "../../../dispatcher/actions";
 import { type RoomPermalinkCreator } from "../../../utils/permalinks/Permalinks";
-import { TimelineRenderingType } from "../../../contexts/RoomContext";
+import RoomContext, { TimelineRenderingType } from "../../../contexts/RoomContext";
 import SenderProfile from "../messages/SenderProfile";
 import MImageReplyBody from "../messages/MImageReplyBody";
 import { isVoiceMessage } from "../../../utils/EventUtils";
@@ -24,6 +24,7 @@ import MFileBody from "../messages/MFileBody";
 import MemberAvatar from "../avatars/MemberAvatar";
 import MVoiceMessageBody from "../messages/MVoiceMessageBody";
 import { type ViewRoomPayload } from "../../../dispatcher/payloads/ViewRoomPayload";
+import { type JumpToEventInRoomPayload } from "../../../dispatcher/payloads/JumpToEventInRoomPayload";
 import { renderReplyTile } from "../../../events/EventTileFactory";
 import { type GetRelationsForEvent } from "../rooms/EventTile";
 import { MatrixClientPeg } from "../../../MatrixClientPeg";
@@ -42,6 +43,7 @@ interface IProps {
 
 export default class ReplyTile extends React.PureComponent<IProps> {
     private anchorElement = createRef<HTMLAnchorElement>();
+    public static contextType = RoomContext;
 
     public componentDidMount(): void {
         this.props.mxEvent.on(MatrixEventEvent.Decrypted, this.onDecrypted);
@@ -82,7 +84,7 @@ export default class ReplyTile extends React.PureComponent<IProps> {
                 this.props.toggleExpandedQuote();
             } else {
                 // Kiểm tra xem có đang ở chế độ search không
-                const roomContext = this.context as any;
+                const roomContext = this.context as React.ContextType<typeof RoomContext>;
                 if (roomContext?.timelineRenderingType === TimelineRenderingType.Search) {
                     // Dispatch custom action để đóng search mode và navigate
                     dis.dispatch({
@@ -92,22 +94,25 @@ export default class ReplyTile extends React.PureComponent<IProps> {
                         highlighted: true,
                     });
                 } else {
-                    dis.dispatch<ViewRoomPayload>({
-                        action: Action.ViewRoom,
-                        event_id: this.props.mxEvent.getId(),
-                        highlighted: true,
-                        room_id: this.props.mxEvent.getRoomId(),
-                        metricsTrigger: undefined, // room doesn't change
-                    });
-
-                    // Để TimelinePanel xử lý cuộn chính xác; chỉ thêm highlight nhẹ
-                    setTimeout(() => {
-                        const eventElement = document.querySelector(`[data-event-id="${this.props.mxEvent.getId()}"]`);
-                        if (eventElement) {
-                            eventElement.classList.add('mx_EventTile_highlight');
-                            setTimeout(() => eventElement.classList.remove('mx_EventTile_highlight'), 3000);
-                        }
-                    }, 300);
+                    const targetRoomId = this.props.mxEvent.getRoomId();
+                    const targetEventId = this.props.mxEvent.getId();
+                    if (roomContext?.room?.roomId === targetRoomId && targetEventId) {
+                        dis.dispatch<JumpToEventInRoomPayload>({
+                            action: Action.JumpToEventInRoom,
+                            room_id: targetRoomId,
+                            event_id: targetEventId,
+                            highlighted: true,
+                            scroll_into_view: true,
+                        });
+                    } else {
+                        dis.dispatch<ViewRoomPayload>({
+                            action: Action.ViewRoom,
+                            event_id: targetEventId ?? undefined,
+                            highlighted: true,
+                            room_id: targetRoomId,
+                            metricsTrigger: undefined, // room doesn't change
+                        });
+                    }
                 }
             }
         }

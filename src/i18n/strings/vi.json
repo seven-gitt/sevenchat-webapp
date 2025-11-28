@@ -438,7 +438,7 @@
         },
         "name": "Tên",
         "no_results": "Không có kết quả",
-        "no_results_found": "không tim được kêt quả",
+        "no_results_found": "Không có kết quả tìm kiếm",
         "not_trusted": "Không đáng tin cậy",
         "off": "Tắt",
         "offline": "Ngoại tuyến",
@@ -449,7 +449,7 @@
         "people": "Danh bạ",
         "preferences": "Tùy chọn",
         "presence": "Hiện diện",
-        "preview_message": "Này bạn. Bạn là nhất!",
+        "preview_message": "Này bạn. Bạn là nhất!",
         "privacy": "Quyền riêng tư",
         "private": "Riêng tư",
         "private_room": "Phòng riêng tư",
@@ -474,7 +474,7 @@
         "show_more": "Cho xem nhiều hơn",
         "someone": "Ai đó",
         "space": "space",
-        "spaces": "Không gian",
+        "spaces": "Space",
         "sticker": "Nhãn dán",
         "stickerpack": "Gói nhãn dán",
         "success": "Thành công",
@@ -896,6 +896,9 @@
         "verify_toast_description": "Những người dùng khác có thể không tin tưởng nó",
         "verify_toast_title": "Xác thực phiên này"
     },
+    "invite_controls": {
+        "default_label": "Luôn cho phép người dùng mời bạn vào phòng"
+    },
     "error": {
         "admin_contact": "Vui lòng liên hệ với quản trị viên dịch vụ của bạn <a>contact your service administrator</a> để tiếp tục sử dụng dịch vụ này.",
         "admin_contact_short": "Liên hệ với <a>quản trị viên máy chủ</a> của bạn.",
@@ -1251,7 +1254,7 @@
         "group_moderation": "Việc vận hành",
         "group_profile": "Hồ sơ",
         "group_rooms": "Phòng",
-        "group_spaces": "Không gian",
+        "group_spaces": "Space",
         "group_themes": "Chủ đề",
         "group_threads": "Chủ đề",
         "group_voip": "Âm thanh & Hình ảnh",
@@ -1570,6 +1573,7 @@
             "forget": "Quên phòng",
             "low_priority": "Ưu tiên thấp",
             "mark_read": "Đánh dấu đã đọc",
+            "mark_unread": "Đánh dấu chưa đọc",
             "notifications_default": "Theo cài đặt mặc định",
             "notifications_mute": "Tắt tiếng phòng",
             "title": "Tùy chọn phòng",
@@ -1773,6 +1777,8 @@
         },
         "delete_avatar_label": "Xoá ảnh đại diện",
         "general": {
+            "application_language": "Ngôn ngữ ứng dụng",
+            "application_language_reload_hint": "Ứng dụng sẽ tải lại sau khi chọn ngôn ngữ khác",
             "alias_field_has_domain_invalid": "Thiếu dấu tách tên miền. Ví dụ: (:domain.org)",
             "alias_field_has_localpart_invalid": "Thiếu tên phòng hoặc dấu cách. Ví dụ: (my-room:domain.org)",
             "alias_field_matches_invalid": "Địa chỉ này không trỏ đến phòng này",
@@ -2020,10 +2026,19 @@
         }
     },
     "settings": {
+        "account": {
+            "dialog_title": "<strong>Cài đặt:</strong> Tài khoản",
+            "title": "Tài khoản"
+        },
         "all_rooms_home": "Hiển thị tất cả các phòng trong Home",
         "all_rooms_home_description": "Tất cả các phòng bạn đang ở sẽ xuất hiện trong Trang chủ.",
         "always_show_message_timestamps": "Luôn hiện mốc thời gian",
         "appearance": {
+            "custom_theme_add": "Thêm chủ đề tùy chỉnh",
+            "custom_theme_help": "Nhập URL của chủ đề tùy chỉnh bạn muốn áp dụng.",
+            "compact_layout": "Hiển thị văn bản và tin nhắn gọn",
+            "compact_layout_description": "Bố cục hiện đại phải được chọn để sử dụng tính năng này.",
+            "bundled_emoji_font": "Sử dụng phông chữ emoji đi kèm",
             "custom_font": "Sử dụng phông chữ hệ thống",
             "custom_font_description": "Đặt tên phông chữ được cài đặt trên hệ thống của bạn & %(brand)s sẽ cố gắng sử dụng phông chữ đó.",
             "custom_font_name": "Tên phông chữ hệ thống",
@@ -2118,6 +2133,8 @@
         "inline_url_previews_room": "Bật xem trước nội dung liên kết cho mọi người trong phòng này",
         "inline_url_previews_room_account": "Bật xem trước nội dung liên kết trong phòng này (chỉ với bạn)",
         "insert_trailing_colon_mentions": "Chèn dấu hai chấm phía sau các đề cập người dùng ở đầu một tin nhắn",
+        "showbold": "Hiển thị tất cả hoạt động trong danh sách phòng (chấm hoặc số tin nhắn chưa đọc)",
+        "tac_only_notifications": "Chỉ hiển thị thông báo trong trung tâm hoạt động chủ đề",
         "jump_to_bottom_on_send": "Chuyển đến cuối dòng thời gian khi bạn gửi tin nhắn",
         "key_backup": {
             "setup_secure_backup": {
@@ -2131,7 +2148,7 @@
                 "generate_security_key_title": "Tạo khóa bảo mật",
                 "pass_phrase_match_failed": "Điều đó không phù hợp.",
                 "pass_phrase_match_success": "Điều đó phù hợp!",
-                "phrase_strong_enough": "Tuyệt vời! Cụm từ bảo mật này trông đủ mạnh.",
+                "phrase_strong_enough": "Tuyệt vời!Cụm từ bảo mật này trông đủ mạnh.",
                 "secret_storage_query_failure": "Không thể truy vấn trạng thái lưu trữ bí mật",
                 "security_key_safety_reminder": "Lưu trữ Khóa bảo mật của bạn ở nơi an toàn, như trình quản lý mật khẩu hoặc két sắt, vì nó được sử dụng để bảo vệ dữ liệu được mã hóa của bạn.",
                 "set_phrase_again": "Quay lại để thiết lập lại.",
@@ -2198,6 +2215,7 @@
             "show_message_desktop_notification": "Hiển thị tin nhắn trong thông báo trên màn hình"
         },
         "preferences": {
+            "publish_timezone": "Hiển thị múi giờ trên hồ sơ công khai",
             "always_show_menu_bar": "Luôn hiển thị thanh menu cửa sổ",
             "autocomplete_delay": "Độ trễ tự động hoàn thành (mili giây)",
             "code_blocks_heading": "Khối mã",
@@ -2398,7 +2416,7 @@
             "voice_processing": "Xử lý âm thanh",
             "voice_section": "Cài đặt âm thanh"
         },
-        "warn_quit": "Cảnh báo trước khi bỏ thuốc lá"
+        "warn_quit": "Cảnh báo trước khi thoát"
     },
     "share": {
         "permalink_message": "Liên kết đến tin nhắn đã chọn",
@@ -2510,13 +2528,14 @@
             "space_dropdown_title": "Thêm space hiện có"
         },
         "context_menu": {
-            "devtools_open_timeline": "Xem dòng thời gian phòng (devtools)",
+            "devtools_open_timeline": "Xem dòng thời gian phòng chat",
+            "home": "Trang chủ space",
             "explore": "Khám phá các phòng",
             "manage_and_explore": "Quản lý và khám phá phòng",
             "options": "Tùy chọn space"
         },
         "failed_load_rooms": "Tải danh sách các phòng thất bại.",
-        "failed_remove_rooms": "Không xóa được một số phòng. Thử lại sau",
+        "failed_remove_rooms": "Không xóa được một số phòng.Thử lại sau",
         "incompatible_server_hierarchy": "Máy chủ của bạn không hỗ trợ hiển thị phân cấp space.",
         "invite": "Mời mọi người",
         "invite_description": "Mời bằng thư điện tử hoặc tên người dùng",
@@ -3173,6 +3192,7 @@
         "verify_explainer": "Để tăng cường bảo mật, hãy xác thực người dùng này bằng cách kiểm tra mã một lần trên cả hai thiết bị của bạn."
     },
     "user_menu": {
+        "link_new_device": "Liên kết thiết bị mới",
         "settings": "Tất cả cài đặt",
         "switch_theme_dark": "Chuyển sang chế độ tối",
         "switch_theme_light": "Chuyển sang chế độ ánh sáng"

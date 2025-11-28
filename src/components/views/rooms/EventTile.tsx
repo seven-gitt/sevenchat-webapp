@@ -68,6 +68,7 @@ import { copyPlaintext } from "../../../utils/strings";
 import { DecryptionFailureTracker } from "../../../DecryptionFailureTracker";
 import RedactedBody from "../messages/RedactedBody";
 import { type ViewRoomPayload } from "../../../dispatcher/payloads/ViewRoomPayload";
+import { type JumpToEventInRoomPayload } from "../../../dispatcher/payloads/JumpToEventInRoomPayload";
 import { shouldDisplayReply } from "../../../utils/Reply";
 import PosthogTrackers from "../../../PosthogTrackers";
 import TileErrorBoundary from "../messages/TileErrorBoundary";
@@ -748,11 +749,24 @@ export class UnwrappedEventTile extends React.Component<EventTileProps, IState> 
             return; // Không cần dispatch ViewRoom nữa vì sẽ được xử lý trong RoomView
         }
         
+        const targetRoomId = this.props.mxEvent.getRoomId();
+        const targetEventId = this.props.mxEvent.getId();
+        if (this.context.room?.roomId === targetRoomId && targetEventId) {
+            dis.dispatch<JumpToEventInRoomPayload>({
+                action: Action.JumpToEventInRoom,
+                room_id: targetRoomId,
+                event_id: targetEventId,
+                highlighted: true,
+                scroll_into_view: true,
+            });
+            return;
+        }
+
         dis.dispatch<ViewRoomPayload>({
             action: Action.ViewRoom,
-            event_id: this.props.mxEvent.getId(),
+            event_id: targetEventId ?? undefined,
             highlighted: true,
-            room_id: this.props.mxEvent.getRoomId(),
+            room_id: targetRoomId,
             metricsTrigger: "MessageSearch",
         });
     };

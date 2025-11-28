@@ -37,6 +37,7 @@ import { type JoinRoomPayload } from "../dispatcher/payloads/JoinRoomPayload";
 import { type JoinRoomReadyPayload } from "../dispatcher/payloads/JoinRoomReadyPayload";
 import { type JoinRoomErrorPayload } from "../dispatcher/payloads/JoinRoomErrorPayload";
 import { type ViewRoomErrorPayload } from "../dispatcher/payloads/ViewRoomErrorPayload";
+import { type JumpToEventInRoomPayload } from "../dispatcher/payloads/JumpToEventInRoomPayload";
 import ErrorDialog from "../components/views/dialogs/ErrorDialog";
 import { type ActiveRoomChangedPayload } from "../dispatcher/payloads/ActiveRoomChangedPayload";
 import SettingsStore from "../settings/SettingsStore";
@@ -219,6 +220,9 @@ export class RoomViewStore extends EventEmitter {
             case Action.ViewRoom:
                 this.viewRoom(payload as ViewRoomPayload);
                 break;
+            case Action.JumpToEventInRoom:
+                this.jumpToEventInRoom(payload as JumpToEventInRoomPayload);
+                break;
             case Action.ViewThread:
                 this.viewThread(payload as ThreadPayload);
                 break;
@@ -326,6 +330,19 @@ export class RoomViewStore extends EventEmitter {
                 break;
             }
         }
+    }
+
+    private jumpToEventInRoom(payload: JumpToEventInRoomPayload): void {
+        if (!payload.room_id || payload.room_id !== this.state.roomId) {
+            return;
+        }
+
+        this.setState({
+            initialEventId: payload.event_id,
+            initialEventPixelOffset: null,
+            isInitialEventHighlighted: payload.highlighted ?? true,
+            initialEventScrollIntoView: payload.scroll_into_view ?? true,
+        });
     }
 
     private async viewRoom(payload: ViewRoomPayload): Promise<void> {

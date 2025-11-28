@@ -126,6 +126,12 @@ export enum Action {
     ViewRoom = "view_room",
 
     /**
+     * Jump to an event within the currently viewed room without touching routing.
+     * Should be used with JumpToEventInRoomPayload.
+     */
+    JumpToEventInRoom = "jump_to_event_in_room",
+
+    /**
      * Changes thread based on payload parameters. Should be used with ThreadPayload.
      */
     ViewThread = "view_thread",

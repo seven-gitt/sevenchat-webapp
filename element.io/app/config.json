@@ -120,7 +120,7 @@
     
     
     "ui_defaults": {
-        "theme": "dark",
+        "theme": "light",
         "timeline_layout": "bubble",
         "show_timestamps": false,
         "show_join_leaves": false,

@@ -335,7 +335,11 @@ class TimelinePanel extends React.Component<IProps, IState> {
         const differentEventId = prevProps.eventId != this.props.eventId;
         const differentHighlightedEventId = prevProps.highlightedEventId != this.props.highlightedEventId;
         const differentAvoidJump = prevProps.eventScrollIntoView && !this.props.eventScrollIntoView;
-        if (differentEventId || differentHighlightedEventId || differentAvoidJump) {
+        const differentPixelOffset =
+            !!this.props.eventScrollIntoView &&
+            prevProps.eventPixelOffset !== this.props.eventPixelOffset &&
+            prevProps.eventId === this.props.eventId;
+        if (differentEventId || differentHighlightedEventId || differentAvoidJump || differentPixelOffset) {
             logger.log(
                 `TimelinePanel switching to eventId ${this.props.eventId} (was ${prevProps.eventId}), ` +
                     `scrollIntoView: ${this.props.eventScrollIntoView} (was ${prevProps.eventScrollIntoView})`,
@@ -1227,6 +1231,10 @@ class TimelinePanel extends React.Component<IProps, IState> {
 
     public scrollToEventIfNeeded = (eventId: string): void => {
         this.messagePanel.current?.scrollToEventIfNeeded(eventId);
+    };
+
+    public scrollToEvent = (eventId: string, pixelOffset = 0, offsetBase = 0): void => {
+        this.messagePanel.current?.scrollToEvent(eventId, pixelOffset, offsetBase);
     };
 
     /* scroll to show the read-up-to marker. We put it 1/3 of the way down
