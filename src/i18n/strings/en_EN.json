@@ -3746,6 +3746,7 @@
         "add_topic": "Thêm chủ đề",
         "pinned_messages_button": "Pinned messages",
         "files_button": "Files",
+        "images_button": "Images",
         "polls_button": "Polls",
         "poll": {
             "view_in_timeline": "View poll in timeline",
@@ -4161,6 +4162,10 @@
         "peek_note": "You must join the room to see its files",
         "empty_heading": "No files visible in this room",
         "empty_description": "Attach files from chat or just drag and drop them anywhere in a room."
+    },
+    "image_panel": {
+        "empty_heading": "No images in this room",
+        "empty_description": "Share an image in chat or drag and drop one here to see it listed."
     },
     "onboarding": {
         "has_avatar_label": "Great, that'll help people know it's you",

@@ -332,66 +332,44 @@ export default class AliasSettings extends React.Component<IProps, IState> {
         const mxClient = this.context;
         const localDomain = mxClient.getDomain()!;
         const isSpaceRoom = mxClient.getRoom(this.props.roomId)?.isSpaceRoom();
+        const showPublishedAliasesSection = false; // Hide public alias management in room settings
+        const showLocalAliasesSection = false; // Hide local alias management in room settings
 
-        let found = false;
-        const canonicalValue = this.state.canonicalAlias || "";
-        const canonicalAliasSection = (
-            <Field
-                onChange={this.onCanonicalAliasChange}
-                value={canonicalValue}
-                disabled={this.state.updatingCanonicalAlias || !this.props.canSetCanonicalAlias}
-                element="select"
-                id="canonicalAlias"
-                label={_t("room_settings|general|canonical_alias_field_label")}
-            >
-                <option value="" key="unset">
-                    {_t("room_settings|alias_not_specified")}
-                </option>
-                {this.getAliases().map((alias, i) => {
-                    if (alias === this.state.canonicalAlias) found = true;
-                    return (
-                        <option value={alias} key={i}>
-                            {alias}
-                        </option>
-                    );
-                })}
-                {found || !this.state.canonicalAlias ? (
-                    ""
-                ) : (
-                    <option value={this.state.canonicalAlias} key="arbitrary">
-                        {this.state.canonicalAlias}
+        let publishedAliasSection: JSX.Element | null = null;
+        if (showPublishedAliasesSection) {
+            let found = false;
+            const canonicalValue = this.state.canonicalAlias || "";
+            const canonicalAliasSection = (
+                <Field
+                    onChange={this.onCanonicalAliasChange}
+                    value={canonicalValue}
+                    disabled={this.state.updatingCanonicalAlias || !this.props.canSetCanonicalAlias}
+                    element="select"
+                    id="canonicalAlias"
+                    label={_t("room_settings|general|canonical_alias_field_label")}
+                >
+                    <option value="" key="unset">
+                        {_t("room_settings|alias_not_specified")}
                     </option>
-                )}
-            </Field>
-        );
-
-        let localAliasesList: JSX.Element;
-        if (this.state.localAliasesLoading) {
-            localAliasesList = <Spinner />;
-        } else {
-            localAliasesList = (
-                <EditableAliasesList
-                    id="roomAliases"
-                    items={this.state.localAliases}
-                    newItem={this.state.newAlias}
-                    onNewItemChanged={this.onNewAliasChanged}
-                    canRemove={this.props.canSetAliases}
-                    canEdit={this.props.canSetAliases}
-                    onItemAdded={this.onLocalAliasAdded}
-                    onItemRemoved={this.onLocalAliasDeleted}
-                    noItemsLabel={
-                        isSpaceRoom
-                            ? _t("room_settings|general|no_aliases_space")
-                            : _t("room_settings|general|no_aliases_room")
-                    }
-                    placeholder={_t("room_settings|general|local_alias_field_label")}
-                    domain={localDomain}
-                />
+                    {this.getAliases().map((alias, i) => {
+                        if (alias === this.state.canonicalAlias) found = true;
+                        return (
+                            <option value={alias} key={i}>
+                                {alias}
+                            </option>
+                        );
+                    })}
+                    {found || !this.state.canonicalAlias ? (
+                        ""
+                    ) : (
+                        <option value={this.state.canonicalAlias} key="arbitrary">
+                            {this.state.canonicalAlias}
+                        </option>
+                    )}
+                </Field>
             );
-        }
 
-        return (
-            <>
+            publishedAliasSection = (
                 <SettingsFieldset
                     data-testid="published-address-fieldset"
                     legend={_t("room_settings|general|published_aliases_section")}
@@ -434,22 +412,57 @@ export default class AliasSettings extends React.Component<IProps, IState> {
                         roomId={this.props.roomId}
                     />
                 </SettingsFieldset>
-                <SettingsFieldset
-                    data-testid="local-address-fieldset"
-                    legend={_t("room_settings|general|local_aliases_section")}
-                    description={
+            );
+        }
+
+        let localAliasesList: JSX.Element;
+        if (this.state.localAliasesLoading) {
+            localAliasesList = <Spinner />;
+        } else {
+            localAliasesList = (
+                <EditableAliasesList
+                    id="roomAliases"
+                    items={this.state.localAliases}
+                    newItem={this.state.newAlias}
+                    onNewItemChanged={this.onNewAliasChanged}
+                    canRemove={this.props.canSetAliases}
+                    canEdit={this.props.canSetAliases}
+                    onItemAdded={this.onLocalAliasAdded}
+                    onItemRemoved={this.onLocalAliasDeleted}
+                    noItemsLabel={
                         isSpaceRoom
-                            ? _t("room_settings|general|local_aliases_explainer_space", { localDomain })
-                            : _t("room_settings|general|local_aliases_explainer_room", { localDomain })
+                            ? _t("room_settings|general|no_aliases_space")
+                            : _t("room_settings|general|no_aliases_room")
                     }
-                >
-                    <details onToggle={this.onLocalAliasesToggled} open={this.state.detailsOpen}>
-                        <summary className="mx_AliasSettings_localAddresses">
-                            {this.state.detailsOpen ? _t("room_list|show_less") : _t("common|show_more")}
-                        </summary>
-                        {localAliasesList}
-                    </details>
-                </SettingsFieldset>
+                    placeholder={_t("room_settings|general|local_alias_field_label")}
+                    domain={localDomain}
+                />
+            );
+        }
+
+        const localAliasSection = showLocalAliasesSection ? (
+            <SettingsFieldset
+                data-testid="local-address-fieldset"
+                legend={_t("room_settings|general|local_aliases_section")}
+                description={
+                    isSpaceRoom
+                        ? _t("room_settings|general|local_aliases_explainer_space", { localDomain })
+                        : _t("room_settings|general|local_aliases_explainer_room", { localDomain })
+                }
+            >
+                <details onToggle={this.onLocalAliasesToggled} open={this.state.detailsOpen}>
+                    <summary className="mx_AliasSettings_localAddresses">
+                        {this.state.detailsOpen ? _t("room_list|show_less") : _t("common|show_more")}
+                    </summary>
+                    {localAliasesList}
+                </details>
+            </SettingsFieldset>
+        ) : null;
+
+        return (
+            <>
+                {publishedAliasSection}
+                {localAliasSection}
             </>
         );
     }

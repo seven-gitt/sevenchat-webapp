@@ -19,8 +19,10 @@ import {
     RoomEvent,
     type TimelineWindow,
 } from "matrix-js-sdk/src/matrix";
+import { type IFilterDefinition } from "matrix-js-sdk/src/filter";
 import { logger } from "matrix-js-sdk/src/logger";
 import FilesIcon from "@vector-im/compound-design-tokens/assets/web/icons/files";
+import ImageIcon from "@vector-im/compound-design-tokens/assets/web/icons/image";
 
 import { MatrixClientPeg } from "../../MatrixClientPeg";
 import EventIndexPeg from "../../indexing/EventIndexPeg";
@@ -34,12 +36,15 @@ import { Layout } from "../../settings/enums/Layout";
 import RoomContext, { TimelineRenderingType } from "../../contexts/RoomContext";
 import Measured from "../views/elements/Measured";
 import EmptyState from "../views/right_panel/EmptyState";
-import { ScopedRoomContextProvider } from "../../contexts/ScopedRoomContext.tsx";
+import { ScopedRoomContextProvider } from "../../contexts/ScopedRoomContext";
+
+type FilePanelVariant = "files" | "images";
 
 interface IProps {
     roomId: string;
     onClose: () => void;
     resizeNotifier: ResizeNotifier;
+    variant?: FilePanelVariant;
 }
 
 interface IState {
@@ -95,14 +100,94 @@ class FilePanel extends React.Component<IProps, IState> {
         this.addEncryptedLiveEvent(ev);
     };
 
+    private removeEventIfIrrelevant = (ev: MatrixEvent): void => {
+        if (ev.getRoomId() !== this.props.roomId) return;
+        if (this.isAllowedFileEvent(ev)) return;
+        const eventId = ev.getId();
+        if (!eventId) return;
+        this.state.timelineSet?.removeEvent(eventId);
+    };
+
+    private onFilteredTimelineEvent = (
+        ev: MatrixEvent,
+        room: Room | undefined,
+        toStartOfTimeline: boolean | undefined,
+        removed: boolean,
+    ): void => {
+        if (removed || toStartOfTimeline) return;
+        if (room?.roomId !== this.props.roomId) return;
+        this.removeEventIfIrrelevant(ev);
+    };
+
+    private onFilteredDecryptedEvent = (ev: MatrixEvent): void => {
+        this.removeEventIfIrrelevant(ev);
+    };
+
+    private get variant(): FilePanelVariant {
+        return this.props.variant ?? "files";
+    }
+
+    private get headerLabel(): string {
+        return this.variant === "images" ? _t("right_panel|images_button") : _t("right_panel|files_button");
+    }
+
+    private get emptyStateCopy(): { title: string; description: string } {
+        if (this.variant === "images") {
+            return {
+                title: _t("image_panel|empty_heading"),
+                description: _t("image_panel|empty_description"),
+            };
+        }
+
+        return {
+            title: _t("file_panel|empty_heading"),
+            description: _t("file_panel|empty_description"),
+        };
+    }
+
+    private get emptyStateIcon(): typeof FilesIcon {
+        return this.variant === "images" ? ImageIcon : FilesIcon;
+    }
+
+    private isAllowedFileEvent(ev: MatrixEvent): boolean {
+        const eventType = ev.getType();
+        if (eventType !== "m.room.message" && eventType !== "m.room.encrypted") return false;
+
+        const msgtype = ev.getContent().msgtype;
+        if (!msgtype) return true;
+
+        if (this.variant === "images") {
+            return msgtype === "m.image";
+        }
+
+        return ["m.file", "m.video", "m.audio"].includes(msgtype);
+    }
+
+    private filterTimelineSet(timelineSet: EventTimelineSet | null): void {
+        if (!timelineSet) return;
+
+        const disallowed: string[] = [];
+        for (const timeline of timelineSet.getTimelines()) {
+            for (const event of timeline.getEvents()) {
+                if (!this.isAllowedFileEvent(event)) {
+                    const eventId = event.getId();
+                    if (eventId) {
+                        disallowed.push(eventId);
+                    }
+                }
+            }
+        }
+
+        for (const eventId of disallowed) {
+            timelineSet.removeEvent(eventId);
+        }
+    }
+
     public addEncryptedLiveEvent(ev: MatrixEvent): void {
         if (!this.state.timelineSet) return;
 
         const timeline = this.state.timelineSet.getLiveTimeline();
-        if (ev.getType() !== "m.room.message") return;
-        if (!["m.file", "m.image", "m.video", "m.audio"].includes(ev.getContent().msgtype!)) {
-            return;
-        }
+        if (!this.isAllowedFileEvent(ev)) return;
 
         if (!this.state.timelineSet.eventIdToTimeline(ev.getId()!)) {
             this.state.timelineSet.addEventToTimeline(ev, timeline, {
@@ -117,6 +202,9 @@ class FilePanel extends React.Component<IProps, IState> {
         const client = MatrixClientPeg.safeGet();
 
         await this.updateTimelineSet(this.props.roomId);
+
+        client.on(RoomEvent.Timeline, this.onFilteredTimelineEvent);
+        client.on(MatrixEventEvent.Decrypted, this.onFilteredDecryptedEvent);
 
         if (!client.isRoomEncrypted(this.props.roomId)) return;
 
@@ -138,6 +226,9 @@ class FilePanel extends React.Component<IProps, IState> {
         const client = MatrixClientPeg.get();
         if (client === null) return;
 
+        client.removeListener(RoomEvent.Timeline, this.onFilteredTimelineEvent);
+        client.removeListener(MatrixEventEvent.Decrypted, this.onFilteredDecryptedEvent);
+
         if (!client.isRoomEncrypted(this.props.roomId)) return;
 
         if (EventIndexPeg.get() !== null) {
@@ -148,22 +239,44 @@ class FilePanel extends React.Component<IProps, IState> {
 
     public async fetchFileEventsServer(room: Room): Promise<EventTimelineSet> {
         const client = MatrixClientPeg.safeGet();
+        const isEncryptedRoom = client.isRoomEncrypted(room.roomId);
 
-        const filter = new Filter(client.getSafeUserId());
-        filter.setDefinition({
+        const filterDefinition: IFilterDefinition = {
             room: {
                 timeline: {
-                    contains_url: true,
                     types: ["m.room.message"],
                 },
             },
-        });
+        };
 
-        filter.filterId = await client.getOrCreateFilter("FILTER_FILES_" + client.credentials.userId, filter);
+        const timelineFilter = filterDefinition.room?.timeline;
+        if (timelineFilter) {
+            if (isEncryptedRoom) {
+                timelineFilter.types?.push("m.room.encrypted");
+            } else {
+                timelineFilter.contains_url = true;
+            }
+        }
+
+        const filter = new Filter(client.getSafeUserId());
+        filter.setDefinition(filterDefinition);
+
+        const variantPrefix = this.variant === "images" ? "FILTER_FILES_IMAGES_" : "FILTER_FILES_ALL_";
+        const encryptionSuffix = isEncryptedRoom ? "ENCRYPTED_" : "UNENCRYPTED_";
+
+        filter.filterId = await client.getOrCreateFilter(
+            variantPrefix + encryptionSuffix + client.credentials.userId,
+            filter,
+        );
+
+        // The filtered timeline set is cached per filter. Force a fresh instance each time we
+        // open the panel so previously removed events don't leave the panel empty.
+        room.removeFilteredTimelineSet(filter);
+
         return room.getOrCreateFilteredTimelineSet(filter);
     }
 
-    private onPaginationRequest = (
+    private onPaginationRequest = async (
         timelineWindow: TimelineWindow,
         direction: Direction,
         limit: number,
@@ -173,16 +286,23 @@ class FilePanel extends React.Component<IProps, IState> {
         const roomId = this.props.roomId;
 
         const room = client.getRoom(roomId);
+        let result: boolean;
 
         // We override the pagination request for encrypted rooms so that we ask
         // the event index to fulfill the pagination request. Asking the server
         // to paginate won't ever work since the server can't correctly filter
         // out events containing URLs
         if (room && client.isRoomEncrypted(roomId) && eventIndex !== null) {
-            return eventIndex.paginateTimelineWindow(room, timelineWindow, direction, limit);
+            result = await eventIndex.paginateTimelineWindow(room, timelineWindow, direction, limit);
         } else {
-            return timelineWindow.paginate(direction, limit);
+            result = await timelineWindow.paginate(direction, limit);
         }
+
+        if (result && this.state.timelineSet) {
+            this.filterTimelineSet(this.state.timelineSet);
+        }
+
+        return result;
     };
 
     private onMeasurement = (narrow: boolean): void => {
@@ -216,6 +336,7 @@ class FilePanel extends React.Component<IProps, IState> {
                     await eventIndex.populateFileTimeline(timelineSet, timeline, room, 10);
                 }
 
+                this.filterTimelineSet(timelineSet);
                 this.setState({ timelineSet: timelineSet });
             } catch (error) {
                 logger.error("Failed to get or create file panel filter", error);
@@ -226,12 +347,16 @@ class FilePanel extends React.Component<IProps, IState> {
     }
 
     public render(): React.ReactNode {
+        const headerLabel = this.headerLabel;
+        const { title: emptyTitle, description: emptyDescription } = this.emptyStateCopy;
+        const EmptyStateIcon = this.emptyStateIcon;
+
         if (MatrixClientPeg.safeGet().isGuest()) {
             return (
                 <BaseCard
                     className="mx_FilePanel mx_RoomView_messageListWrapper"
                     onClose={this.props.onClose}
-                    header={_t("right_panel|files_button")}
+                    header={headerLabel}
                 >
                     <div className="mx_RoomView_empty">
                         {_t(
@@ -253,7 +378,7 @@ class FilePanel extends React.Component<IProps, IState> {
                 <BaseCard
                     className="mx_FilePanel mx_RoomView_messageListWrapper"
                     onClose={this.props.onClose}
-                    header={_t("right_panel|files_button")}
+                    header={headerLabel}
                 >
                     <div className="mx_RoomView_empty">{_t("file_panel|peek_note")}</div>
                 </BaseCard>
@@ -263,11 +388,7 @@ class FilePanel extends React.Component<IProps, IState> {
         // wrap a TimelinePanel with the jump-to-event bits turned off.
 
         const emptyState = (
-            <EmptyState
-                Icon={FilesIcon}
-                title={_t("file_panel|empty_heading")}
-                description={_t("file_panel|empty_description")}
-            />
+            <EmptyState Icon={EmptyStateIcon} title={emptyTitle} description={emptyDescription} />
         );
 
         const isRoomEncrypted = this.noRoom ? false : MatrixClientPeg.safeGet().isRoomEncrypted(this.props.roomId);
@@ -284,7 +405,7 @@ class FilePanel extends React.Component<IProps, IState> {
                         onClose={this.props.onClose}
                         withoutScrollContainer
                         ref={this.card}
-                        header={_t("right_panel|files_button")}
+                        header={headerLabel}
                     >
                         <Measured sensor={this.card} onMeasurement={this.onMeasurement} />
                         <SearchWarning isRoomEncrypted={isRoomEncrypted} kind={WarningKind.Files} />
@@ -307,7 +428,7 @@ class FilePanel extends React.Component<IProps, IState> {
                     <BaseCard
                         className="mx_FilePanel"
                         onClose={this.props.onClose}
-                        header={_t("right_panel|files_button")}
+                        header={headerLabel}
                     >
                         <Spinner />
                     </BaseCard>

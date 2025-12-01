@@ -443,6 +443,47 @@ exports[`<RoomSummaryCard /> has button to edit topic 1`] = `
             xmlns="http://www.w3.org/2000/svg"
           >
             <path
+              d="M17 9a2 2 0 1 1-4 0 2 2 0 0 1 4 0"
+            />
+            <path
+              d="M5 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm14 2v14H5v-3.172l4-4L16.172 19H19l-8.586-8.586a2 2 0 0 0-2.828 0L5 13V5z"
+            />
+          </svg>
+          <span
+            class="_typography_6v6n8_153 _font-body-md-medium_6v6n8_60 _label_dyt4i_34"
+          >
+            Images
+          </span>
+          <svg
+            aria-hidden="true"
+            class="_nav-hint_dyt4i_59"
+            fill="currentColor"
+            height="24"
+            viewBox="8 0 8 24"
+            width="8"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M8.7 17.3a.95.95 0 0 1-.275-.7q0-.425.275-.7l3.9-3.9-3.9-3.9a.95.95 0 0 1-.275-.7q0-.425.275-.7a.95.95 0 0 1 .7-.275q.425 0 .7.275l4.6 4.6q.15.15.213.325.062.175.062.375t-.062.375a.9.9 0 0 1-.213.325l-4.6 4.6a.95.95 0 0 1-.7.275.95.95 0 0 1-.7-.275"
+            />
+          </svg>
+        </button>
+        <button
+          class="_item_dyt4i_8 _interactive_dyt4i_26"
+          data-floating-ui-inert=""
+          data-kind="primary"
+          role="menuitem"
+        >
+          <svg
+            aria-hidden="true"
+            class="_icon_dyt4i_50"
+            fill="currentColor"
+            height="24"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
               d="M6 22q-.824 0-1.412-.587A1.93 1.93 0 0 1 4 20V4q0-.824.588-1.412A1.93 1.93 0 0 1 6 2h7.175a1.98 1.98 0 0 1 1.4.575l4.85 4.85q.275.275.425.638.15.361.15.762V20q0 .824-.587 1.413A1.93 1.93 0 0 1 18 22zm7-14V4H6v16h12V9h-4a.97.97 0 0 1-.713-.287A.97.97 0 0 1 13 8"
             />
           </svg>
@@ -1149,6 +1190,47 @@ exports[`<RoomSummaryCard /> renders the room summary 1`] = `
           style="border: 0px; height: 1px; margin: -1px; overflow: hidden; padding: 0px; position: fixed; white-space: nowrap; width: 1px; top: 0px; left: 0px;"
           tabindex="0"
         />
+        <button
+          class="_item_dyt4i_8 _interactive_dyt4i_26"
+          data-floating-ui-inert=""
+          data-kind="primary"
+          role="menuitem"
+        >
+          <svg
+            aria-hidden="true"
+            class="_icon_dyt4i_50"
+            fill="currentColor"
+            height="24"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M17 9a2 2 0 1 1-4 0 2 2 0 0 1 4 0"
+            />
+            <path
+              d="M5 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm14 2v14H5v-3.172l4-4L16.172 19H19l-8.586-8.586a2 2 0 0 0-2.828 0L5 13V5z"
+            />
+          </svg>
+          <span
+            class="_typography_6v6n8_153 _font-body-md-medium_6v6n8_60 _label_dyt4i_34"
+          >
+            Images
+          </span>
+          <svg
+            aria-hidden="true"
+            class="_nav-hint_dyt4i_59"
+            fill="currentColor"
+            height="24"
+            viewBox="8 0 8 24"
+            width="8"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M8.7 17.3a.95.95 0 0 1-.275-.7q0-.425.275-.7l3.9-3.9-3.9-3.9a.95.95 0 0 1-.275-.7q0-.425.275-.7a.95.95 0 0 1 .7-.275q.425 0 .7.275l4.6 4.6q.15.15.213.325.062.175.062.375t-.062.375a.9.9 0 0 1-.213.325l-4.6 4.6a.95.95 0 0 1-.7.275.95.95 0 0 1-.7-.275"
+            />
+          </svg>
+        </button>
         <button
           class="_item_dyt4i_8 _interactive_dyt4i_26"
           data-floating-ui-inert=""
@@ -1909,6 +1991,47 @@ exports[`<RoomSummaryCard /> renders the room topic in the summary 1`] = `
           style="border: 0px; height: 1px; margin: -1px; overflow: hidden; padding: 0px; position: fixed; white-space: nowrap; width: 1px; top: 0px; left: 0px;"
           tabindex="0"
         />
+        <button
+          class="_item_dyt4i_8 _interactive_dyt4i_26"
+          data-floating-ui-inert=""
+          data-kind="primary"
+          role="menuitem"
+        >
+          <svg
+            aria-hidden="true"
+            class="_icon_dyt4i_50"
+            fill="currentColor"
+            height="24"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M17 9a2 2 0 1 1-4 0 2 2 0 0 1 4 0"
+            />
+            <path
+              d="M5 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm14 2v14H5v-3.172l4-4L16.172 19H19l-8.586-8.586a2 2 0 0 0-2.828 0L5 13V5z"
+            />
+          </svg>
+          <span
+            class="_typography_6v6n8_153 _font-body-md-medium_6v6n8_60 _label_dyt4i_34"
+          >
+            Images
+          </span>
+          <svg
+            aria-hidden="true"
+            class="_nav-hint_dyt4i_59"
+            fill="currentColor"
+            height="24"
+            viewBox="8 0 8 24"
+            width="8"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M8.7 17.3a.95.95 0 0 1-.275-.7q0-.425.275-.7l3.9-3.9-3.9-3.9a.95.95 0 0 1-.275-.7q0-.425.275-.7a.95.95 0 0 1 .7-.275q.425 0 .7.275l4.6 4.6q.15.15.213.325.062.175.062.375t-.062.375a.9.9 0 0 1-.213.325l-4.6 4.6a.95.95 0 0 1-.7.275.95.95 0 0 1-.7-.275"
+            />
+          </svg>
+        </button>
         <button
           class="_item_dyt4i_8 _interactive_dyt4i_26"
           data-floating-ui-inert=""

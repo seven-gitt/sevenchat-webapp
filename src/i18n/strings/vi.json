@@ -1045,6 +1045,10 @@
         "guest_note": "Bạn phải đăng ký <a>register</a> để sử dụng chức năng này",
         "peek_note": "Bạn phải tham gia vào phòng để xem các tệp của nó"
     },
+    "image_panel": {
+        "empty_heading": "Chưa có ảnh nào trong phòng này",
+        "empty_description": "Gửi một ảnh trong cuộc trò chuyện hoặc kéo thả ảnh vào đây để xem lại."
+    },
     "forward": {
         "filter_placeholder": "Tìm kiếm phòng hoặc người",
         "message_preview_heading": "Xem trước tin nhắn",
@@ -1536,6 +1540,8 @@
             }
         },
         "pinned_messages_button": "Đã ghim",
+        "files_button": "File",
+        "images_button": "Ảnh",
         "poll": {
             "active_heading": "Các cuộc bỏ phiếu hiện tại",
             "final_result": {
@@ -1841,7 +1847,7 @@
         "permissions": {
             "add_privileged_user_description": "Cho người trong phòng này nhiều quyền hơn",
             "add_privileged_user_filter_placeholder": "Tìm người trong phòng…",
-            "add_privileged_user_heading": "Thêm người dùng quyền lực",
+            "add_privileged_user_heading": "Phân quyền cho người dùng",
             "ban": "Cấm người dùng",
             "ban_reason": "Lý do",
             "banned_by": "Bị cấm bởi %(displayName)s",
@@ -2614,7 +2620,8 @@
         "result_may_be_hidden_privacy_warning": "Một số kết quả có thể bị ẩn để đảm bảo quyền riêng tư",
         "result_may_be_hidden_warning": "Một số kết quả có thể bị ẩn",
         "spaces_title": "Các Space bạn đang trong đó",
-        "start_group_chat_button": "Bắt đầu cuộc trò chuyện nhóm"
+        "start_group_chat_button": "Bắt đầu cuộc trò chuyện nhóm",
+        "cant_find_person_helpful_hint": "Nếu bạn không tìm thấy người bạn muốn, hãy chắc chắn rằng bạn đã nhập đúng tên người dùng hoặc thử tìm kiếm bằng địa chỉ thư điện tử hoặc số điện thoại của họ."
     },
     "stickers": {
         "empty": "Bạn hiện chưa bật bất kỳ gói nhãn dán nào",
@@ -3428,6 +3435,7 @@
             "dates": "Ngày thường dễ đoán",
             "extendedRepeat": "Ký tự \"abcabcabc\" chỉ hơi khó đoán hơn \"abc\"",
             "keyPattern": "Các mẫu bàn phím ngắn là rất dễ đoán",
+            "userInputs": "Không nên chứa bất kỳ dữ liệu cá nhân hoặc liên quan trang",
             "namesByThemselves": "Tên và họ là rất dễ đoán",
             "recentYears": "Dùng những năm gần đây là rất dễ đoán",
             "sequences": "Chuỗi ký tự như abc hoặc 6543 là rất dễ đoán",

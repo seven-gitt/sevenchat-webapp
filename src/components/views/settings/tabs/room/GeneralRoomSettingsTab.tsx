@@ -65,6 +65,8 @@ export default class GeneralRoomSettingsTab extends React.Component<IProps, ISta
             <UrlPreviewSettings room={room} />
         ) : null;
 
+        const showAliasSettings = false; // Hide alias settings section entirely
+
         let leaveSection;
         if (room.getMyMembership() === KnownMembership.Join) {
             leaveSection = (
@@ -76,22 +78,26 @@ export default class GeneralRoomSettingsTab extends React.Component<IProps, ISta
             );
         }
 
+        const aliasSection = showAliasSettings ? (
+            <SettingsSection>
+                <AliasSettings
+                    roomId={room.roomId}
+                    canSetCanonicalAlias={canSetCanonical}
+                    canSetAliases={canSetAliases}
+                    canonicalAliasEvent={canonicalAliasEv}
+                />
+            </SettingsSection>
+        ) : null;
+
         return (
             <SettingsTab data-testid="General">
                 <SettingsSection heading={_t("common|general")}>
                     <RoomProfileSettings roomId={room.roomId} />
                 </SettingsSection>
 
-                <SettingsSection heading={_t("room_settings|general|aliases_section")}>
-                    <AliasSettings
-                        roomId={room.roomId}
-                        canSetCanonicalAlias={canSetCanonical}
-                        canSetAliases={canSetAliases}
-                        canonicalAliasEvent={canonicalAliasEv}
-                    />
-                </SettingsSection>
+                {aliasSection}
 
-                <SettingsSection heading={_t("room_settings|general|other_section")}>
+                <SettingsSection>
                     {urlPreviewSettings}
                     <SettingsSubsection heading={_t("common|moderation_and_safety")} legacy={false}>
                         <MediaPreviewAccountSettings roomId={room.roomId} />

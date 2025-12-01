@@ -29,6 +29,7 @@ import SettingsIcon from "@vector-im/compound-design-tokens/assets/web/icons/set
 import ExportArchiveIcon from "@vector-im/compound-design-tokens/assets/web/icons/export-archive";
 import LeaveIcon from "@vector-im/compound-design-tokens/assets/web/icons/leave";
 import FilesIcon from "@vector-im/compound-design-tokens/assets/web/icons/files";
+import ImageIcon from "@vector-im/compound-design-tokens/assets/web/icons/image";
 import UserProfileIcon from "@vector-im/compound-design-tokens/assets/web/icons/user-profile";
 import ThreadsIcon from "@vector-im/compound-design-tokens/assets/web/icons/threads";
 import PollsIcon from "@vector-im/compound-design-tokens/assets/web/icons/polls";
@@ -921,6 +922,11 @@ const RoomSummaryCardView: React.FC<IProps> = ({
                                 </MenuItem>
                             </div>
                         </ReleaseAnnouncement>
+                        <MenuItem
+                            Icon={ImageIcon}
+                            label={_t("right_panel|images_button")}
+                            onSelect={vm.onRoomImagesClick}
+                        />
                         <MenuItem
                             Icon={FilesIcon}
                             label={_t("right_panel|files_button")}

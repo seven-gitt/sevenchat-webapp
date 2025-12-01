@@ -225,6 +225,18 @@ export default class RightPanel extends React.Component<Props, IState> {
                     );
                 }
                 break;
+            case RightPanelPhases.ImagesPanel:
+                if (!!roomId) {
+                    card = (
+                        <FilePanel
+                            roomId={roomId}
+                            resizeNotifier={this.props.resizeNotifier}
+                            onClose={this.onClose}
+                            variant="images"
+                        />
+                    );
+                }
+                break;
 
             case RightPanelPhases.ThreadView:
                 if (!!this.props.room && !!cardState?.threadHeadEvent) {

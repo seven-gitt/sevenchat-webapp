@@ -65,6 +65,7 @@ describe("<RoomSummaryCard />", () => {
         onRoomMembersClick: jest.fn(),
         onRoomThreadsClick: jest.fn(),
         onRoomFilesClick: jest.fn(),
+        onRoomImagesClick: jest.fn(),
         onRoomExtensionsClick: jest.fn(),
         onRoomPinsClick: jest.fn(),
         onRoomSettingsClick: jest.fn(),
@@ -182,6 +183,14 @@ describe("<RoomSummaryCard />", () => {
         fireEvent.click(getByText("Files"));
 
         expect(vmDefaultValues.onRoomFilesClick).toHaveBeenCalled();
+    });
+
+    it("opens room images panel on button click", () => {
+        const { getByText } = getComponent();
+
+        fireEvent.click(getByText("Images"));
+
+        expect(vmDefaultValues.onRoomImagesClick).toHaveBeenCalled();
     });
 
     it("opens room export dialog on button click", () => {

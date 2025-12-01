@@ -111,6 +111,14 @@ describe("useRoomSummaryCardViewModel", () => {
         expect(spy).toHaveBeenCalledWith({ phase: RightPanelPhases.FilePanel }, true);
     });
 
+    it("should handle room images click", () => {
+        const spy = jest.spyOn(RightPanelStore.instance, "pushCard");
+        const { result } = render();
+
+        result.current.onRoomImagesClick();
+        expect(spy).toHaveBeenCalledWith({ phase: RightPanelPhases.ImagesPanel }, true);
+    });
+
     it("should handle room extensions click", () => {
         const spy = jest.spyOn(RightPanelStore.instance, "pushCard");
         const { result } = render();

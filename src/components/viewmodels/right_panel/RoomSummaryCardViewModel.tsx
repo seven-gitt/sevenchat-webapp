@@ -85,6 +85,7 @@ export interface RoomSummaryCardState {
     onRoomMembersClick: () => void;
     onRoomThreadsClick: () => void;
     onRoomFilesClick: () => void;
+    onRoomImagesClick: () => void;
     onRoomExtensionsClick: () => void;
     onRoomUrlsClick: () => void;
     onRoomPinsClick: () => void;
@@ -208,6 +209,10 @@ export function useRoomSummaryCardViewModel(
 
     const onRoomFilesClick = (): void => {
         RightPanelStore.instance.pushCard({ phase: RightPanelPhases.FilePanel }, true);
+    };
+
+    const onRoomImagesClick = (): void => {
+        RightPanelStore.instance.pushCard({ phase: RightPanelPhases.ImagesPanel }, true);
     };
 
     const onRoomExtensionsClick = (): void => {
@@ -339,6 +344,7 @@ export function useRoomSummaryCardViewModel(
         onRoomMembersClick,
         onRoomThreadsClick,
         onRoomFilesClick,
+        onRoomImagesClick,
         onRoomExtensionsClick,
         onRoomUrlsClick,
         onRoomPinsClick,
