@@ -31,7 +31,6 @@ import { makeUserPermalink } from "../utils/permalinks/Permalinks";
 import { type ICompletion, type ISelectionRange } from "./Autocompleter";
 import MemberAvatar from "../components/views/avatars/MemberAvatar";
 import { type TimelineRenderingType } from "../contexts/RoomContext";
-import UserIdentifierCustomisations from "../customisations/UserIdentifier";
 
 const USER_REGEX = /@\S*/g;
 
@@ -123,10 +122,6 @@ export default class UserProvider extends AutocompleteProvider {
                 }
                 
                 return this.users?.slice(0, limit).map((user) => {
-                    const description = UserIdentifierCustomisations.getDisplayUserIdentifier?.(user.userId, {
-                        roomId: this.room.roomId,
-                        withDisplayName: true,
-                    });
                     const displayName = user.name || user.userId || "";
                     return {
                         completion: user.rawDisplayName,
@@ -135,7 +130,7 @@ export default class UserProvider extends AutocompleteProvider {
                         suffix: " ",
                         href: makeUserPermalink(user.userId),
                         component: (
-                            <PillCompletion title={displayName} description={description ?? undefined}>
+                            <PillCompletion title={displayName}>
                                 <MemberAvatar member={user} size="24px" />
                             </PillCompletion>
                         ),
@@ -146,10 +141,6 @@ export default class UserProvider extends AutocompleteProvider {
             
             // Otherwise, search with the query
             return this.matcher.match(query, limit).map((user) => {
-                const description = UserIdentifierCustomisations.getDisplayUserIdentifier?.(user.userId, {
-                    roomId: this.room.roomId,
-                    withDisplayName: true,
-                });
                 const displayName = user.name || user.userId || "";
                 return {
                     // Length of completion should equal length of text in decorator. draft-js
@@ -160,7 +151,7 @@ export default class UserProvider extends AutocompleteProvider {
                     suffix: " ",
                     href: makeUserPermalink(user.userId),
                     component: (
-                        <PillCompletion title={displayName} description={description ?? undefined}>
+                        <PillCompletion title={displayName}>
                             <MemberAvatar member={user} size="24px" />
                         </PillCompletion>
                     ),
@@ -210,7 +201,7 @@ export default class UserProvider extends AutocompleteProvider {
     public renderCompletions(completions: React.ReactNode[]): React.ReactNode {
         return (
             <div
-                className="mx_Autocomplete_Completion_container_pill"
+                className="mx_Autocomplete_Completion_container_pill mx_Autocomplete_Completion_container_truncate"
                 role="presentation"
                 aria-label={_t("composer|autocomplete|user_a11y")}
             >
