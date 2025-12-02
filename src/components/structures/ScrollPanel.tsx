@@ -172,6 +172,7 @@ export default class ScrollPanel extends React.Component<IProps> {
     private readonly itemlist = createRef<HTMLOListElement>();
     private unmounted = false;
     private scrollTimeout?: Timer;
+    private smoothScrollSaveTimeout?: number;
     // Are we currently trying to backfill?
     private isFilling = false;
     // Is the current fill request caused by a props update?
@@ -218,6 +219,11 @@ export default class ScrollPanel extends React.Component<IProps> {
         this.unmounted = true;
 
         this.props.resizeNotifier?.removeListener("middlePanelResizedNoisy", this.onResize);
+
+        if (this.smoothScrollSaveTimeout) {
+            window.clearTimeout(this.smoothScrollSaveTimeout);
+            this.smoothScrollSaveTimeout = undefined;
+        }
 
         this.divScroll = null;
     }
@@ -560,33 +566,57 @@ export default class ScrollPanel extends React.Component<IProps> {
         // it ourselves is hard, and we can't rely on an onScroll callback
         // happening, since there may be no user-visible change here).
         const sn = this.getScrollNode();
-        
-        // Cải thiện animation scroll để mượt hơn
         const targetScrollTop = sn.scrollHeight;
         const currentScrollTop = sn.scrollTop;
         const distance = Math.abs(targetScrollTop - currentScrollTop);
-        
-        // Nếu khoảng cách ngắn hoặc đã ở bottom, scroll ngay lập tức
-        if (distance < 100 || currentScrollTop >= targetScrollTop - 10) {
+        const docElement = globalThis.document?.documentElement;
+        const canSmoothScroll =
+            typeof sn.scrollTo === "function" && !!docElement && "scrollBehavior" in docElement.style;
+
+        const shouldSmoothScroll =
+            canSmoothScroll && distance >= 100 && currentScrollTop < targetScrollTop - 10;
+
+        // Scroll instantly when we're already near the bottom or when the platform
+        // doesn't support smooth scrolling for element.scrollTo options.
+        if (!shouldSmoothScroll) {
             sn.scrollTop = targetScrollTop;
-            this.saveScrollState();
+            this.handlePostScrollToBottom(false);
             return;
         }
-        
-        // Sử dụng smooth scroll cho khoảng cách dài
+
+        // Use smooth scroll for long distances (when the browser supports it).
+        this.handlePostScrollToBottom(true);
+
         try {
             sn.scrollTo({
                 top: targetScrollTop,
-                behavior: 'smooth'
+                behavior: "smooth",
             });
-            
-            // Save state sau khi animation hoàn thành
-            setTimeout(() => {
-                this.saveScrollState();
-            }, 300);
         } catch (e) {
-            // Fallback nếu smooth scroll không được support
             sn.scrollTop = targetScrollTop;
+            this.handlePostScrollToBottom(false);
+        }
+    };
+
+    private handlePostScrollToBottom = (deferSave: boolean): void => {
+        if (this.props.stickyBottom) {
+            this.scrollState = { stuckAtBottom: true };
+            return;
+        }
+
+        if (this.smoothScrollSaveTimeout) {
+            window.clearTimeout(this.smoothScrollSaveTimeout);
+            this.smoothScrollSaveTimeout = undefined;
+        }
+
+        if (deferSave) {
+            this.smoothScrollSaveTimeout = window.setTimeout(() => {
+                this.smoothScrollSaveTimeout = undefined;
+                if (!this.unmounted) {
+                    this.saveScrollState();
+                }
+            }, 300);
+        } else {
             this.saveScrollState();
         }
     };
