@@ -1512,19 +1512,27 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
             }
         }
 
+        // Cuộn thủ công trong container cuộn chính để kiểm soát chính xác vị trí event
+        const roomView = this.roomView.current;
+        const scrollContainer = roomView?.querySelector<HTMLElement>(".mx_AutoHideScrollbar");
+        if (!roomView || !scrollContainer) return;
+
+        const escapeId = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(eventId) : eventId.replace(/"/g, '\\"');
+        const eventElement = roomView.querySelector<HTMLElement>(`[data-event-id="${escapeId}"]`);
+        if (!eventElement) return;
+
+        // Tính vị trí tuyệt đối của event bên trong container cuộn
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const eventRect = eventElement.getBoundingClientRect();
+        const currentScrollTop = scrollContainer.scrollTop;
+        const offsetTopInContainer = eventRect.top - containerRect.top + currentScrollTop;
+
+        // Tính tổng chiều cao chrome phía trên (header, banner ghim, thanh unread)
         const chromeOffset = this.getTimelineTopOffset();
-        if (!this.unmounted && chromeOffset !== this.state.timelineChromeOffset) {
-            this.setState({ timelineChromeOffset: chromeOffset });
-        }
+        const extraBuffer = 16; // Để event không dính sát mép dưới của chrome
+        const targetScrollTop = Math.max(0, offsetTopInContainer - chromeOffset - extraBuffer);
 
-        if (typeof this.messagePanel.scrollToEvent === "function") {
-            // Offset upwards by the chrome height so the event lands just below banners/header chrome
-            this.messagePanel.scrollToEvent(eventId, -chromeOffset, 0);
-        } else {
-            this.messagePanel.scrollToEventIfNeeded(eventId);
-        }
-
-        window.setTimeout(() => this.nudgeEventBelowChrome(eventId), 60);
+        scrollContainer.scrollTo({ top: targetScrollTop });
     };
 
 
@@ -1870,11 +1878,14 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
     };
 
     private onMessageListScroll = (): void => {
-        if (this.messagePanel?.isAtEndOfLiveTimeline()) {
+        const atEnd = this.messagePanel?.isAtEndOfLiveTimeline();
+
+        if (atEnd) {
             this.setState({
                 numUnreadMessages: 0,
                 atEndOfLiveTimeline: true,
             });
+            this.clearStoredScrollState();
         } else {
             this.setState({
                 atEndOfLiveTimeline: false,
@@ -1886,6 +1897,9 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
     private handleEventScrolledIntoView = (eventId?: string): void => {
         if (eventId) {
             this.nudgeEventBelowChrome(eventId);
+            if (eventId === this.state.initialEventId && !this.state.isInitialEventHighlighted) {
+                this.clearInitialEventTarget();
+            }
         }
         this.resetJumpToEvent(eventId);
     };
@@ -1926,11 +1940,19 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
             if (!scrollContainer) return;
 
             const containerTop = scrollContainer.getBoundingClientRect().top;
-            const desiredTop = containerTop + this.state.timelineChromeOffset;
+            // Tính lại offset chrome mỗi lần nudge để luôn phản ánh đúng chiều cao banner ghim / thanh unread hiện tại.
+            // Thêm một buffer nhỏ để tin nhắn không dính sát mép trên/banner mà nằm thấp xuống dễ nhìn hơn.
+            const chromeOffset = this.getTimelineTopOffset();
+            const extraBuffer = 24; // px
+            const desiredTop = containerTop + chromeOffset + extraBuffer;
             const actualTop = eventElement.getBoundingClientRect().top;
 
-            if (actualTop < desiredTop - 2) {
-                const delta = actualTop - desiredTop;
+            // Nếu vị trí hiện tại lệch quá xa so với vị trí mong muốn (cả trên lẫn dưới),
+            // dịch chuyển thêm một lần nữa để event nằm ngay dưới phần chrome (header, pinned, unread).
+            // Lưu ý: scrollBy(top = positive) sẽ cuộn nội dung lên (view xuống dưới),
+            // nên delta phải là (desiredTop - actualTop).
+            const delta = desiredTop - actualTop;
+            if (Math.abs(delta) > 2) {
                 scrollContainer.scrollBy({ top: delta });
             }
         });
@@ -2377,20 +2399,53 @@ export class RoomView extends React.Component<IRoomProps, IRoomState> {
 
     // jump down to the bottom of this room, where new events are arriving
     private jumpToLiveTimeline = (): void => {
-        if (this.state.initialEventId && this.state.isInitialEventHighlighted) {
-            // If we were viewing a highlighted event, firing view_room without
-            // an event will take care of both clearing the URL fragment and
-            // jumping to the bottom
-            defaultDispatcher.dispatch<ViewRoomPayload>({
-                action: Action.ViewRoom,
-                room_id: this.getRoomId(),
-                metricsTrigger: undefined, // room doesn't change
-            });
-        } else {
-            // Otherwise we have to jump manually
-            this.messagePanel?.jumpToLiveTimeline();
-            defaultDispatcher.fire(Action.FocusSendMessageComposer);
+        const { initialEventId, isInitialEventHighlighted } = this.state;
+
+        if (initialEventId) {
+            if (isInitialEventHighlighted) {
+                // If we were viewing a highlighted event, firing view_room without
+                // an event will take care of both clearing the URL fragment and
+                // jumping to the bottom
+                defaultDispatcher.dispatch<ViewRoomPayload>({
+                    action: Action.ViewRoom,
+                    room_id: this.getRoomId(),
+                    metricsTrigger: undefined, // room doesn't change
+                });
+
+                this.clearInitialEventTarget();
+                this.clearStoredScrollState();
+                return;
+            }
+
+            // If we navigated to a historical event (eg. search result), make sure we
+            // clear the pending "jump to event" flags so the timeline stops forcing us
+            // back to that event when we try to scroll to the latest messages.
+            this.resetJumpToEvent(initialEventId);
+            this.clearInitialEventTarget(true);
         }
+
+        this.clearStoredScrollState();
+
+        // Jump manually to the live timeline and focus the composer afterwards.
+        this.messagePanel?.jumpToLiveTimeline();
+        defaultDispatcher.fire(Action.FocusSendMessageComposer);
+    };
+
+    private clearStoredScrollState = (): void => {
+        const roomId = this.getRoomId();
+        if (!roomId) return;
+        RoomScrollStateStore.setScrollState(roomId, null);
+    };
+
+    private clearInitialEventTarget = (preserveHighlight?: boolean): void => {
+        if (!this.state.initialEventId) return;
+
+        this.setState({
+            initialEventId: undefined,
+            initialEventScrollIntoView: false,
+            initialEventPixelOffset: undefined,
+            isInitialEventHighlighted: preserveHighlight ? this.state.isInitialEventHighlighted : false,
+        });
     };
 
     // jump up to wherever our read marker is
