@@ -138,15 +138,48 @@ class MediaImplementation implements Media {
      * @returns {Promise<Response>} Resolves to the server's response for chaining.
      */
     public async downloadSource(): Promise<Response> {
-        const src = this.srcHttp;
-        if (!src) {
-            throw new UserFriendlyError("error|download_media");
+        return this.fetchWithAuthFallback((useAuthentication: boolean) =>
+            this.client.mxcUrlToHttp(
+                this.srcMxc,
+                undefined,
+                undefined,
+                undefined,
+                false,
+                true,
+                useAuthentication,
+            ),
+        );
+    }
+
+    private async fetchWithAuthFallback(getUrl: (useAuthentication: boolean) => string | null): Promise<Response> {
+        const attempt = async (useAuthentication: boolean, accessToken?: string): Promise<Response> => {
+            const url = getUrl(useAuthentication);
+            if (!url) {
+                throw new UserFriendlyError("error|download_media");
+            }
+            const init: RequestInit | undefined = accessToken
+                ? {
+                      headers: {
+                          Authorization: `Bearer ${accessToken}`,
+                      },
+                  }
+                : undefined;
+            const res = await fetch(url, init);
+            if (!res.ok) {
+                throw parseErrorResponse(res, await res.text());
+            }
+            return res;
+        };
+
+        try {
+            return await attempt(false);
+        } catch (err) {
+            const accessToken = this.client.getAccessToken?.();
+            if (!accessToken) {
+                throw err;
+            }
+            return attempt(true, accessToken);
         }
-        const res = await fetch(src);
-        if (!res.ok) {
-            throw parseErrorResponse(res, await res.text());
-        }
-        return res;
     }
 }
 

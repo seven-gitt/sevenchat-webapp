@@ -108,6 +108,7 @@ export default class MFileBody extends React.Component<IProps, IState> {
     private iframe = createRef<HTMLIFrameElement>();
     private dummyLink = createRef<HTMLAnchorElement>();
     private userDidClick = false;
+    private downloadingUnencrypted = false;
     private fileDownloader: FileDownloader = new FileDownloader(() => this.iframe.current);
 
     private getContentUrl(): string | null {
@@ -141,6 +142,40 @@ export default class MFileBody extends React.Component<IProps, IState> {
             },
         });
     }
+
+    private readonly onUnencryptedDownloadClick = async (
+        ev: React.MouseEvent<HTMLAnchorElement>,
+    ): Promise<void> => {
+        // Respect modified clicks so the user can still open the link in a new tab/window.
+        if (ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) {
+            return;
+        }
+
+        if (this.downloadingUnencrypted || !this.props.mediaEventHelper) {
+            return;
+        }
+
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        this.downloadingUnencrypted = true;
+
+        try {
+            const blob = await this.props.mediaEventHelper.sourceBlob.value;
+            await this.fileDownloader.download({
+                blob,
+                name: this.fileName,
+            });
+        } catch (err) {
+            logger.warn("Unable to download attachment: ", err);
+            Modal.createDialog(ErrorDialog, {
+                title: _t("common|error"),
+                description: _t("timeline|m.file|error_downloading"),
+            });
+        } finally {
+            this.downloadingUnencrypted = false;
+        }
+    };
 
     private decryptFile = async (): Promise<void> => {
         if (this.state.decryptedBlob) {
@@ -292,13 +327,17 @@ export default class MFileBody extends React.Component<IProps, IState> {
             };
 
             // Blobs can only have up to 500mb, so if the file reports as being too large then
-            // we won't try and convert it. Likewise, if the file size is unknown then we'll assume
-            // it is too big. There is the risk of the reported file size and the actual file size
+            // we won't try and convert it. There is the risk of the reported file size and the actual file size
             // being different, however the user shouldn't normally run into this problem.
-            const fileTooBig = typeof contentFileSize === "number" ? contentFileSize > 524288000 : true;
+            const fileTooBig = typeof contentFileSize === "number" ? contentFileSize > 524288000 : false;
+            downloadProps["download"] = this.fileName;
 
-            if (["application/pdf"].includes(fileType) && !fileTooBig) {
-                // We want to force a download on this type, so use an onClick handler.
+            const canInterceptDownload = !fileTooBig && !!this.props.mediaEventHelper;
+
+            if (canInterceptDownload) {
+                downloadProps["onClick"] = this.onUnencryptedDownloadClick;
+            } else if (["application/pdf"].includes(fileType) && !fileTooBig) {
+                // Legacy behaviour: if we cannot intercept, force download for PDFs specifically.
                 downloadProps["onClick"] = (e) => {
                     logger.log(`Downloading ${fileType} as blob (unencrypted)`);
 
@@ -320,9 +359,6 @@ export default class MFileBody extends React.Component<IProps, IState> {
                         tempAnchor.remove();
                     });
                 };
-            } else {
-                // Else we are hoping the browser will do the right thing
-                downloadProps["download"] = this.fileName;
             }
 
             return (

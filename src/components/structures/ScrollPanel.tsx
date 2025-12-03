@@ -173,6 +173,7 @@ export default class ScrollPanel extends React.Component<IProps> {
     private unmounted = false;
     private scrollTimeout?: Timer;
     private smoothScrollSaveTimeout?: number;
+    private isAutoScrollingToBottom = false;
     // Are we currently trying to backfill?
     private isFilling = false;
     // Is the current fill request caused by a props update?
@@ -224,6 +225,7 @@ export default class ScrollPanel extends React.Component<IProps> {
             window.clearTimeout(this.smoothScrollSaveTimeout);
             this.smoothScrollSaveTimeout = undefined;
         }
+        this.isAutoScrollingToBottom = false;
 
         this.divScroll = null;
     }
@@ -579,6 +581,7 @@ export default class ScrollPanel extends React.Component<IProps> {
         // Scroll instantly when we're already near the bottom or when the platform
         // doesn't support smooth scrolling for element.scrollTo options.
         if (!shouldSmoothScroll) {
+            this.isAutoScrollingToBottom = true;
             sn.scrollTop = targetScrollTop;
             this.handlePostScrollToBottom(false);
             return;
@@ -593,16 +596,15 @@ export default class ScrollPanel extends React.Component<IProps> {
                 behavior: "smooth",
             });
         } catch (e) {
+            // Nếu failed, giữ cờ auto-scroll để các sự kiện scroll tiếp theo biết là do mã điều khiển.
+            this.isAutoScrollingToBottom = true;
             sn.scrollTop = targetScrollTop;
             this.handlePostScrollToBottom(false);
         }
     };
 
     private handlePostScrollToBottom = (deferSave: boolean): void => {
-        if (this.props.stickyBottom) {
-            this.scrollState = { stuckAtBottom: true };
-            return;
-        }
+        this.scrollState = { stuckAtBottom: true };
 
         if (this.smoothScrollSaveTimeout) {
             window.clearTimeout(this.smoothScrollSaveTimeout);
@@ -610,13 +612,16 @@ export default class ScrollPanel extends React.Component<IProps> {
         }
 
         if (deferSave) {
+            this.isAutoScrollingToBottom = true;
             this.smoothScrollSaveTimeout = window.setTimeout(() => {
                 this.smoothScrollSaveTimeout = undefined;
                 if (!this.unmounted) {
+                    this.isAutoScrollingToBottom = false;
                     this.saveScrollState();
                 }
             }, 300);
         } else {
+            this.isAutoScrollingToBottom = false;
             this.saveScrollState();
         }
     };
@@ -689,6 +694,10 @@ export default class ScrollPanel extends React.Component<IProps> {
     };
 
     private saveScrollState(): void {
+        if (this.isAutoScrollingToBottom) {
+            return;
+        }
+
         if (this.props.stickyBottom && this.isAtBottom()) {
             this.scrollState = { stuckAtBottom: true };
             debuglog("saved stuckAtBottom state");
