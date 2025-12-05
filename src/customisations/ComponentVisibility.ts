@@ -18,8 +18,5 @@ import { UIComponent } from "../settings/UIFeature";
 // A real customisation module will define and export one or more of the
 // customisation points that make up the interface above.
 export const ComponentVisibilityCustomisations: IComponentVisibilityCustomisations = {
-    shouldShowComponent: (component) => {
-        if (component === UIComponent.CreateSpaces) return false;
-        return true;
-    },
+    shouldShowComponent: () => true,
 };

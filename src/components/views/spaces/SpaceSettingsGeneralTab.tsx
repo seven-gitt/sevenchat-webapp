@@ -19,7 +19,14 @@ import { getTopic } from "../../../hooks/room/useTopic";
 import SettingsTab from "../settings/tabs/SettingsTab";
 import { SettingsSection } from "../settings/shared/SettingsSection";
 import { SettingsSubsection } from "../settings/shared/SettingsSubsection";
-import { leaveSpace } from "../../../utils/leave-behaviour";
+import Modal from "../../../Modal";
+import QuestionDialog from "../dialogs/QuestionDialog";
+import ErrorDialog from "../dialogs/ErrorDialog";
+import { leaveRoomBehaviour, leaveSpace } from "../../../utils/leave-behaviour";
+import dis from "../../../dispatcher/dispatcher";
+import { Action } from "../../../dispatcher/actions";
+import { type AfterLeaveRoomPayload } from "../../../dispatcher/payloads/AfterLeaveRoomPayload";
+import SpaceStore from "../../../stores/spaces/SpaceStore";
 
 interface IProps {
     matrixClient: MatrixClient;
@@ -28,9 +35,12 @@ interface IProps {
 
 const SpaceSettingsGeneralTab: React.FC<IProps> = ({ matrixClient: cli, space }) => {
     const [busy, setBusy] = useState(false);
+    const [deleteBusy, setDeleteBusy] = useState(false);
     const [error, setError] = useState("");
 
     const userId = cli.getUserId()!;
+    const myPowerLevel = space.getMember(userId)?.powerLevel ?? 0;
+    const canDeleteSpace = myPowerLevel >= 100;
 
     const [newAvatar, setNewAvatar] = useState<File | null | undefined>(null); // undefined means to remove avatar
     const canSetAvatar = space.currentState.maySendStateEvent(EventType.RoomAvatar, userId);
@@ -44,6 +54,8 @@ const SpaceSettingsGeneralTab: React.FC<IProps> = ({ matrixClient: cli, space })
     const [topic, setTopic] = useState(currentTopic);
     const canSetTopic = space.currentState.maySendStateEvent(EventType.RoomTopic, userId);
     const topicChanged = topic !== currentTopic;
+
+    const isFormBusy = busy || deleteBusy;
 
     const onCancel = (): void => {
         setNewAvatar(null);
@@ -86,6 +98,83 @@ const SpaceSettingsGeneralTab: React.FC<IProps> = ({ matrixClient: cli, space })
         }
     };
 
+    const getDescendantRooms = (): Room[] => {
+        const visited = new Set<string>([space.roomId]);
+        const roomsToDelete: Room[] = [];
+
+        const traverse = (currentSpace: Room): void => {
+            const children = SpaceStore.instance.getChildren(currentSpace.roomId);
+            children.forEach((child) => {
+                if (visited.has(child.roomId)) return;
+                visited.add(child.roomId);
+                if (child.isSpaceRoom()) {
+                    traverse(child);
+                    roomsToDelete.push(child);
+                } else {
+                    roomsToDelete.push(child);
+                }
+            });
+        };
+
+        traverse(space);
+        return roomsToDelete;
+    };
+
+    const deleteRoomAndMembers = async (roomToDelete: Room, reason: string): Promise<void> => {
+        const members = roomToDelete.getJoinedMembers().filter((member) => member.userId !== userId);
+        for (const member of members) {
+            await cli.kick(roomToDelete.roomId, member.userId, reason);
+        }
+        await cli.leave(roomToDelete.roomId);
+    };
+
+    const onDeleteSpace = (): void => {
+        const spaceDisplayName = space.name || _t("common|unnamed_space");
+        const { finished } = Modal.createDialog(QuestionDialog, {
+            title: _t("room_settings|general|delete_space_confirm_title", { spaceName: spaceDisplayName }),
+            description: _t("room_settings|general|delete_space_confirm_description"),
+            button: _t("action|delete"),
+            danger: true,
+        });
+
+        finished.then(async ([confirmed]) => {
+            if (!confirmed) return;
+
+            setDeleteBusy(true);
+            try {
+                const deleteReason = _t("room_settings|general|delete_space_reason");
+                const childRooms = getDescendantRooms();
+                for (const child of childRooms) {
+                    await deleteRoomAndMembers(child, deleteReason);
+                }
+
+                const members = space
+                    .getJoinedMembers()
+                    .filter((member) => member.userId !== userId);
+                for (const member of members) {
+                    await cli.kick(
+                        space.roomId,
+                        member.userId,
+                        deleteReason,
+                    );
+                }
+
+                await leaveRoomBehaviour(cli, space.roomId);
+                dis.dispatch<AfterLeaveRoomPayload>({
+                    action: Action.AfterLeaveRoom,
+                    room_id: space.roomId,
+                });
+            } catch (e) {
+                logger.error("Failed to delete space:", e);
+                setDeleteBusy(false);
+                Modal.createDialog(ErrorDialog, {
+                    title: _t("common|error"),
+                    description: _t("room_settings|general|delete_space_error"),
+                });
+            }
+        });
+    };
+
     return (
         <SettingsTab>
             <SettingsSection heading={_t("common|general")}>
@@ -96,37 +185,49 @@ const SpaceSettingsGeneralTab: React.FC<IProps> = ({ matrixClient: cli, space })
 
                     <SpaceBasicSettings
                         avatarUrl={avatarUrlForRoom(space, 80, 80, "crop") ?? undefined}
-                        avatarDisabled={busy || !canSetAvatar}
+                        avatarDisabled={isFormBusy || !canSetAvatar}
                         setAvatar={setNewAvatar}
                         name={name}
-                        nameDisabled={busy || !canSetName}
+                        nameDisabled={isFormBusy || !canSetName}
                         setName={setName}
                         topic={topic}
-                        topicDisabled={busy || !canSetTopic}
+                        topicDisabled={isFormBusy || !canSetTopic}
                         setTopic={setTopic}
                     />
 
                     <AccessibleButton
                         onClick={onCancel}
-                        disabled={busy || !(avatarChanged || nameChanged || topicChanged)}
+                        disabled={isFormBusy || !(avatarChanged || nameChanged || topicChanged)}
                         kind="link"
                     >
                         {_t("action|cancel")}
                     </AccessibleButton>
-                    <AccessibleButton onClick={onSave} disabled={busy} kind="primary">
+                    <AccessibleButton onClick={onSave} disabled={isFormBusy} kind="primary">
                         {busy ? _t("common|saving") : _t("room_settings|general|save")}
                     </AccessibleButton>
                 </div>
 
                 <SettingsSubsection>
-                    <AccessibleButton
-                        kind="danger"
-                        onClick={() => {
-                            leaveSpace(space);
-                        }}
-                    >
-                        {_t("room_settings|general|leave_space")}
-                    </AccessibleButton>
+                    <div className="mx_SpaceSettingsGeneralTab_actions">
+                        <AccessibleButton
+                            kind="danger"
+                            disabled={isFormBusy}
+                            onClick={() => {
+                                leaveSpace(space);
+                            }}
+                        >
+                            {_t("room_settings|general|leave_space")}
+                        </AccessibleButton>
+                        {canDeleteSpace && (
+                            <AccessibleButton
+                                kind="danger"
+                                onClick={onDeleteSpace}
+                                disabled={isFormBusy}
+                            >
+                                {_t("room_settings|general|delete_space")}
+                            </AccessibleButton>
+                        )}
+                    </div>
                 </SettingsSubsection>
             </SettingsSection>
         </SettingsTab>
