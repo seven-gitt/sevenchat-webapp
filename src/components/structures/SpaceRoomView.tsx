@@ -287,17 +287,19 @@ const SpaceLanding: React.FC<{ space: Room }> = ({ space }) => {
     );
 };
 
+const SINGLE_ROOM_FIELD_COUNT = 1;
+const INVITE_EMAIL_FIELD_COUNT = 1;
 const SpaceSetupFirstRooms: React.FC<{
     space: Room;
     title: string;
-    description: JSX.Element;
+    description?: JSX.Element | null;
     onFinished(firstRoomId?: string): void;
 }> = ({ space, title, description, onFinished }) => {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
-    const numFields = 3;
-    const placeholders = [_t("common|general"), _t("common|random"), _t("common|support")];
-    const [roomNames, setRoomName] = useStateArray(numFields, [_t("common|general"), _t("common|random"), ""]);
+    const numFields = SINGLE_ROOM_FIELD_COUNT;
+    const placeholders = [_t("common|general")];
+    const [roomNames, setRoomName] = useStateArray(numFields, [_t("common|general")]);
     const fields = new Array(numFields).fill(0).map((x, i) => {
         const name = "roomName" + i;
         return (
@@ -309,7 +311,7 @@ const SpaceSetupFirstRooms: React.FC<{
                 placeholder={placeholders[i]}
                 value={roomNames[i]}
                 onChange={(ev: React.ChangeEvent<HTMLInputElement>) => setRoomName(i, ev.target.value)}
-                autoFocus={i === 2}
+                autoFocus={i === numFields - 1}
                 disabled={busy}
                 autoComplete="off"
             />
@@ -362,7 +364,7 @@ const SpaceSetupFirstRooms: React.FC<{
     return (
         <div>
             <h1>{title}</h1>
-            <div className="mx_SpaceRoomView_description">{description}</div>
+            {description && <div className="mx_SpaceRoomView_description">{description}</div>}
 
             {error && <div className="mx_SpaceRoomView_errorText">{error}</div>}
             <form onSubmit={onClick} id="mx_SpaceSetupFirstRooms">
@@ -491,8 +493,8 @@ const SpaceSetupPrivateInvite: React.FC<{
 }> = ({ space, onFinished }) => {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
-    const numFields = 3;
-    const fieldRefs = [useRef<Field>(null), useRef<Field>(null), useRef<Field>(null)];
+    const numFields = INVITE_EMAIL_FIELD_COUNT;
+    const fieldRefs = [useRef<Field>(null)];
     const [emailAddresses, setEmailAddress] = useStateArray(numFields, "");
     const fields = new Array(numFields).fill(0).map((x, i) => {
         const name = "emailAddress" + i;
@@ -564,7 +566,6 @@ const SpaceSetupPrivateInvite: React.FC<{
     return (
         <div className="mx_SpaceRoomView_inviteTeammates">
             <h1>{_t("create_space|invite_teammates_heading")}</h1>
-            <div className="mx_SpaceRoomView_description">{_t("create_space|invite_teammates_description")}</div>
 
             {error && <div className="mx_SpaceRoomView_errorText">{error}</div>}
             <form onSubmit={onClick} id="mx_SpaceSetupPrivateInvite">
@@ -729,14 +730,9 @@ export default class SpaceRoomView extends React.PureComponent<IProps, IState> {
                 return (
                     <SpaceSetupFirstRooms
                         space={this.props.space}
-                        title={_t("create_space|setup_rooms_private_heading")}
-                        description={
-                            <>
-                                {_t("create_space|setup_rooms_private_description")}
-                                <br />
-                                {_t("create_space|setup_rooms_description")}
-                            </>
-                        }
+                        title={_t("create_space|setup_rooms_private_heading", {
+                            spaceName: this.props.justCreatedOpts?.createOpts?.name || this.props.space.name,
+                        })}
                         onFinished={(firstRoomId: string) => this.setState({ phase: Phase.PrivateInvite, firstRoomId })}
                     />
                 );
