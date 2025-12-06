@@ -2694,14 +2694,17 @@
     "timeline": {
         "context_menu": {
             "collapse_reply_thread": "Thu gọn chuỗi trả lời",
-            "external_url": "URL nguồn",
-            "open_in_osm": "Mở trong OpenStreetMap",
-            "report": "Bản báo cáo",
-            "resent_unsent_reactions": "Gửi lại (các) cảm xúc %(unsentCount)s",
-            "show_url_preview": "Hiển thị bản xem trước",
-            "view_related_event": "Xem sự kiện liên quan",
-            "view_source": "Xem nguồn"
-        },
+        "external_url": "URL nguồn",
+        "open_in_osm": "Mở trong OpenStreetMap",
+        "report": "Bản báo cáo",
+        "resent_unsent_reactions": "Gửi lại (các) cảm xúc %(unsentCount)s",
+        "show_url_preview": "Hiển thị bản xem trước",
+        "view_related_event": "Xem sự kiện liên quan",
+        "view_source": "Xem nguồn",
+        "copy_image": "Sao chép hình ảnh",
+        "copy_image_failed": "Không thể sao chép hình ảnh",
+        "copy_image_failed_description": "Không thể sao chép hình ảnh này vào bảng tạm. Vui lòng thử lại."
+    },
         "creation_summary_dm": "%(creator)s đã tạo DM này.",
         "creation_summary_room": "%(creator)s đã tạo và định cấu hình phòng.",
         "download_action_decrypting": "Đang giải mã",

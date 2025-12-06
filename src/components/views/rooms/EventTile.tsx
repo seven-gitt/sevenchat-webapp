@@ -900,17 +900,14 @@ export class UnwrappedEventTile extends React.Component<EventTileProps, IState> 
 
     private showContextMenu(ev: React.MouseEvent, permalink?: string): void {
         const clickTarget = ev.target as HTMLElement;
+        const clickedImage = clickTarget instanceof HTMLImageElement;
 
         // Try to find an anchor element
         const anchorElement = clickTarget instanceof HTMLAnchorElement ? clickTarget : clickTarget.closest("a");
 
-        // There is no way to copy non-PNG images into clipboard, so we can't
-        // have our own handling for copying images, so we leave it to the
-        // Electron layer (webcontents-handler.ts)
-        if (clickTarget instanceof HTMLImageElement) return;
-
-        // Return if we're in a browser and click either an a tag, as in those cases we want to use the native browser menu
-        if (!PlatformPeg.get()?.allowOverridingNativeContextMenus() && anchorElement) return;
+        // Return if we're in a browser and click either an a tag, as in those cases we want to use the native browser menu.
+        // However, inline media (images) should still open our own context menu.
+        if (!PlatformPeg.get()?.allowOverridingNativeContextMenus() && anchorElement && !clickedImage) return;
 
         // We don't want to show the menu when editing a message
         if (this.props.editState) return;

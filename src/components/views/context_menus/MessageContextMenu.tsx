@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR GPL-3.0-only OR LicenseRef-Element-Com
 Please see LICENSE files in the repository root for full details.
 */
 
-import React, { type JSX, createRef, useContext } from "react";
+import React, { type JSX, createRef, useContext, useMemo, useEffect, useState } from "react";
 import {
     EventStatus,
     type MatrixEvent,
@@ -19,7 +19,9 @@ import {
     type Relations,
     Thread,
     M_POLL_START,
+    MsgType,
 } from "matrix-js-sdk/src/matrix";
+import { logger } from "matrix-js-sdk/src/logger";
 
 import { MatrixClientPeg } from "../../../MatrixClientPeg";
 import dis from "../../../dispatcher/dispatcher";
@@ -54,6 +56,92 @@ import { CardContext } from "../right_panel/context";
 import PinningUtils from "../../../utils/PinningUtils";
 import PosthogTrackers from "../../../PosthogTrackers.ts";
 import { textForEvent } from "../../../TextForEvent";
+import { useDownloadMedia } from "../../../hooks/useDownloadMedia";
+import { MediaEventHelper } from "../../../utils/MediaEventHelper";
+import ErrorDialog from "../dialogs/ErrorDialog";
+
+type ClipboardItemConstructor = new (items: Record<string, Blob>) => any;
+
+const getClipboardItemConstructor = (): ClipboardItemConstructor | undefined =>
+    typeof window !== "undefined" ? (window as typeof window & { ClipboardItem?: ClipboardItemConstructor }).ClipboardItem : undefined;
+
+const isClipboardImageCopySupported = (): boolean => {
+    if (typeof navigator === "undefined") return false;
+    if (!navigator.clipboard || typeof navigator.clipboard.write !== "function") return false;
+    return Boolean(getClipboardItemConstructor());
+};
+
+const isImageEvent = (mxEvent: MatrixEvent): boolean => {
+    if (mxEvent.getType() === EventType.Sticker) return true;
+    if (mxEvent.getType() !== EventType.RoomMessage) return false;
+    return mxEvent.getContent()?.msgtype === MsgType.Image;
+};
+
+const DownloadContextMenuOption: React.FC<{ mxEvent: MatrixEvent; onFinished: () => void }> = ({ mxEvent, onFinished }) => {
+    const mediaEventHelper = useMemo(() => new MediaEventHelper(mxEvent), [mxEvent]);
+    useEffect(() => () => mediaEventHelper.destroy(), [mediaEventHelper]);
+
+    const downloadUrl = mediaEventHelper.media.srcHttp ?? "";
+    const fileName = mediaEventHelper.fileName;
+    const { download, loading, canDownload } = useDownloadMedia(downloadUrl, fileName, mxEvent);
+
+    if (!canDownload) return null;
+
+    const handleClick = (): void => {
+        void download().finally(onFinished);
+    };
+
+    return (
+        <IconizedContextMenuOption
+            iconClassName="mx_MessageContextMenu_iconDownload"
+            label={loading ? _t("timeline|download_action_downloading") : _t("action|download")}
+            onClick={handleClick}
+            disabled={loading}
+        />
+    );
+};
+
+const CopyImageContextMenuOption: React.FC<{ mxEvent: MatrixEvent; onFinished: () => void }> = ({ mxEvent, onFinished }) => {
+    const [loading, setLoading] = useState(false);
+    const mediaEventHelper = useMemo(() => new MediaEventHelper(mxEvent), [mxEvent]);
+
+    useEffect(() => () => mediaEventHelper.destroy(), [mediaEventHelper]);
+
+    if (!isClipboardImageCopySupported()) return null;
+
+    const handleCopy = async (): Promise<void> => {
+        if (loading) return;
+        try {
+            setLoading(true);
+            const blob = await mediaEventHelper.sourceBlob.value;
+            const clipboardCtor = getClipboardItemConstructor();
+            if (!clipboardCtor) {
+                throw new Error("Clipboard API is not available");
+            }
+            const mimeType = blob.type || "image/png";
+            const clipboardItem = new clipboardCtor({ [mimeType]: blob });
+            await navigator.clipboard.write([clipboardItem]);
+            onFinished();
+        } catch (error) {
+            logger.error("Failed to copy image", error);
+            Modal.createDialog(ErrorDialog, {
+                title: _t("timeline|context_menu|copy_image_failed"),
+                description: _t("timeline|context_menu|copy_image_failed_description"),
+            });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <IconizedContextMenuOption
+            iconClassName="mx_MessageContextMenu_iconCopy"
+            label={_t("timeline|context_menu|copy_image")}
+            onClick={handleCopy}
+            disabled={loading}
+        />
+    );
+};
 
 interface IReplyInThreadButton {
     mxEvent: MatrixEvent;
@@ -506,6 +594,14 @@ export default class MessageContextMenu extends React.Component<IProps, IState> 
             );
         }
 
+        let downloadButton: JSX.Element | undefined;
+        if (MediaEventHelper.isEligible(mxEvent)) {
+            downloadButton = <DownloadContextMenuOption mxEvent={mxEvent} onFinished={this.closeMenu} />;
+        }
+
+        const isImageMessage = isImageEvent(mxEvent);
+        const clipboardSupportsImageCopy = isImageMessage && isClipboardImageCopySupported();
+
         let endPollButton: JSX.Element | undefined;
         if (this.canEndPoll(mxEvent)) {
             endPollButton = (
@@ -576,7 +672,7 @@ export default class MessageContextMenu extends React.Component<IProps, IState> 
         }
 
         let copyLinkButton: JSX.Element | undefined;
-        if (link) {
+        if (link && !clipboardSupportsImageCopy) {
             copyLinkButton = (
                 <IconizedContextMenuOption
                     iconClassName="mx_MessageContextMenu_iconCopy"
@@ -598,7 +694,7 @@ export default class MessageContextMenu extends React.Component<IProps, IState> 
         const selectedText = getSelectedText();
 
         let copyButton: JSX.Element | undefined;
-        if (rightClick && selectedText) {
+        if (rightClick && selectedText && !clipboardSupportsImageCopy) {
             copyButton = (
                 <IconizedContextMenuOption
                     iconClassName="mx_MessageContextMenu_iconCopy"
@@ -610,7 +706,7 @@ export default class MessageContextMenu extends React.Component<IProps, IState> 
         }
 
         let copyMessageButton: JSX.Element | undefined;
-        if (rightClick && contentActionable) {
+        if (rightClick && contentActionable && !clipboardSupportsImageCopy) {
             copyMessageButton = (
                 <IconizedContextMenuOption
                     iconClassName="mx_MessageContextMenu_iconCopy"
@@ -621,7 +717,13 @@ export default class MessageContextMenu extends React.Component<IProps, IState> 
         }
 
         let quoteButton: JSX.Element | undefined;
-        if (rightClick && selectedText && selectedText.trim().length > 0 && this.isSelectionWithinSingleTextBody()) {
+        if (
+            rightClick &&
+            selectedText &&
+            selectedText.trim().length > 0 &&
+            this.isSelectionWithinSingleTextBody() &&
+            !clipboardSupportsImageCopy
+        ) {
             quoteButton = (
                 <IconizedContextMenuOption
                     iconClassName="mx_MessageContextMenu_iconQuote"
@@ -630,6 +732,11 @@ export default class MessageContextMenu extends React.Component<IProps, IState> 
                     onClick={this.onQuoteClick}
                 />
             );
+        }
+
+        let copyImageButton: JSX.Element | undefined;
+        if (rightClick && clipboardSupportsImageCopy) {
+            copyImageButton = <CopyImageContextMenuOption mxEvent={mxEvent} onFinished={this.closeMenu} />;
         }
 
         let editButton: JSX.Element | undefined;
@@ -701,9 +808,10 @@ export default class MessageContextMenu extends React.Component<IProps, IState> 
         }
 
         let nativeItemsList: JSX.Element | undefined;
-        if (copyButton || quoteButton || copyLinkButton || copyMessageButton) {
+        if (copyImageButton || copyButton || quoteButton || copyLinkButton || copyMessageButton) {
             nativeItemsList = (
                 <IconizedContextMenuOptionList>
+                    {copyImageButton}
                     {copyButton}
                     {copyMessageButton}
                     {quoteButton}
@@ -730,6 +838,7 @@ export default class MessageContextMenu extends React.Component<IProps, IState> 
                 {viewInRoomButton}
                 {openInMapSiteButton}
                 {endPollButton}
+                {downloadButton}
                 {forwardButton}
                 {permalinkButton}
                 {reportEventButton}

@@ -2169,7 +2169,10 @@
             "external_url": "Source URL",
             "collapse_reply_thread": "Collapse reply thread",
             "view_related_event": "View related event",
-            "report": "Report"
+            "report": "Report",
+            "copy_image": "Copy image",
+            "copy_image_failed": "Couldn't copy image",
+            "copy_image_failed_description": "Element couldn't copy this image to your clipboard. Please try again."
         },
         "late_event_separator": "Originally sent %(dateTime)s",
         "load_error": {
