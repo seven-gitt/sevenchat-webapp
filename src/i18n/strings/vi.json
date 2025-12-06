@@ -272,6 +272,7 @@
         "server_picker_title_registration": "Tài khoản máy chủ trên",
         "session_logged_out_description": "Để bảo mật, phiên này đã được đăng xuất. Vui lòng đăng nhập lại.",
         "session_logged_out_title": "Đã đăng xuất",
+        "check_email_explainer": "Làm theo hướng dẫn được gửi tới <b>%(email)s</b>",
         "set_email": {
             "description": "Điều này sẽ cho phép bạn đặt lại mật khẩu của mình và nhận thông báo.",
             "verification_pending_description": "Vui lòng kiểm tra hòm thư và bấm vào liên kết trong đó. Khi nào xong, hãy bấm tiếp tục.",
