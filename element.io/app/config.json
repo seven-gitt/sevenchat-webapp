@@ -33,6 +33,7 @@
     "default_e2ee": false,
     "default_direct_encryption": false,
     "default_encryption": false,
+    "dangerously_allow_unsafe_and_insecure_passwords": true,
     
     "disable_custom_urls": false,
     "disable_guests": true,
